@@ -1,1 +1,7 @@
 pip install gdown
+pip install pandas
+pip install seaborn
+pip install nltk
+pip install scikit-learn
+
+python -m nltk.downloader stopwords
