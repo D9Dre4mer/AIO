@@ -4,7 +4,7 @@ This repository contains a collection of projects that I have either developed i
 
 Below is a brief overview of the projects included in this repository:
 
-- **[Project Name 1]**: Short description of the project, its purpose, and technologies used.
-- **[Project Name 2]**: Short description of the project, its purpose, and technologies used.
+- **[Project 1.2]**: Chatbot with RAG system.
+- **[Project 2.2]**: Email Classification system.
 
 Feel free to explore each project folder for detailed documentation, source code, and instructions on how to run or use the projects.
