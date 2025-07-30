@@ -1,0 +1,37 @@
+# Cache directories
+**/cache/
+**/spam/
+**/logs/
+**/inbox/
+**/__pycache__/
+
+# Python cache files
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp

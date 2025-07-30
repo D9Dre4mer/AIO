@@ -1,18 +1,18 @@
 import os
 import streamlit as st
-import matplotlib.pyplot as plt
-import seaborn as sns
 import pandas as pd
 import numpy as np
 import plotly.express as px
 from sklearn.manifold import TSNE
+import json
+from datetime import datetime
 
 from config import SpamClassifierConfig
 from data_loader import DataLoader
 from embedding_generator import EmbeddingGenerator
 from evaluator import ModelEvaluator
 from spam_classifier import SpamClassifierPipeline
-from email_handler import GmailHandler  # Import updated Gmail handler
+from email_handler import GmailHandler
 
 # --- Cấu hình trang và CSS tùy chỉnh ---
 st.set_page_config(page_title="Bảng điều khiển Spam Mail", layout="centered")
@@ -162,6 +162,36 @@ footer {
     margin-bottom: 1rem;
     border: 1px solid #374151;
 }
+/* 🆕 Style cho relabel buttons */
+.relabel-buttons {
+    background-color: #1f2937;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1rem 0;
+    border: 2px solid #fbbf24;
+}
+.relabel-title {
+    color: #fbbf24;
+    font-weight: bold;
+    margin-bottom: 0.5rem;
+    font-size: 1.1rem;
+}
+.correction-badge {
+    background-color: #dc2626;
+    color: white;
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+}
+.corrected-badge {
+    background-color: #16a34a;
+    color: white;
+    border-radius: 4px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -204,7 +234,63 @@ def get_embeddings_cached(messages: list) -> np.ndarray:
 @st.cache_data
 def compute_tsne_cached(sub_emb: np.ndarray) -> np.ndarray:
     """Cache t-SNE computation."""
-    return TSNE(n_components=2, init="random", learning_rate="auto").fit_transform(sub_emb)
+    return TSNE(
+        n_components=2, 
+        init="random", 
+        learning_rate="auto"
+    ).fit_transform(sub_emb)
+
+# 🆕 --- Hàm quản lý correction data ---
+def load_corrections():
+    """Load correction data từ file JSON"""
+    correction_file = "./cache/corrections.json"
+    if os.path.exists(correction_file):
+        try:
+            with open(correction_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_corrections(corrections):
+    """Save correction data vào file JSON"""
+    correction_file = "./cache/corrections.json"
+    os.makedirs("./cache", exist_ok=True)
+    try:
+        with open(correction_file, 'w', encoding='utf-8') as f:
+            json.dump(corrections, f, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Lỗi lưu corrections: {str(e)}")
+        return False
+
+def add_correction(email_id, original_prediction, corrected_label, email_data):
+    """Thêm correction mới"""
+    corrections = load_corrections()
+    corrections[email_id] = {
+        'original_prediction': original_prediction,
+        'corrected_label': corrected_label,
+        'timestamp': datetime.now().isoformat(),
+        'subject': email_data.get('subject', ''),
+        'sender': email_data.get('sender', ''),
+        'snippet': email_data.get('snippet', '')[:100]
+    }
+    return save_corrections(corrections)
+
+def get_correction_stats():
+    """Lấy thống kê về corrections"""
+    corrections = load_corrections()
+    total = len(corrections)
+    spam_to_ham = sum(1 for c in corrections.values() 
+                     if c['original_prediction'] == 'spam' and c['corrected_label'] == 'ham')
+    ham_to_spam = sum(1 for c in corrections.values() 
+                     if c['original_prediction'] == 'ham' and c['corrected_label'] == 'spam')
+    
+    return {
+        'total': total,
+        'spam_to_ham': spam_to_ham,
+        'ham_to_spam': ham_to_spam
+    }
 
 # Khởi tạo các components
 try:
@@ -215,7 +301,8 @@ except Exception as e:
     st.stop()
 
 if "df" not in st.session_state:
-    st.session_state["df"] = load_sample_data(SpamClassifierConfig().dataset_path)
+    config = SpamClassifierConfig()
+    st.session_state["df"] = load_sample_data(config.dataset_path)
 df = st.session_state["df"]
 
 # --- Quản lý trạng thái trang ---
@@ -223,9 +310,18 @@ if "page" not in st.session_state:
     st.session_state.page = "🏠 Tổng quan"
 
 if st.session_state.page != "🏠 Tổng quan":
-    if st.button("🏠 Trở về Tổng quan"):
-        st.session_state.page = "🏠 Tổng quan"
-        st.rerun()
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🏠 Tổng quan"):
+            st.session_state.page = "🏠 Tổng quan"
+            st.rerun()
+    with col2:
+        # 🆕 Hiển thị correction stats
+        correction_stats = get_correction_stats()
+        if correction_stats['total'] > 0:
+            st.info(f"📝 Corrections: {correction_stats['total']} total | "
+                   f"🗑️→📥 {correction_stats['spam_to_ham']} | "
+                   f"📥→🗑️ {correction_stats['ham_to_spam']}")
 
 # --- Xử lý OAuth callback từ URL parameters ---
 query_params = st.query_params
@@ -247,15 +343,20 @@ if st.session_state.page == "🏠 Tổng quan":
     total = len(df)
     spam_cnt = len(df[df["Category"] == "spam"])
     ham_cnt  = len(df[df["Category"] == "ham"])
-    c1, c2, c3 = st.columns(3)
+    
+    # 🆕 Thêm correction stats
+    correction_stats = get_correction_stats()
+    
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tổng số Email", total)
     c2.metric("Email Spam", spam_cnt, f"{spam_cnt/total*100:.1f}%")
     c3.metric("Email Ham", ham_cnt, f"{ham_cnt/total*100:.1f}%")
+    c4.metric("🔧 Corrections", correction_stats['total'])
 
     st.markdown("### Tính năng:")
 
     # Nút chuyển đến từng page
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("📊 Phân tích Dữ liệu", use_container_width=True):
             st.session_state.page = "📊 Phân tích Dữ liệu"
@@ -267,6 +368,10 @@ if st.session_state.page == "🏠 Tổng quan":
     with col3:
         if st.button("✉️ Quét Gmail", use_container_width=True):
             st.session_state.page = "✉️ Quét Gmail"
+            st.rerun()
+    with col4:
+        if st.button("🔧 Quản lý Corrections", use_container_width=True):
+            st.session_state.page = "🔧 Quản lý Corrections"
             st.rerun()
 
 # --- Trang Phân tích Dữ liệu ---
@@ -392,9 +497,64 @@ elif st.session_state.page == "📈 Đánh giá Bộ phân loại":
     fig_tfidf_cm = evaluator.plot_tfidf_confusion(tfidf_cm)
     st.pyplot(fig_tfidf_cm)
 
-# --- Trang Quét Gmail ---
-# Thay thế phần Gmail authentication trong app.py:
+# --- Trang Quản lý Corrections ---
+elif st.session_state.page == "🔧 Quản lý Corrections":
+    st.header("🔧 Quản lý Corrections")
+    
+    corrections = load_corrections()
+    
+    if not corrections:
+        st.info("📝 Chưa có correction nào được thực hiện.")
+        st.markdown("Để thêm corrections, hãy:")
+        st.markdown("1. Vào trang **✉️ Quét Gmail**")
+        st.markdown("2. Quét emails và xem kết quả phân loại")
+        st.markdown("3. Sử dụng nút **🔄 Đánh dấu lại** để sửa lỗi phân loại")
+    else:
+        # Thống kê
+        stats = get_correction_stats()
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Tổng Corrections", stats['total'])
+        col2.metric("Spam → Ham", stats['spam_to_ham'])
+        col3.metric("Ham → Spam", stats['ham_to_spam'])
+        
+        # Danh sách corrections
+        st.subheader("📋 Danh sách Corrections")
+        
+        # Convert to DataFrame for display
+        corrections_data = []
+        for email_id, correction in corrections.items():
+            corrections_data.append({
+                'Email ID': email_id[:8] + '...',
+                'Subject': correction['subject'][:50] + '...' if len(correction['subject']) > 50 else correction['subject'],
+                'Sender': correction['sender'][:30] + '...' if len(correction['sender']) > 30 else correction['sender'],
+                'Original': correction['original_prediction'],
+                'Corrected': correction['corrected_label'],
+                'Timestamp': correction['timestamp'][:19]  # Remove microseconds
+            })
+        
+        if corrections_data:
+            df_corrections = pd.DataFrame(corrections_data)
+            st.dataframe(df_corrections, use_container_width=True)
+            
+            # Export corrections
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📥 Export Corrections (JSON)", use_container_width=True):
+                    st.download_button(
+                        label="💾 Download corrections.json",
+                        data=json.dumps(corrections, indent=2, ensure_ascii=False),
+                        file_name=f"corrections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                        mime="application/json"
+                    )
+            
+            with col2:
+                if st.button("🗑️ Xóa tất cả Corrections", use_container_width=True):
+                    if st.button("⚠️ Xác nhận xóa", type="primary"):
+                        if save_corrections({}):
+                            st.success("✅ Đã xóa tất cả corrections!")
+                            st.rerun()
 
+# --- Trang Quét Gmail ---
 elif st.session_state.page == "✉️ Quét Gmail":
     st.header("✉️ Quét Gmail")
 
@@ -404,67 +564,36 @@ elif st.session_state.page == "✉️ Quét Gmail":
         st.markdown("### 🔐 Cần xác thực Gmail")
         st.markdown("Để quét email từ Gmail, bạn cần đăng nhập với tài khoản Google của mình.")
         
-        # 🔥 FIXED: Không gọi function, dùng URL trực tiếp
-        st.markdown("**Nếu Chrome không cho chọn tài khoản:**")
-        col_clear, col_normal = st.columns(2)
-        
-        with col_clear:
-            # 🔧 FIX: Dùng URL trực tiếp thay vì function call
-            logout_url = "https://accounts.google.com/logout"
-            st.markdown(f'<a href="{logout_url}" target="_blank" style="background-color: #ef4444; color: white; padding: 0.6rem 1rem; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0.5rem 0; font-size: 0.9rem;">🚪 Clear Google Session</a>', unsafe_allow_html=True)
-            st.caption("Click này trước để logout Google")
-        
-        with col_normal:
-            # 🔧 FIX: Dùng function có sẵn
-            try:
-                auth_url_fresh = gmail_handler.get_authorization_url()
-                st.markdown(f'<a href="{auth_url_fresh}" target="_blank" style="background-color: #f59e0b; color: white; padding: 0.6rem 1rem; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0.5rem 0; font-size: 0.9rem;">🔥 Đăng nhập Gmail</a>', unsafe_allow_html=True)
-                st.caption("Force login với account selection")
-            except Exception as e:
-                st.error(f"Lỗi tạo auth URL: {str(e)}")
-        
-        st.markdown("---")
-        st.markdown("**Tùy chọn khác:**")
+        # Tùy chọn đăng nhập
+        st.markdown("**Chọn cách đăng nhập:**")
         
         col1, col2 = st.columns(2)
         
         with col1:
+            st.markdown("**Đăng nhập thông thường:**")
+            try:
+                auth_url = gmail_handler.get_authorization_url()
+                st.markdown(f'<a href="{auth_url}" target="_blank" style="background-color: #3b82f6; color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0;">🔑 Đăng nhập Gmail</a>', unsafe_allow_html=True)
+            except Exception as e:
+                st.error(f"Lỗi tạo auth URL: {str(e)}")
+        
+        with col2:
             st.markdown("**Với email cụ thể:**")
             email_hint = st.text_input("Nhập email:", placeholder="user@gmail.com", key="email_hint")
             if email_hint:
                 try:
                     auth_url_hint = gmail_handler.get_authorization_url_with_hint(email_hint)
-                    st.markdown(f'<a href="{auth_url_hint}" target="_blank" style="background-color: #22c55e; color: white; padding: 0.6rem 1rem; text-decoration: none; border-radius: 6px; display: inline-block; margin: 0.5rem 0; font-size: 0.9rem;">🎯 Login {email_hint[:20]}...</a>', unsafe_allow_html=True)
+                    st.markdown(f'<a href="{auth_url_hint}" target="_blank" style="background-color: #22c55e; color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0;">🎯 Login {email_hint[:20]}...</a>', unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"Lỗi tạo auth URL với hint: {str(e)}")
         
-        with col2:
-            st.markdown("**Incognito Mode:**")
-            st.info("💡 Mở Incognito (`Ctrl+Shift+N`) và copy link bên trái vào đó")
-        
-        # Troubleshooting guide
-        with st.expander("🔧 Vẫn không chọn được tài khoản?"):
-            st.markdown("""
-            **Thử theo thứ tự:**
-            
-            1. **Clear Chrome Cache:**
-               - `Ctrl+Shift+Delete` → Chọn "All time" → Clear data
-            
-            2. **Clear Google Cookies cụ thể:**
-               - Chrome Settings → Privacy → Cookies → "See all cookies"
-               - Tìm và xóa: `accounts.google.com`, `oauth2.googleapis.com`
-            
-            3. **Incognito Mode (Khuyên dùng):**
-               - `Ctrl+Shift+N` → Copy link "🔥 Đăng nhập Gmail" vào incognito
-               - Incognito sẽ hiện account selector 100%
-            
-            4. **Browser khác:**
-               - Firefox, Edge thường không có vấn đề cache này
-            
-            5. **Manual logout:**
-               - Vào gmail.com → Logout tất cả tài khoản
-               - Sau đó thử lại
-            """)
+        # Hướng dẫn
+        st.markdown("---")
+        st.markdown("**Hướng dẫn:**")
+        st.markdown("1. Click vào link đăng nhập bên trên")
+        st.markdown("2. Chọn tài khoản Gmail và cho phép quyền truy cập")
+        st.markdown("3. Copy authorization code từ URL redirect")
+        st.markdown("4. Paste code vào ô bên dưới")
         
         st.markdown("---")
         st.markdown("**Nhập authorization code:**")
@@ -473,12 +602,16 @@ elif st.session_state.page == "✉️ Quét Gmail":
         if st.button("🔐 Xác thực", use_container_width=True, type="primary") and auth_code:
             with st.spinner("Đang xác thực..."):
                 try:
-                    if gmail_handler.handle_oauth_callback(auth_code):
-                        st.success("✅ Xác thực thành công!")
-                        st.balloons()
-                        st.rerun()
+                    auth_code = auth_code.strip()
+                    if len(auth_code) < 10:
+                        st.error("❌ Authorization code quá ngắn. Vui lòng kiểm tra lại.")
                     else:
-                        st.error("❌ Lỗi xác thực! Vui lòng kiểm tra code và thử lại.")
+                        if gmail_handler.handle_oauth_callback(auth_code):
+                            st.success("✅ Xác thực thành công!")
+                            st.balloons()
+                            st.rerun()
+                        else:
+                            st.error("❌ Xác thực thất bại. Vui lòng thử code mới.")
                 except Exception as e:
                     st.error(f"❌ Lỗi xác thực: {str(e)}")
         
@@ -549,14 +682,21 @@ elif st.session_state.page == "✉️ Quét Gmail":
                             email['prediction'] = prediction
                             email['confidence'] = confidence
                             email['confidence_scores'] = confidence_scores
+                            
+                            # 🆕 Check if this email has been corrected
+                            corrections = load_corrections()
+                            email['is_corrected'] = email['id'] in corrections
+                            if email['is_corrected']:
+                                email['corrected_label'] = corrections[email['id']]['corrected_label']
+                            
                             classified_emails.append(email)
                             
                             progress_bar.progress((i + 1) / len(emails))
                         
                         # Lưu vào session state
                         st.session_state['classified_emails'] = classified_emails
-                        st.session_state['inbox_emails'] = [e for e in classified_emails if e['prediction'] == 'ham']
-                        st.session_state['spam_emails'] = [e for e in classified_emails if e['prediction'] == 'spam']
+                        st.session_state['inbox_emails'] = [e for e in classified_emails if e.get('corrected_label', e['prediction']) == 'ham']
+                        st.session_state['spam_emails'] = [e for e in classified_emails if e.get('corrected_label', e['prediction']) == 'spam']
                         
                         progress_bar.empty()
                         progress_text.empty()
@@ -565,13 +705,15 @@ elif st.session_state.page == "✉️ Quét Gmail":
                         total_emails = len(classified_emails)
                         spam_count = len(st.session_state['spam_emails'])
                         ham_count = len(st.session_state['inbox_emails'])
+                        corrected_count = len([e for e in classified_emails if e.get('is_corrected', False)])
                         
                         st.success(f"✅ Đã quét và phân loại {total_emails} emails!")
                         
-                        col1, col2, col3 = st.columns(3)
+                        col1, col2, col3, col4 = st.columns(4)
                         col1.metric("Tổng số", total_emails)
                         col2.metric("Ham", ham_count, f"{ham_count/total_emails*100:.1f}%")
                         col3.metric("Spam", spam_count, f"{spam_count/total_emails*100:.1f}%")
+                        col4.metric("🔧 Corrected", corrected_count)
                         
                 except Exception as e:
                     st.error(f"❌ Lỗi khi quét emails: {str(e)}")
@@ -595,29 +737,27 @@ elif st.session_state.page == "✉️ Quét Gmail":
                 inbox_count = len(st.session_state.get('inbox_emails', []))
                 st.markdown(f'<div class="folder-title">📥 Inbox <span class="folder-count">{inbox_count}</span></div>', unsafe_allow_html=True)
                 
-                for email in st.session_state.get('inbox_emails', []):
+                for i, email in enumerate(st.session_state.get('inbox_emails', [])):
                     # Tạo preview
                     subject_preview = email['subject'][:35] + "..." if len(email['subject']) > 35 else email['subject']
                     sender_preview = email['sender'].split('<')[0].strip()[:20] if '<' in email['sender'] else email['sender'][:20]
                     confidence = email.get('confidence', 0)
                     
-                    # HTML cho email item với confidence
-                    email_html = f"""
-                    <div class="email-item" onclick="document.getElementById('inbox_{email['id']}').click()">
-                        <div class="email-subject">{subject_preview}</div>
-                        <div class="email-sender">{sender_preview}</div>
-                        <div class="email-snippet">{email['snippet'][:40]}...</div>
-                        <div style="font-size: 0.7rem; color: #22c55e; margin-top: 0.2rem;">
-                            Confidence: {confidence:.2f}
-                        </div>
-                    </div>
-                    """
-                    st.markdown(email_html, unsafe_allow_html=True)
+                    # 🆕 Tạo badge cho corrected emails
+                    correction_badge = ""
+                    if email.get('is_corrected', False):
+                        if email['prediction'] != email['corrected_label']:
+                            correction_badge = " ✅"  # Đã được sửa
                     
-                    # Hidden button để handle click
-                    if st.button("Select", key=f"inbox_{email['id']}", help="Click to select email"):
-                        st.session_state['selected_email'] = email
-                        st.rerun()
+                    # Button cho inbox emails
+                    with st.container():
+                        if st.button(
+                            f"📧 {subject_preview}{correction_badge}\n👤 {sender_preview}\n📄 {email['snippet'][:40]}...\n✓ Confidence: {confidence:.2f}",
+                            key=f"inbox_{email['id']}_{i}",
+                            use_container_width=True
+                        ):
+                            st.session_state['selected_email'] = email
+                            st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
             
@@ -640,114 +780,154 @@ elif st.session_state.page == "✉️ Quét Gmail":
                     confidence_scores = email.get('confidence_scores', {})
                     confidence_display = ", ".join([f"{k}: {v:.2f}" for k, v in confidence_scores.items()])
                     
+                    # 🆕 Determine current label (corrected or original)
+                    current_label = email.get('corrected_label', email['prediction'])
+                    original_prediction = email['prediction']
+                    is_corrected = email.get('is_corrected', False)
+                    
+                    # 🆕 Status badge
+                    status_badge = ""
+                    if is_corrected:
+                        if original_prediction != current_label:
+                            status_badge = f'<span class="corrected-badge">Đã sửa: {original_prediction} → {current_label}</span>'
+                        else:
+                            status_badge = f'<span class="corrected-badge">Đã xác nhận: {current_label}</span>'
+                    
                     content_html = f"""
                     <div class="content-container">
                         <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #374151;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
                                 <span style="font-weight: bold; color: #3b82f6;">
-                                    {'📥 HAM' if email['prediction'] == 'ham' else '🗑️ SPAM'}
+                                    {'📥 HAM' if current_label == 'ham' else '🗑️ SPAM'}
                                 </span>
-                                <span style="background-color: {'#22c55e' if email['prediction'] == 'ham' else '#ef4444'}; 
-                                            color: white; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem;">
-                                    {email['prediction'].upper()}
+                                <span style="font-size: 0.9rem; color: #9ca3af;">
+                                    Confidence: {email.get('confidence', 0):.2f}
                                 </span>
                             </div>
-                            <div style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 0.3rem;">
-                                <strong>From:</strong> {escape(email['sender'])}
-                            </div>
-                            <div style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 0.3rem;">
-                                <strong>Date:</strong> {escape(email['date'])}
-                            </div>
-                            <div style="font-size: 0.85rem; color: #9ca3af; margin-bottom: 0.3rem;">
-                                <strong>Confidence:</strong> {confidence_display}
-                            </div>
-                            <div style="font-size: 1.1rem; font-weight: bold; color: #f9fafb;">
+                            <div style="font-size: 1.1rem; font-weight: bold; color: #f9fafb; margin-bottom: 0.5rem;">
                                 {escape(email['subject'])}
                             </div>
+                            <div style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 0.5rem;">
+                                From: {escape(email['sender'])}
+                            </div>
+                            <div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 0.5rem;">
+                                {confidence_display}
+                            </div>
+                            {status_badge}
                         </div>
-                        <div style="line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word;">
-                            {escape(body_display).replace(chr(10), '<br>')}
+                        <div style="line-height: 1.6; color: #d1d5db;">
+                            {escape(body_display)}
                         </div>
                     </div>
                     """
                 
                 st.markdown(content_html, unsafe_allow_html=True)
                 
-                # Actions cho email đã chọn
+                # 🆕 Relabel buttons
                 if st.session_state['selected_email'] is not None:
-                    st.markdown("**🔧 Thao tác:**")
+                    email = st.session_state['selected_email']
+                    current_label = email.get('corrected_label', email['prediction'])
+                    
+                    st.markdown('<div class="relabel-buttons">', unsafe_allow_html=True)
+                    st.markdown('<div class="relabel-title">🔄 Đánh dấu lại phân loại</div>', unsafe_allow_html=True)
+                    
                     col1, col2, col3 = st.columns(3)
                     
                     with col1:
-                        if st.button("✅ Đánh dấu đã đọc", use_container_width=True):
-                            email_id = st.session_state['selected_email']['id']
-                            if gmail_handler.mark_as_read(email_id):
-                                st.success("Đã đánh dấu đã đọc!")
-                            else:
-                                st.error("Lỗi đánh dấu đã đọc")
+                        if st.button("📥 Đánh dấu là HAM", use_container_width=True, 
+                                   disabled=(current_label == 'ham'),
+                                   key=f"relabel_ham_{email['id']}"):
+                            if add_correction(email['id'], email['prediction'], 'ham', email):
+                                st.success("✅ Đã đánh dấu lại thành HAM!")
+                                # Update session state
+                                for e in st.session_state['classified_emails']:
+                                    if e['id'] == email['id']:
+                                        e['corrected_label'] = 'ham'
+                                        e['is_corrected'] = True
+                                        break
+                                
+                                # Rebuild inbox/spam lists
+                                st.session_state['inbox_emails'] = [e for e in st.session_state['classified_emails'] 
+                                                                   if e.get('corrected_label', e['prediction']) == 'ham']
+                                st.session_state['spam_emails'] = [e for e in st.session_state['classified_emails'] 
+                                                                  if e.get('corrected_label', e['prediction']) == 'spam']
+                                st.rerun()
                     
                     with col2:
-                        if st.button("🏷️ Gắn nhãn Spam", use_container_width=True):
-                            email_id = st.session_state['selected_email']['id']
-                            if gmail_handler.move_to_label(email_id, "AI_Detected_Spam"):
-                                st.success("Đã gắn nhãn Spam!")
-                            else:
-                                st.error("Lỗi gắn nhãn")
+                        if st.button("🗑️ Đánh dấu là SPAM", use_container_width=True, 
+                                   disabled=(current_label == 'spam'),
+                                   key=f"relabel_spam_{email['id']}"):
+                            if add_correction(email['id'], email['prediction'], 'spam', email):
+                                st.success("✅ Đã đánh dấu lại thành SPAM!")
+                                # Update session state
+                                for e in st.session_state['classified_emails']:
+                                    if e['id'] == email['id']:
+                                        e['corrected_label'] = 'spam'
+                                        e['is_corrected'] = True
+                                        break
+                                
+                                # Rebuild inbox/spam lists
+                                st.session_state['inbox_emails'] = [e for e in st.session_state['classified_emails'] 
+                                                                   if e.get('corrected_label', e['prediction']) == 'ham']
+                                st.session_state['spam_emails'] = [e for e in st.session_state['classified_emails'] 
+                                                                  if e.get('corrected_label', e['prediction']) == 'spam']
+                                st.rerun()
                     
                     with col3:
-                        if st.button("🏷️ Gắn nhãn Ham", use_container_width=True):
-                            email_id = st.session_state['selected_email']['id']
-                            if gmail_handler.move_to_label(email_id, "AI_Detected_Ham"):
-                                st.success("Đã gắn nhãn Ham!")
-                            else:
-                                st.error("Lỗi gắn nhãn")
+                        if st.button("✅ Xác nhận đúng", use_container_width=True,
+                                   key=f"confirm_{email['id']}"):
+                            if add_correction(email['id'], email['prediction'], email['prediction'], email):
+                                st.success("✅ Đã xác nhận phân loại!")
+                                # Update session state
+                                for e in st.session_state['classified_emails']:
+                                    if e['id'] == email['id']:
+                                        e['corrected_label'] = email['prediction']
+                                        e['is_corrected'] = True
+                                        break
+                                st.rerun()
+                    
+                    st.markdown('</div>', unsafe_allow_html=True)
             
-            # Cột Spam (phải)
+            # Cột Spam
             with col_spam:
                 st.markdown('<div class="folder-box">', unsafe_allow_html=True)
                 spam_count = len(st.session_state.get('spam_emails', []))
                 st.markdown(f'<div class="folder-title">🗑️ Spam <span class="folder-count">{spam_count}</span></div>', unsafe_allow_html=True)
                 
-                for email in st.session_state.get('spam_emails', []):
+                for i, email in enumerate(st.session_state.get('spam_emails', [])):
                     # Tạo preview
                     subject_preview = email['subject'][:35] + "..." if len(email['subject']) > 35 else email['subject']
                     sender_preview = email['sender'].split('<')[0].strip()[:20] if '<' in email['sender'] else email['sender'][:20]
                     confidence = email.get('confidence', 0)
                     
-                    # HTML cho email item với confidence
-                    email_html = f"""
-                    <div class="email-item" onclick="document.getElementById('spam_{email['id']}').click()" 
-                         style="border-left-color: #ef4444;">
-                        <div class="email-subject">{subject_preview}</div>
-                        <div class="email-sender">{sender_preview}</div>
-                        <div class="email-snippet">{email['snippet'][:40]}...</div>
-                        <div style="font-size: 0.7rem; color: #ef4444; margin-top: 0.2rem;">
-                            Confidence: {confidence:.2f}
-                        </div>
-                    </div>
-                    """
-                    st.markdown(email_html, unsafe_allow_html=True)
+                    # 🆕 Tạo badge cho corrected emails
+                    correction_badge = ""
+                    if email.get('is_corrected', False):
+                        if email['prediction'] != email['corrected_label']:
+                            correction_badge = " ✅"  # Đã được sửa
                     
-                    # Hidden button để handle click
-                    if st.button("Select", key=f"spam_{email['id']}", help="Click to select email"):
-                        st.session_state['selected_email'] = email
-                        st.rerun()
+                    # Button cho spam emails
+                    with st.container():
+                        if st.button(
+                            f"🗑️ {subject_preview}{correction_badge}\n👤 {sender_preview}\n📄 {email['snippet'][:40]}...\n⚠️ Confidence: {confidence:.2f}",
+                            key=f"spam_{email['id']}_{i}",
+                            use_container_width=True
+                        ):
+                            st.session_state['selected_email'] = email
+                            st.rerun()
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
         # Logout button
         st.markdown("---")
-        if st.button("🚪 Đăng xuất Gmail", type="secondary"):
-            # Clear tất cả session data liên quan đến Gmail
-            keys_to_clear = [
-                'gmail_credentials', 'oauth_flow', 'oauth_state',
-                'classified_emails', 'inbox_emails', 'spam_emails', 'selected_email'
-            ]
-            for key in keys_to_clear:
-                if key in st.session_state:
-                    del st.session_state[key]
-            st.success("Đã đăng xuất!")
+        if st.button("🔓 Đăng xuất", use_container_width=True):
+            # Clear session state
+            if 'gmail_credentials' in st.session_state:
+                del st.session_state['gmail_credentials']
+            if 'oauth_flow' in st.session_state:
+                del st.session_state['oauth_flow']
+            if 'oauth_state' in st.session_state:
+                del st.session_state['oauth_state']
+            st.success("✅ Đã đăng xuất!")
             st.rerun()
-
-# --- Footer ---
-st.markdown("<footer>Được xây dựng với Streamlit | Vận hành bởi pipeline AI của bạn.</footer>", unsafe_allow_html=True)
+        custom_

@@ -1,21 +1,5 @@
 """
-Gmail API Handler cho Streamlit App với OAuth flow
-"""
-import os
-import base64
-import logging
-from typing import List, Dict, Any
-from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import Flow
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from googleapiclient.errors import HttpError
-import streamlit as st
-
-logger = logging.getLogger(__name__)
-
-"""
-Gmail API Handler cho Streamlit App với OAuth flow
+Gmail API Handler cho Streamlit App với OAuth flow - FIXED VERSION
 """
 import os
 import base64
@@ -65,11 +49,11 @@ class GmailHandler:
                 redirect_uri='http://localhost:8080'
             )
             
+            # ✅ FIX: Chỉ dùng 'prompt', bỏ 'approval_prompt'
             auth_url, state = flow.authorization_url(
                 access_type='offline',
                 include_granted_scopes='true',
-                prompt='select_account',  # 🔥 QUAN TRỌNG: Bắt buộc chọn tài khoản
-                # prompt='consent'  # Thay bằng 'select_account'
+                prompt='consent select_account',  # ✅ Sử dụng prompt thay vì approval_prompt
             )
             
             # Lưu flow và state vào session để dùng sau
@@ -103,7 +87,7 @@ class GmailHandler:
             auth_params = {
                 'access_type': 'offline',
                 'include_granted_scopes': 'true',
-                'prompt': 'select_account',
+                'prompt': 'select_account',  # ✅ FIX: Chỉ dùng prompt
             }
             
             # Thêm login_hint nếu có
@@ -138,6 +122,14 @@ class GmailHandler:
             if not flow:
                 logger.error("Không tìm thấy OAuth flow trong session")
                 return False
+            
+            # Clean authorization code (remove whitespace)
+            authorization_code = authorization_code.strip()
+            
+            # Validate code format
+            if not authorization_code or len(authorization_code) < 10:
+                logger.error("Authorization code không hợp lệ")
+                return False
                 
             # Fetch token từ authorization code
             flow.fetch_token(code=authorization_code)
@@ -160,7 +152,19 @@ class GmailHandler:
             return True
             
         except Exception as e:
-            logger.error(f"Lỗi OAuth callback: {str(e)}")
+            error_msg = str(e)
+            logger.error(f"Lỗi OAuth callback: {error_msg}")
+            
+            # Specific error handling
+            if "invalid_grant" in error_msg:
+                logger.error("Authorization code đã hết hạn hoặc đã được sử dụng")
+                st.error("❌ Authorization code đã hết hạn hoặc đã được sử dụng. Vui lòng tạo mới.")
+            elif "invalid_request" in error_msg:
+                logger.error("Request không hợp lệ")
+                st.error("❌ Request không hợp lệ. Vui lòng kiểm tra lại authorization code.")
+            else:
+                st.error(f"❌ Lỗi xác thực: {error_msg}")
+            
             return False
     
     def initialize_service_from_session(self) -> bool:
@@ -309,13 +313,13 @@ class GmailHandler:
     
     def _extract_body(self, payload: Dict) -> str:
         """
-        Extract body từ email payload.
+        Extract body từ email payload với HTML parsing.
         
         Args:
             payload: Email payload từ Gmail API
             
         Returns:
-            Text body của email
+            Text body của email (đã parse HTML)
         """
         body = ""
         
@@ -338,27 +342,98 @@ class GmailHandler:
                     data = part.get('body', {}).get('data', '')
                     if data:
                         try:
-                            body = base64.urlsafe_b64decode(data).decode('utf-8')
-                            # TODO: Có thể thêm HTML parsing ở đây nếu cần
+                            html_content = base64.urlsafe_b64decode(data).decode('utf-8')
+                            body = self._html_to_text(html_content)
                         except Exception as e:
                             logger.warning(f"Lỗi decode HTML body: {str(e)}")
                             continue
         
         # Xử lý email đơn giản (không có parts)
         else:
-            if payload.get('mimeType') in ['text/plain', 'text/html']:
+            if payload.get('mimeType') == 'text/plain':
                 data = payload.get('body', {}).get('data', '')
                 if data:
                     try:
                         body = base64.urlsafe_b64decode(data).decode('utf-8')
                     except Exception as e:
                         logger.warning(f"Lỗi decode single body: {str(e)}")
+            elif payload.get('mimeType') == 'text/html':
+                data = payload.get('body', {}).get('data', '')
+                if data:
+                    try:
+                        html_content = base64.urlsafe_b64decode(data).decode('utf-8')
+                        body = self._html_to_text(html_content)
+                    except Exception as e:
+                        logger.warning(f"Lỗi decode HTML single body: {str(e)}")
         
         # Fallback to snippet nếu không extract được body
-        if not body:
+        if not body or len(body.strip()) < 10:
             body = payload.get('snippet', 'No content available')
             
         return body
+    
+    def _html_to_text(self, html_content: str) -> str:
+        """
+        Convert HTML content thành plain text.
+        
+        Args:
+            html_content: HTML string
+            
+        Returns:
+            Plain text đã được làm sạch
+        """
+        try:
+            from bs4 import BeautifulSoup
+            
+            # Parse HTML
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # Remove script và style tags
+            for script in soup(["script", "style"]):
+                script.decompose()
+            
+            # Get text và clean up
+            text = soup.get_text()
+            
+            # Clean up whitespace
+            lines = (line.strip() for line in text.splitlines())
+            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+            text = '\n'.join(chunk for chunk in chunks if chunk)
+            
+            return text
+            
+        except ImportError:
+            # Fallback nếu không có BeautifulSoup
+            logger.warning("BeautifulSoup không có, sử dụng regex để parse HTML")
+            return self._html_to_text_regex(html_content)
+        except Exception as e:
+            logger.warning(f"Lỗi parse HTML với BeautifulSoup: {str(e)}")
+            return self._html_to_text_regex(html_content)
+    
+    def _html_to_text_regex(self, html_content: str) -> str:
+        """
+        Fallback HTML parser sử dụng regex (không cần BeautifulSoup).
+        
+        Args:
+            html_content: HTML string
+            
+        Returns:
+            Plain text
+        """
+        import re
+        
+        # Remove HTML tags
+        text = re.sub(r'<[^>]+>', '', html_content)
+        
+        # Decode HTML entities
+        import html
+        text = html.unescape(text)
+        
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text)
+        text = text.strip()
+        
+        return text
     
     def mark_as_read(self, message_id: str) -> bool:
         """
@@ -483,6 +558,9 @@ class GmailHandler:
                 'total_messages': profile.get('messagesTotal', 0),
                 'total_threads': profile.get('threadsTotal', 0)
             }
+        except HttpError as e:
+            logger.error(f"Lỗi Gmail API khi lấy profile: {str(e)}")
+            raise
         except Exception as e:
-            logger.error(f"Lỗi khi lấy user profile: {str(e)}")
-            return {'email': 'Unknown', 'total_messages': 0, 'total_threads': 0}
+            logger.error(f"Lỗi không xác định khi lấy profile: {str(e)}")
+            raise
