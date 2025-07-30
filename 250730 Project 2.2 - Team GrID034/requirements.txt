@@ -1,0 +1,16 @@
+#python -m pip install --upgrade pip && pip install -r requirements.txt
+gdown == 5.2.0
+torch == 2.7.1
+numpy == 2.2.6
+pandas == 2.2.3
+scikit-learn == 1.7.1
+tqdm == 4.67.1
+transformers == 4.53.3
+nltk == 3.9.1
+matplotlib == 3.10.3
+seaborn == 0.13.2
+streamlit==1.36.0
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+faiss-cpu
