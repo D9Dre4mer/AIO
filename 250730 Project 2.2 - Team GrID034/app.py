@@ -825,10 +825,29 @@ elif st.session_state.page == "🔧 Quản lý Corrections":
                     )
             
             with col2:
-                if st.button("🗑️ Xóa tất cả Corrections", use_container_width=True):
-                    if st.button("⚠️ Xác nhận xóa", type="primary"):
-                        if save_corrections({}):
-                            st.success("✅ Đã xóa tất cả corrections!")
+                # Sử dụng session state để quản lý trạng thái xác nhận
+                if 'show_delete_confirmation' not in st.session_state:
+                    st.session_state.show_delete_confirmation = False
+                
+                if not st.session_state.show_delete_confirmation:
+                    if st.button("🗑️ Xóa tất cả Corrections", use_container_width=True):
+                        st.session_state.show_delete_confirmation = True
+                        st.rerun()
+                else:
+                    st.warning("⚠️ Bạn có chắc chắn muốn xóa tất cả corrections?")
+                    col_confirm1, col_confirm2 = st.columns(2)
+                    with col_confirm1:
+                        if st.button("✅ Xác nhận xóa", type="primary", use_container_width=True):
+                            if save_corrections({}):
+                                # Clear session state variables
+                                st.session_state.show_delete_confirmation = False
+                                if 'selected_email' in st.session_state:
+                                    st.session_state['selected_email'] = None
+                                st.success("✅ Đã xóa tất cả corrections!")
+                                st.rerun()
+                    with col_confirm2:
+                        if st.button("❌ Hủy", use_container_width=True):
+                            st.session_state.show_delete_confirmation = False
                             st.rerun()
 
 # --- Trang Quét Gmail ---
