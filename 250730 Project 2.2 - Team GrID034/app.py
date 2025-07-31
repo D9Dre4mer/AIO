@@ -18,179 +18,395 @@ from email_handler import GmailHandler
 st.set_page_config(page_title="Bảng điều khiển Spam Mail", layout="centered")
 st.markdown("""
 <style>
-/* Chỉnh theme tối toàn cục */
+/* Royal Green Theme - Professional Design */
+:root {
+    --royal-green: #1a4d2e;
+    --royal-green-light: #2d5a3d;
+    --royal-green-dark: #0f2e1a;
+    --royal-green-accent: #4ade80;
+    --royal-green-accent-dark: #22c55e;
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --border-color: #475569;
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --error-color: #ef4444;
+    --info-color: #3b82f6;
+}
+
+/* Global Theme */
 html, body, [class*="css"] {
-    font-family: 'Segoe UI', sans-serif;
-    color: #f0f0f0;
-    background-color: #111827;
-}
-/* Style cho button */
-.stButton > button {
-    background-color: #3b82f6;
-    color: white;
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
-    transition: all 0.3s ease;
-}
-.stButton > button:hover {
-    background-color: #2563eb;
-    transform: translateY(-2px);
-}
-/* Tiêu đề lớn và đoạn mô tả */
-.main-title {
-    font-size: 2.8rem;
-    font-weight: bold;
-    margin-top: 1rem;
-    color: #f9fafb;
-    text-align: center;
-    text-shadow: 1px 1px 5px #3b82f6;
-}
-.subtext {
-    font-size: 1.1rem;
+    font-family: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--text-primary);
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--royal-green-dark) 100%);
     line-height: 1.6;
-    color: #d1d5db;
-    max-width: 800px;
-    margin: auto;
 }
-footer {
-    color: #9ca3af;
-    font-size: 0.85rem;
-    text-align: center;
-    margin-top: 2rem;
+
+/* Enhanced Button Styles */
+.stButton > button {
+    background: linear-gradient(135deg, var(--royal-green) 0%, var(--royal-green-light) 100%);
+    color: var(--text-primary);
+    border: none;
+    border-radius: 12px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 6px rgba(26, 77, 46, 0.2);
+    position: relative;
+    overflow: hidden;
 }
-/* Hộp thư */
-.folder-box {
-    background-color: #1f2937;
-    border-radius: 8px;
-    padding: 0.2rem 0.5rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    margin-bottom: 1rem;
+
+.stButton > button:hover {
+    background: linear-gradient(135deg, var(--royal-green-light) 0%, var(--royal-green-accent-dark) 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(26, 77, 46, 0.3);
 }
-.folder-title {
-    font-size: 1.2rem;
-    font-weight: bold;
-    color: #3b82f6;
+
+.stButton > button:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(26, 77, 46, 0.2);
+}
+
+/* Navigation Buttons - Uniform Sizing */
+.stButton > button[data-testid="baseButton-secondary"] {
+    min-height: 3.5rem;
+    min-width: 100%;
     display: flex;
     align-items: center;
-    margin-top: 0;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 1rem 1.5rem;
 }
+
+/* Ensure all navigation buttons have consistent height */
+div[data-testid="column"] .stButton > button {
+    height: 3.5rem;
+    min-height: 3.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    white-space: nowrap;
+}
+
+/* Professional Title and Description */
+.main-title {
+    font-size: 3.2rem;
+    font-weight: 800;
+    margin: 2rem 0 1rem 0;
+    text-align: center;
+    color: var(--royal-green-accent);
+    text-shadow: 0 2px 4px rgba(74, 222, 128, 0.3);
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.main-title span {
+    background: linear-gradient(135deg, var(--royal-green-accent) 0%, var(--royal-green-accent-dark) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.subtext {
+    font-size: 1.2rem;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    max-width: 800px;
+    margin: 0 auto 2rem auto;
+    text-align: center;
+    font-weight: 400;
+}
+
+/* Enhanced Folder Boxes */
+.folder-box {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(10px);
+}
+
+.folder-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--royal-green-accent);
+    display: flex;
+    align-items: center;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 .folder-count {
-    background-color: #ef4444;
-    color: white;
-    border-radius: 50%;
-    padding: 0.2rem 0.6rem;
-    margin-left: 0.5rem;
-    font-size: 0.9rem;
+    background: linear-gradient(135deg, var(--royal-green-accent) 0%, var(--royal-green-accent-dark) 100%);
+    color: var(--text-primary);
+    border-radius: 20px;
+    padding: 0.3rem 0.8rem;
+    margin-left: 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(74, 222, 128, 0.3);
 }
-/* Style trực tiếp cho button trong list */
+
+/* Enhanced Folder Buttons */
 .folder-box .stButton > button {
-    background-color: #374151;
-    margin: 0.3rem 0;
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--royal-green-dark) 100%);
+    border: 1px solid var(--border-color);
+    margin: 0.5rem 0;
     width: 100%;
     text-align: left;
-}
-.folder-box .stButton > button:hover {
-    background-color: #4b5563;
-    transform: translateY(-2px);
-}
-/* Nội dung mails */
-.content-container {
-    background-color: #1f2937;
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 1rem;
-    min-height: 300px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.folder-box .stButton > button:hover {
+    background: linear-gradient(135deg, var(--royal-green-light) 0%, var(--royal-green) 100%);
+    border-color: var(--royal-green-accent);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(26, 77, 46, 0.3);
+}
+
+/* Enhanced Content Container */
+.content-container {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    min-height: 350px;
     display: flex;
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    color: #d1d5db;
+    color: var(--text-secondary);
     overflow-y: auto;
     max-width: 100%;
     word-wrap: break-word;
     white-space: pre-wrap;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
 }
+
 .placeholder {
-    color: #9ca3af;
+    color: var(--text-muted);
     font-style: italic;
     text-align: center;
     flex-grow: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-.auth-box {
-    background-color: #1f2937;
-    border-radius: 8px;
-    padding: 2rem;
-    text-align: center;
-    margin: 2rem 0;
-    border: 2px solid #3b82f6;
-}
-.email-item {
-    background-color: #374151;
-    border-radius: 6px;
-    padding: 0.8rem;
-    margin: 0.5rem 0;
-    border-left: 4px solid #3b82f6;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-.email-item:hover {
-    background-color: #4b5563;
-    transform: translateX(4px);
-}
-.email-subject {
-    font-weight: bold;
-    font-size: 1rem;
-    color: #f9fafb;
-    margin-bottom: 0.3rem;
-}
-.email-sender {
-    font-size: 0.85rem;
-    color: #9ca3af;
-    margin-bottom: 0.2rem;
-}
-.email-snippet {
-    font-size: 0.8rem;
-    color: #d1d5db;
-    opacity: 0.8;
-}
-.user-profile {
-    background-color: #1f2937;
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border: 1px solid #374151;
-}
-/* 🆕 Style cho relabel buttons */
-.relabel-buttons {
-    background-color: #1f2937;
-    border-radius: 8px;
-    padding: 1rem;
-    margin: 1rem 0;
-    border: 2px solid #fbbf24;
-}
-.relabel-title {
-    color: #fbbf24;
-    font-weight: bold;
-    margin-bottom: 0.5rem;
     font-size: 1.1rem;
 }
-.correction-badge {
-    background-color: #dc2626;
-    color: white;
-    border-radius: 4px;
-    padding: 0.2rem 0.5rem;
-    font-size: 0.8rem;
-    margin-left: 0.5rem;
+
+/* Enhanced Auth Box */
+.auth-box {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 20px;
+    padding: 2.5rem;
+    text-align: center;
+    margin: 2rem 0;
+    border: 2px solid var(--royal-green-accent);
+    box-shadow: 0 12px 40px rgba(26, 77, 46, 0.2);
+    backdrop-filter: blur(10px);
 }
-.corrected-badge {
-    background-color: #16a34a;
-    color: white;
-    border-radius: 4px;
-    padding: 0.2rem 0.5rem;
+
+/* Enhanced Email Items */
+.email-item {
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 12px;
+    padding: 1rem;
+    margin: 0.8rem 0;
+    border-left: 4px solid var(--royal-green-accent);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.email-item:hover {
+    background: linear-gradient(135deg, var(--royal-green-light) 0%, var(--royal-green) 100%);
+    transform: translateX(6px);
+    box-shadow: 0 8px 25px rgba(26, 77, 46, 0.2);
+}
+
+.email-subject {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    margin-bottom: 0.4rem;
+}
+
+.email-sender {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.3rem;
+}
+
+.email-snippet {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    opacity: 0.9;
+}
+
+/* Enhanced User Profile */
+.user-profile {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+/* Enhanced Relabel Buttons */
+.relabel-buttons {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    border: 2px solid var(--warning-color);
+    box-shadow: 0 8px 32px rgba(245, 158, 11, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+.relabel-title {
+    color: var(--warning-color);
+    font-weight: 700;
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Enhanced Badges */
+.correction-badge {
+    background: linear-gradient(135deg, var(--error-color) 0%, #dc2626 100%);
+    color: var(--text-primary);
+    border-radius: 8px;
+    padding: 0.3rem 0.8rem;
     font-size: 0.8rem;
+    font-weight: 600;
     margin-left: 0.5rem;
+    box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+}
+
+.corrected-badge {
+    background: linear-gradient(135deg, var(--success-color) 0%, var(--royal-green-accent-dark) 100%);
+    color: var(--text-primary);
+    border-radius: 8px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+/* Enhanced Metrics */
+[data-testid="metric-container"] {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+}
+
+/* Enhanced Expanders */
+.streamlit-expanderHeader {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%) !important;
+    border-radius: 12px !important;
+    border: 1px solid var(--border-color) !important;
+    color: var(--royal-green-accent) !important;
+    font-weight: 600 !important;
+}
+
+/* Enhanced Selectbox */
+.stSelectbox > div > div {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+/* Enhanced Text Input */
+.stTextInput > div > div > input {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-primary);
+}
+
+/* Enhanced Number Input */
+.stNumberInput > div > div > input {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--royal-green-dark) 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    color: var(--text-primary);
+}
+
+/* Enhanced Progress Bar */
+.stProgress > div > div > div {
+    background: linear-gradient(135deg, var(--royal-green-accent) 0%, var(--royal-green-accent-dark) 100%);
+    border-radius: 8px;
+}
+
+/* Enhanced Success/Error Messages */
+.element-container .stAlert {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg, var(--royal-green) 0%, var(--royal-green-light) 100%);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(135deg, var(--royal-green-light) 0%, var(--royal-green-accent) 100%);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .main-title {
+        font-size: 2.5rem;
+    }
+    
+    .subtext {
+        font-size: 1rem;
+    }
+    
+    .folder-box {
+        padding: 1rem;
+    }
+    
+    .content-container {
+        padding: 1rem;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -208,15 +424,26 @@ def get_gmail_handler():
 
 # --- Tải và cache pipeline để tái sử dụng ---
 @st.cache_resource
-def load_pipeline():
+def load_pipeline(classifier_type: str = 'knn'):
     """
     Khởi tạo và train pipeline phân loại spam.
     Kết quả được cache để không train lại mỗi lần rerun.
+    
+    Args:
+        classifier_type: Loại bộ phân loại ('knn' hoặc 'tfidf')
     """
     cfg = SpamClassifierConfig()
-    pipeline = SpamClassifierPipeline(cfg)
+    pipeline = SpamClassifierPipeline(cfg, classifier_type=classifier_type)
     pipeline.train()
     return pipeline
+
+@st.cache_resource
+def load_pipeline_with_classifier(classifier_type: str = 'knn'):
+    """
+    Khởi tạo pipeline với bộ phân loại được chỉ định.
+    Cache riêng cho từng loại classifier.
+    """
+    return load_pipeline(classifier_type)
 
 # --- Tải dữ liệu mẫu vào session_state ---
 @st.cache_data
@@ -295,6 +522,7 @@ def get_correction_stats():
 # Khởi tạo các components
 try:
     gmail_handler = get_gmail_handler()
+    # Khởi tạo pipeline mặc định (KNN)
     pipeline = load_pipeline()
 except Exception as e:
     st.error(f"Lỗi khởi tạo ứng dụng: {str(e)}")
@@ -336,7 +564,7 @@ if "code" in query_params and "state" in query_params:
 
 # --- Trang Tổng quan (Overview) ---
 if st.session_state.page == "🏠 Tổng quan":
-    st.markdown('<h1 class="main-title">📧 Bộ phân loại Spam/Ham Mail</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">📧 <span>Bộ phân loại EMail</span></h1>', unsafe_allow_html=True)
     st.markdown('<div class="subtext">Khám phá và phân loại email với giao diện tương tác!</div>', unsafe_allow_html=True)
 
     # Thống kê nhanh
@@ -573,7 +801,7 @@ elif st.session_state.page == "✉️ Quét Gmail":
             st.markdown("**Đăng nhập thông thường:**")
             try:
                 auth_url = gmail_handler.get_authorization_url()
-                st.markdown(f'<a href="{auth_url}" target="_blank" style="background-color: #3b82f6; color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0;">🔑 Đăng nhập Gmail</a>', unsafe_allow_html=True)
+                st.markdown(f'<a href="{auth_url}" target="_blank" style="background: linear-gradient(135deg, var(--royal-green) 0%, var(--royal-green-light) 100%); color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 12px; display: inline-block; margin: 1rem 0; font-weight: 600; font-size: 0.95rem; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 4px 6px rgba(26, 77, 46, 0.2); border: none;">🔑 Đăng nhập Gmail</a>', unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Lỗi tạo auth URL: {str(e)}")
         
@@ -632,6 +860,57 @@ elif st.session_state.page == "✉️ Quét Gmail":
             st.warning(f"Không thể lấy thông tin profile: {str(e)}")
         
         # Controls cho quét email
+        st.markdown("### ⚙️ Cài đặt quét email")
+        
+        # Chọn bộ phân loại
+        classifier_option = st.selectbox(
+            "🔍 Chọn bộ phân loại:",
+            [
+                ("knn", "KNN với Embeddings (Độ chính xác cao)"),
+                ("tfidf", "TF-IDF (Tốc độ nhanh)")
+            ],
+            format_func=lambda x: x[1],
+            help="KNN: Sử dụng embeddings từ mô hình đa ngôn ngữ, độ chính xác cao nhưng chậm hơn. TF-IDF: Phân loại dựa trên tần suất từ, nhanh nhưng có thể kém chính xác hơn."
+        )
+        selected_classifier = classifier_option[0]
+        
+        # Load pipeline với classifier được chọn
+        try:
+            current_pipeline = load_pipeline_with_classifier(selected_classifier)
+            
+            # Hiển thị thông tin về bộ phân loại
+            classifier_info = {
+                'knn': {
+                    'name': 'KNN với Embeddings',
+                    'description': 'Sử dụng mô hình đa ngôn ngữ E5 để tạo embeddings, sau đó dùng K-Nearest Neighbors để phân loại',
+                    'pros': '✅ Độ chính xác cao, hỗ trợ đa ngôn ngữ',
+                    'cons': '⚠️ Tốc độ chậm hơn, cần nhiều bộ nhớ'
+                },
+                'tfidf': {
+                    'name': 'TF-IDF + SVM',
+                    'description': 'Sử dụng TF-IDF để vector hóa văn bản, kết hợp với SVM để phân loại',
+                    'pros': '⚡ Tốc độ nhanh, ít tốn bộ nhớ',
+                    'cons': '⚠️ Có thể kém chính xác hơn với văn bản phức tạp'
+                }
+            }
+            
+            info = classifier_info[selected_classifier]
+            
+            with st.expander(f"ℹ️ Thông tin bộ phân loại: {info['name']}", expanded=False):
+                st.markdown(f"**Mô tả:** {info['description']}")
+                st.markdown(f"**Ưu điểm:** {info['pros']}")
+                st.markdown(f"**Nhược điểm:** {info['cons']}")
+            
+            st.success(f"✅ Đã tải bộ phân loại: {info['name']}")
+            
+            # Lưu thông tin classifier vào session state
+            st.session_state['current_classifier'] = selected_classifier
+            st.session_state['current_classifier_name'] = info['name']
+            
+        except Exception as e:
+            st.error(f"❌ Lỗi tải bộ phân loại: {str(e)}")
+            st.stop()
+        
         col1, col2 = st.columns([1, 1])
         
         with col1:
@@ -674,10 +953,22 @@ elif st.session_state.page == "✉️ Quét Gmail":
                             # Sử dụng subject + body để phân loại
                             text_to_classify = f"{email['subject']} {email['body']}"
                             
-                            result = pipeline.predict(text_to_classify)
+                            result = current_pipeline.predict(text_to_classify)
                             prediction = result['prediction']
-                            confidence_scores = result.get('label_distribution', {})
-                            confidence = max(confidence_scores.values()) if confidence_scores else 0.5
+                            
+                            # Xử lý confidence scores khác nhau cho từng classifier
+                            if selected_classifier == 'knn':
+                                confidence_scores = result.get('label_distribution', {})
+                                confidence = max(confidence_scores.values()) if confidence_scores else 0.5
+                            else:  # tfidf
+                                confidence_scores = result.get('probabilities', {})
+                                confidence = max(confidence_scores.values()) if confidence_scores else 0.5
+                            
+                            # Lưu confidence scores với tên phù hợp cho từng classifier
+                            if selected_classifier == 'knn':
+                                email['confidence_scores'] = confidence_scores
+                            else:  # tfidf
+                                email['confidence_scores'] = confidence_scores
                             
                             email['prediction'] = prediction
                             email['confidence'] = confidence
@@ -707,7 +998,8 @@ elif st.session_state.page == "✉️ Quét Gmail":
                         ham_count = len(st.session_state['inbox_emails'])
                         corrected_count = len([e for e in classified_emails if e.get('is_corrected', False)])
                         
-                        st.success(f"✅ Đã quét và phân loại {total_emails} emails!")
+                        classifier_name = "KNN với Embeddings" if selected_classifier == 'knn' else "TF-IDF"
+                        st.success(f"✅ Đã quét và phân loại {total_emails} emails bằng {classifier_name}!")
                         
                         col1, col2, col3, col4 = st.columns(4)
                         col1.metric("Tổng số", total_emails)
@@ -767,7 +1059,15 @@ elif st.session_state.page == "✉️ Quét Gmail":
                     content_html = """
                     <div class="content-container">
                         <div class="placeholder">
-                            📧 Chọn một email từ Inbox hoặc Spam để xem nội dung
+                            <div style="text-align: center; padding: 2rem;">
+                                <div style="font-size: 3rem; margin-bottom: 1rem;">📧</div>
+                                <div style="font-size: 1.3rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--royal-green-accent);">
+                                    Chọn một email
+                                </div>
+                                <div style="font-size: 1rem; color: var(--text-secondary);">
+                                    Từ Inbox hoặc Spam để xem nội dung chi tiết
+                                </div>
+                            </div>
                         </div>
                     </div>
                     """
@@ -795,27 +1095,27 @@ elif st.session_state.page == "✉️ Quét Gmail":
                     
                     content_html = f"""
                     <div class="content-container">
-                        <div style="margin-bottom: 1rem; padding-bottom: 1rem; border-bottom: 1px solid #374151;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-                                <span style="font-weight: bold; color: #3b82f6;">
+                        <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid var(--border-color);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+                                <span style="font-weight: 700; color: var(--royal-green-accent); font-size: 1.1rem;">
                                     {'📥 HAM' if current_label == 'ham' else '🗑️ SPAM'}
                                 </span>
-                                <span style="font-size: 0.9rem; color: #9ca3af;">
+                                <span style="font-size: 0.95rem; color: var(--text-secondary); font-weight: 600;">
                                     Confidence: {email.get('confidence', 0):.2f}
                                 </span>
                             </div>
-                            <div style="font-size: 1.1rem; font-weight: bold; color: #f9fafb; margin-bottom: 0.5rem;">
+                            <div style="font-size: 1.3rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.8rem; line-height: 1.4;">
                                 {escape(email['subject'])}
                             </div>
-                            <div style="font-size: 0.9rem; color: #9ca3af; margin-bottom: 0.5rem;">
+                            <div style="font-size: 1rem; color: var(--text-secondary); margin-bottom: 0.6rem; font-weight: 500;">
                                 From: {escape(email['sender'])}
                             </div>
-                            <div style="font-size: 0.85rem; color: #6b7280; margin-bottom: 0.5rem;">
+                            <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.8rem; font-family: 'Courier New', monospace;">
                                 {confidence_display}
                             </div>
                             {status_badge}
                         </div>
-                        <div style="line-height: 1.6; color: #d1d5db;">
+                        <div style="line-height: 1.8; color: var(--text-secondary); font-size: 1rem;">
                             {escape(body_display)}
                         </div>
                     </div>
@@ -930,4 +1230,3 @@ elif st.session_state.page == "✉️ Quét Gmail":
                 del st.session_state['oauth_state']
             st.success("✅ Đã đăng xuất!")
             st.rerun()
-        custom_
