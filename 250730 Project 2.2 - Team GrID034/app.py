@@ -173,6 +173,55 @@ div[data-testid="column"] .stButton > button {
     padding: 1rem;
     font-size: 0.9rem;
     line-height: 1.4;
+    white-space: normal !important; 
+    word-wrap: break-word !important; 
+    overflow-wrap: break-word !important; 
+    min-height: auto !important;
+    height: auto !important; 
+    display: block !important; 
+    text-overflow: unset !important; 
+    overflow: visible !important; 
+    max-width: none !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+}
+
+/* Force text wrapping for email buttons specifically */
+.folder-box .stButton > button[data-testid="baseButton-secondary"] {
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    display: block !important;
+    text-overflow: unset !important;
+    overflow: visible !important;
+    line-height: 1.5 !important;
+    padding: 1rem !important;
+    text-align: left !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    flex-direction: column !important;
+}
+
+/* Additional CSS to force text wrapping on button content */
+.folder-box .stButton > button * {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+}
+
+/* Target the button text content specifically */
+.folder-box .stButton > button p {
+    white-space: pre-wrap !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    word-break: break-word !important;
+    margin: 0 !important;
+    padding: 0 !important;
 }
 
 .folder-box .stButton > button:hover {
@@ -1039,12 +1088,61 @@ elif st.session_state.page == "✉️ Quét Gmail":
                     correction_badge = ""
                     if email.get('is_corrected', False):
                         if email['prediction'] != email['corrected_label']:
-                            correction_badge = " ✅"  # Đã được sửa
+                            correction_badge = " ✅" 
                     
                     # Button cho inbox emails
                     with st.container():
+                        # Hiển thị tiêu đề mail trên nhiều dòng nếu dài
+                        subject_full = email['subject']
+                        # Tạo nội dung nút với tiêu đề đầy đủ, xuống dòng nếu dài
+                        # Chia tiêu đề thành nhiều dòng nếu quá dài
+                        subject_lines = []
+                        subject = subject_full
+                        while len(subject) > 30:
+                            subject_lines.append(subject[:30])
+                            subject = subject[30:]
+                        if subject:
+                            subject_lines.append(subject)
+                        
+                        subject_display = "\n".join(subject_lines)
+                        
+                        # Tạo HTML button với text wrapping hoàn toàn
+                        button_html = f"""
+                        <div style="
+                            background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--royal-green-dark) 100%);
+                            border: 1px solid var(--border-color);
+                            border-radius: 12px;
+                            padding: 1rem;
+                            margin: 0.5rem 0;
+                            cursor: pointer;
+                            transition: all 0.3s ease;
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                            overflow-wrap: break-word;
+                            text-align: left;
+                            font-size: 0.9rem;
+                            line-height: 1.5;
+                            color: var(--text-primary);
+                            width: 100%;
+                            box-sizing: border-box;
+                            min-height: auto;
+                            height: auto;
+                        " onmouseover="this.style.background='linear-gradient(135deg, var(--royal-green-light) 0%, var(--royal-green) 100%)'; this.style.transform='translateY(-2px)';" 
+                           onmouseout="this.style.background='linear-gradient(135deg, var(--bg-tertiary) 0%, var(--royal-green-dark) 100%)'; this.style.transform='translateY(0)';"
+                           onclick="window.parent.postMessage({{type: 'streamlit:setComponentValue', key: 'inbox_{email['id']}_{i}', value: true}}, '*')">
+                            📧 {subject_full}{correction_badge}<br>
+                            👤 {sender_preview}<br>
+                            📄 {email['snippet'][:40]}...<br>
+                            ✓ Confidence: {confidence:.2f}
+                        </div>
+                        """
+                        
+                        # Hiển thị button HTML
+                        st.markdown(button_html, unsafe_allow_html=True)
+                        
+                        # Hidden button để trigger action
                         if st.button(
-                            f"📧 {subject_preview}{correction_badge}\n👤 {sender_preview}\n📄 {email['snippet'][:40]}...\n✓ Confidence: {confidence:.2f}",
+                            "Select",
                             key=f"inbox_{email['id']}_{i}",
                             use_container_width=True
                         ):
@@ -1056,138 +1154,274 @@ elif st.session_state.page == "✉️ Quét Gmail":
             # Cột nội dung (giữa)
             with col_content:
                 if st.session_state['selected_email'] is None:
-                    content_html = """
-                    <div class="content-container">
-                        <div class="placeholder">
-                            <div style="text-align: center; padding: 2rem;">
-                                <div style="font-size: 3rem; margin-bottom: 1rem;">📧</div>
-                                <div style="font-size: 1.3rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--royal-green-accent);">
-                                    Chọn một email
-                                </div>
-                                <div style="font-size: 1rem; color: var(--text-secondary);">
-                                    Từ Inbox hoặc Spam để xem nội dung chi tiết
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    """
+                    content_html = (
+                        '<div class="content-container">'
+                        '  <div class="placeholder">'
+                        '    <div style="text-align: left; padding: 2rem;">'
+                        '      <div style="font-size: 2.2rem; margin-bottom: 0.5rem;">📧</div>'
+                        '      <div style="font-size: 1.15rem; font-weight: 600; margin-bottom: 0.2rem;'
+                        ' color: var(--royal-green-accent); text-align: left;">'
+                        '        Chọn một email'
+                        '      </div>'
+                        '      <div style="font-size: 1rem; color: var(--text-secondary); text-align: left;">'
+                        '        Từ Inbox hoặc Spam để xem nội dung chi tiết'
+                        '      </div>'
+                        '    </div>'
+                        '  </div>'
+                        '</div>'
+                    )
                 else:
                     email = st.session_state['selected_email']
                     from html import escape
-                    
+
                     # Truncate body nếu quá dài
-                    body_display = email['body'][:1500] + "..." if len(email['body']) > 1500 else email['body']
+                    body_display = (
+                        email['body'][:1500] + "..."
+                        if len(email['body']) > 1500 else email['body']
+                    )
                     confidence_scores = email.get('confidence_scores', {})
-                    confidence_display = ", ".join([f"{k}: {v:.2f}" for k, v in confidence_scores.items()])
-                    
+                    confidence_display = ", ".join(
+                        [f"{k}: {v:.2f}" for k, v in confidence_scores.items()]
+                    )
+
                     # 🆕 Determine current label (corrected or original)
                     current_label = email.get('corrected_label', email['prediction'])
                     original_prediction = email['prediction']
                     is_corrected = email.get('is_corrected', False)
-                    
+
                     # 🆕 Status badge
                     status_badge = ""
                     if is_corrected:
                         if original_prediction != current_label:
-                            status_badge = f'<span class="corrected-badge">Đã sửa: {original_prediction} → {current_label}</span>'
+                            status_badge = (
+                                f'<span class="corrected-badge">'
+                                f'Đã sửa: {original_prediction} → {current_label}'
+                                f'</span>'
+                            )
                         else:
-                            status_badge = f'<span class="corrected-badge">Đã xác nhận: {current_label}</span>'
-                    
-                    content_html = f"""
-                    <div class="content-container">
-                        <div style="margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 2px solid var(--border-color);">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-                                <span style="font-weight: 700; color: var(--royal-green-accent); font-size: 1.1rem;">
-                                    {'📥 HAM' if current_label == 'ham' else '🗑️ SPAM'}
-                                </span>
-                                <span style="font-size: 0.95rem; color: var(--text-secondary); font-weight: 600;">
-                                    Confidence: {email.get('confidence', 0):.2f}
-                                </span>
-                            </div>
-                            <div style="font-size: 1.3rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.8rem; line-height: 1.4;">
-                                {escape(email['subject'])}
-                            </div>
-                            <div style="font-size: 1rem; color: var(--text-secondary); margin-bottom: 0.6rem; font-weight: 500;">
-                                From: {escape(email['sender'])}
-                            </div>
-                            <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.8rem; font-family: 'Courier New', monospace;">
-                                {confidence_display}
-                            </div>
-                            {status_badge}
-                        </div>
-                        <div style="line-height: 1.8; color: var(--text-secondary); font-size: 1rem;">
-                            {escape(body_display)}
-                        </div>
-                    </div>
-                    """
-                
+                            status_badge = (
+                                f'<span class="corrected-badge">'
+                                f'Đã xác nhận: {current_label}'
+                                f'</span>'
+                            )
+
+                    # Sử dụng div bọc ngoài, mọi thứ đều căn trái, header không giãn dòng nhiều
+                    content_html = (
+                        '<div class="content-container" style="text-align: left;">'
+                        '  <div style="margin-bottom: 1.1rem; padding-bottom: 1.1rem;'
+                        ' border-bottom: 2px solid var(--border-color); text-align: left;">'
+                        '    <div style="display: flex; justify-content: flex-start; align-items: center;'
+                        ' margin-bottom: 0.3rem;">'
+                        '      <span style="font-weight: 700; color: var(--royal-green-accent);'
+                        ' font-size: 1.05rem; margin-right: 1.2rem;">'
+                        f'        {"📥 HAM" if current_label == "ham" else "🗑️ SPAM"}'
+                        '      </span>'
+                        '      <span style="font-size: 0.95rem; color: var(--text-secondary); font-weight: 600;">'
+                        f'        Confidence: {email.get("confidence", 0):.2f}'
+                        '      </span>'
+                        '    </div>'
+                        '    <div style="font-size: 1.13rem; font-weight: 700; color: var(--text-primary);'
+                        ' margin-bottom: 0.3rem; line-height: 1.15; text-align: left;">'
+                        f'      {escape(email["subject"])}'
+                        '    </div>'
+                        '    <div style="font-size: 1rem; color: var(--text-secondary); margin-bottom: 0.2rem;'
+                        ' font-weight: 500; text-align: left;">'
+                        f'      From: {escape(email["sender"])}'
+                        '    </div>'
+                        '    <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 0.3rem;'
+                        ' font-family: \'Courier New\', monospace; text-align: left;">'
+                        f'      {confidence_display}'
+                        '    </div>'
+                        f'    {status_badge}'
+                        '  </div>'
+                        '  <div style="line-height: 1.7; color: var(--text-secondary); font-size: 1rem; text-align: left;">'
+                        f'    {escape(body_display)}'
+                        '  </div>'
+                        '</div>'
+                    )
+
                 st.markdown(content_html, unsafe_allow_html=True)
-                
+
                 # 🆕 Relabel buttons
                 if st.session_state['selected_email'] is not None:
                     email = st.session_state['selected_email']
                     current_label = email.get('corrected_label', email['prediction'])
-                    
-                    st.markdown('<div class="relabel-buttons">', unsafe_allow_html=True)
-                    st.markdown('<div class="relabel-title">🔄 Đánh dấu lại phân loại</div>', unsafe_allow_html=True)
-                    
+
+                    st.markdown(
+                        '<div class="relabel-title" style="text-align: left;">'
+                        '🔄 Đánh dấu lại phân loại</div>',
+                        unsafe_allow_html=True
+                    )
+
+                    # Thêm CSS cho nút nền royal green
+                    st.markdown(
+                        """
+                        <style>
+                        .stButton>button.relabel-green {
+                            background: var(--royal-green-accent, #2ecc40) !important;
+                            color: white !important;
+                            border: none !important;
+                            font-weight: 600;
+                        }
+                        .stButton>button.relabel-green:disabled {
+                            background: #b7e5c2 !important;
+                            color: #f0f0f0 !important;
+                        }
+                        .stButton>button.relabel-green:hover:enabled {
+                            background: #1e9e2c !important;
+                        }
+                        </style>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
                     col1, col2, col3 = st.columns(3)
-                    
+
+                    def relabel_ham_action():
+                        if add_correction(
+                            email['id'], email['prediction'], 'ham', email
+                        ):
+                            st.success("✅ Đã đánh dấu lại thành HAM!")
+                            for e in st.session_state['classified_emails']:
+                                if e['id'] == email['id']:
+                                    e['corrected_label'] = 'ham'
+                                    e['is_corrected'] = True
+                                    break
+                            st.session_state['inbox_emails'] = [
+                                e for e in st.session_state['classified_emails']
+                                if e.get('corrected_label', e['prediction']) == 'ham'
+                            ]
+                            st.session_state['spam_emails'] = [
+                                e for e in st.session_state['classified_emails']
+                                if e.get('corrected_label', e['prediction']) == 'spam'
+                            ]
+                            st.rerun()
+
+                    def relabel_spam_action():
+                        if add_correction(
+                            email['id'], email['prediction'], 'spam', email
+                        ):
+                            st.success("✅ Đã đánh dấu lại thành SPAM!")
+                            for e in st.session_state['classified_emails']:
+                                if e['id'] == email['id']:
+                                    e['corrected_label'] = 'spam'
+                                    e['is_corrected'] = True
+                                    break
+                            st.session_state['inbox_emails'] = [
+                                e for e in st.session_state['classified_emails']
+                                if e.get('corrected_label', e['prediction']) == 'ham'
+                            ]
+                            st.session_state['spam_emails'] = [
+                                e for e in st.session_state['classified_emails']
+                                if e.get('corrected_label', e['prediction']) == 'spam'
+                            ]
+                            st.rerun()
+
+                    def confirm_action():
+                        if add_correction(
+                            email['id'], email['prediction'], email['prediction'], email
+                        ):
+                            st.success("✅ Đã xác nhận phân loại!")
+                            for e in st.session_state['classified_emails']:
+                                if e['id'] == email['id']:
+                                    e['corrected_label'] = email['prediction']
+                                    e['is_corrected'] = True
+                                    break
+                            st.rerun()
+
                     with col1:
-                        if st.button("📥 Đánh dấu là HAM", use_container_width=True, 
-                                   disabled=(current_label == 'ham'),
-                                   key=f"relabel_ham_{email['id']}"):
-                            if add_correction(email['id'], email['prediction'], 'ham', email):
-                                st.success("✅ Đã đánh dấu lại thành HAM!")
-                                # Update session state
-                                for e in st.session_state['classified_emails']:
-                                    if e['id'] == email['id']:
-                                        e['corrected_label'] = 'ham'
-                                        e['is_corrected'] = True
-                                        break
-                                
-                                # Rebuild inbox/spam lists
-                                st.session_state['inbox_emails'] = [e for e in st.session_state['classified_emails'] 
-                                                                   if e.get('corrected_label', e['prediction']) == 'ham']
-                                st.session_state['spam_emails'] = [e for e in st.session_state['classified_emails'] 
-                                                                  if e.get('corrected_label', e['prediction']) == 'spam']
-                                st.rerun()
-                    
+                        st.button(
+                            "📥 Đánh dấu là HAM",
+                            key=f"ham_{email['id']}",
+                            on_click=relabel_ham_action,
+                            disabled=(current_label == 'ham'),
+                            use_container_width=True,
+                            help="Chuyển email này thành HAM",
+                            type="secondary",
+                            kwargs={},
+                        )
+                        st.markdown(
+                            f"""
+                            <style>
+                            [data-testid="stButton"][key="ham_{email['id']}"] button {{
+                                background: var(--royal-green-accent, #2ecc40) !important;
+                                color: white !important;
+                                border: none !important;
+                                font-weight: 600;
+                            }}
+                            [data-testid="stButton"][key="ham_{email['id']}"] button:disabled {{
+                                background: #b7e5c2 !important;
+                                color: #f0f0f0 !important;
+                            }}
+                            [data-testid="stButton"][key="ham_{email['id']}"] button:hover:enabled {{
+                                background: #1e9e2c !important;
+                            }}
+                            </style>
+                            """,
+                            unsafe_allow_html=True
+                        )
                     with col2:
-                        if st.button("🗑️ Đánh dấu là SPAM", use_container_width=True, 
-                                   disabled=(current_label == 'spam'),
-                                   key=f"relabel_spam_{email['id']}"):
-                            if add_correction(email['id'], email['prediction'], 'spam', email):
-                                st.success("✅ Đã đánh dấu lại thành SPAM!")
-                                # Update session state
-                                for e in st.session_state['classified_emails']:
-                                    if e['id'] == email['id']:
-                                        e['corrected_label'] = 'spam'
-                                        e['is_corrected'] = True
-                                        break
-                                
-                                # Rebuild inbox/spam lists
-                                st.session_state['inbox_emails'] = [e for e in st.session_state['classified_emails'] 
-                                                                   if e.get('corrected_label', e['prediction']) == 'ham']
-                                st.session_state['spam_emails'] = [e for e in st.session_state['classified_emails'] 
-                                                                  if e.get('corrected_label', e['prediction']) == 'spam']
-                                st.rerun()
-                    
+                        st.button(
+                            "🗑️ Đánh dấu là SPAM",
+                            key=f"spam_{email['id']}",
+                            on_click=relabel_spam_action,
+                            disabled=(current_label == 'spam'),
+                            use_container_width=True,
+                            help="Chuyển email này thành SPAM",
+                            type="secondary",
+                            kwargs={},
+                        )
+                        st.markdown(
+                            f"""
+                            <style>
+                            [data-testid="stButton"][key="spam_{email['id']}"] button {{
+                                background: var(--royal-green-accent, #2ecc40) !important;
+                                color: white !important;
+                                border: none !important;
+                                font-weight: 600;
+                            }}
+                            [data-testid="stButton"][key="spam_{email['id']}"] button:disabled {{
+                                background: #b7e5c2 !important;
+                                color: #f0f0f0 !important;
+                            }}
+                            [data-testid="stButton"][key="spam_{email['id']}"] button:hover:enabled {{
+                                background: #1e9e2c !important;
+                            }}
+                            </style>
+                            """,
+                            unsafe_allow_html=True
+                        )
                     with col3:
-                        if st.button("✅ Xác nhận đúng", use_container_width=True,
-                                   key=f"confirm_{email['id']}"):
-                            if add_correction(email['id'], email['prediction'], email['prediction'], email):
-                                st.success("✅ Đã xác nhận phân loại!")
-                                # Update session state
-                                for e in st.session_state['classified_emails']:
-                                    if e['id'] == email['id']:
-                                        e['corrected_label'] = email['prediction']
-                                        e['is_corrected'] = True
-                                        break
-                                st.rerun()
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-            
+                        st.button(
+                            "✅ Xác nhận đúng",
+                            key=f"confirm_{email['id']}",
+                            on_click=confirm_action,
+                            disabled=False,
+                            use_container_width=True,
+                            help="Xác nhận phân loại hiện tại là đúng",
+                            type="secondary",
+                            kwargs={},
+                        )
+                        st.markdown(
+                            f"""
+                            <style>
+                            [data-testid="stButton"][key="confirm_{email['id']}"] button {{
+                                background: var(--royal-green-accent, #2ecc40) !important;
+                                color: white !important;
+                                border: none !important;
+                                font-weight: 600;
+                            }}
+                            [data-testid="stButton"][key="confirm_{email['id']}"] button:disabled {{
+                                background: #b7e5c2 !important;
+                                color: #f0f0f0 !important;
+                            }}
+                            [data-testid="stButton"][key="confirm_{email['id']}"] button:hover:enabled {{
+                                background: #1e9e2c !important;
+                            }}
+                            </style>
+                            """,
+                            unsafe_allow_html=True
+                        )
             # Cột Spam
             with col_spam:
                 st.markdown('<div class="folder-box">', unsafe_allow_html=True)
@@ -1196,7 +1430,6 @@ elif st.session_state.page == "✉️ Quét Gmail":
                 
                 for i, email in enumerate(st.session_state.get('spam_emails', [])):
                     # Tạo preview
-                    subject_preview = email['subject'][:35] + "..." if len(email['subject']) > 35 else email['subject']
                     sender_preview = email['sender'].split('<')[0].strip()[:20] if '<' in email['sender'] else email['sender'][:20]
                     confidence = email.get('confidence', 0)
                     
@@ -1208,8 +1441,56 @@ elif st.session_state.page == "✉️ Quét Gmail":
                     
                     # Button cho spam emails
                     with st.container():
+                        # Hiển thị tiêu đề mail trên nhiều dòng nếu dài
+                        subject_full = email['subject']
+                        # Chia tiêu đề thành nhiều dòng nếu quá dài
+                        subject_lines = []
+                        subject = subject_full
+                        while len(subject) > 30:
+                            subject_lines.append(subject[:30])
+                            subject = subject[30:]
+                        if subject:
+                            subject_lines.append(subject)
+                        
+                        subject_display = "\n".join(subject_lines)
+                        
+                        # Tạo HTML button với text wrapping hoàn toàn cho spam
+                        spam_button_html = f"""
+                        <div style="
+                            background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--royal-green-dark) 100%);
+                            border: 1px solid var(--border-color);
+                            border-radius: 12px;
+                            padding: 1rem;
+                            margin: 0.5rem 0;
+                            cursor: pointer;
+                            transition: all 0.3s ease;
+                            white-space: pre-wrap;
+                            word-wrap: break-word;
+                            overflow-wrap: break-word;
+                            text-align: left;
+                            font-size: 0.9rem;
+                            line-height: 1.5;
+                            color: var(--text-primary);
+                            width: 100%;
+                            box-sizing: border-box;
+                            min-height: auto;
+                            height: auto;
+                        " onmouseover="this.style.background='linear-gradient(135deg, var(--royal-green-light) 0%, var(--royal-green) 100%)'; this.style.transform='translateY(-2px)';" 
+                           onmouseout="this.style.background='linear-gradient(135deg, var(--bg-tertiary) 0%, var(--royal-green-dark) 100%)'; this.style.transform='translateY(0)';"
+                           onclick="window.parent.postMessage({{type: 'streamlit:setComponentValue', key: 'spam_{email['id']}_{i}', value: true}}, '*')">
+                            🗑️ {subject_full}{correction_badge}<br>
+                            👤 {sender_preview}<br>
+                            📄 {email['snippet'][:40]}...<br>
+                            ⚠️ Confidence: {confidence:.2f}
+                        </div>
+                        """
+                        
+                        # Hiển thị button HTML
+                        st.markdown(spam_button_html, unsafe_allow_html=True)
+                        
+                        # Hidden button để trigger action
                         if st.button(
-                            f"🗑️ {subject_preview}{correction_badge}\n👤 {sender_preview}\n📄 {email['snippet'][:40]}...\n⚠️ Confidence: {confidence:.2f}",
+                            "Select",
                             key=f"spam_{email['id']}_{i}",
                             use_container_width=True
                         ):
