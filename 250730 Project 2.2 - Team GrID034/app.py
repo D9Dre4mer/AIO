@@ -613,7 +613,7 @@ if "code" in query_params and "state" in query_params:
 
 # --- Trang Tổng quan (Overview) ---
 if st.session_state.page == "🏠 Tổng quan":
-    st.markdown('<h1 class="main-title">📧 <span>Bộ phân loại EMail</span></h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-title">📧 <span>Email Classifier</span></h1>', unsafe_allow_html=True)
     st.markdown('<div class="subtext">Khám phá và phân loại email với giao diện tương tác!</div>', unsafe_allow_html=True)
 
     # Thống kê nhanh
