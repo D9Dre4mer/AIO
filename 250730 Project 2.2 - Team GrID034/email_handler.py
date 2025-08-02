@@ -1,24 +1,28 @@
 """
-Gmail API Handler cho Streamlit App với OAuth flow - OPTIMIZED VERSION
-Bao gồm các tính năng tối ưu cho correction management
+Gmail API Handler cho Streamlit App với AUTO TOKEN flow - COMPATIBLE VERSION
+Tương thích hoàn toàn với app.py hiện tại và thêm tính năng tự động nhận token
 """
 import os
 import base64
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from googleapiclient.discovery import build
-from google_auth_oauthlib.flow import Flow
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.errors import HttpError
 import streamlit as st
 from datetime import datetime
 import json
+import threading
+import webbrowser
+import socket
+from urllib.parse import urlparse, parse_qs
 
 logger = logging.getLogger(__name__)
 
 class GmailHandler:
-    """Class để xử lý Gmail API trong Streamlit với OAuth flow và correction features"""
+    """Class để xử lý Gmail API trong Streamlit với AUTO TOKEN flow và correction features"""
     
     def __init__(self, credentials_path: str):
         """
@@ -42,6 +46,271 @@ class GmailHandler:
         # Kiểm tra file credentials
         if not os.path.exists(credentials_path):
             raise FileNotFoundError(f"Không tìm thấy file credentials.json tại: {credentials_path}")
+    
+    # 🆕 ===== AUTO AUTHENTICATION METHODS =====
+    
+    def authenticate_auto(self, port: int = 8080) -> bool:
+        """
+        🆕 Tự động authenticate với Google mà không cần copy token thủ công.
+        
+        Args:
+            port: Port để chạy local server (default: 8080)
+            
+        Returns:
+            True nếu authenticate thành công, False nếu thất bại
+        """
+        try:
+            # Kiểm tra xem đã có credentials trong session chưa
+            if self.initialize_service_from_session():
+                logger.info("Đã có credentials hợp lệ trong session")
+                return True
+            
+            # Kiểm tra file token.json nếu có
+            token_file = 'token.json'
+            if os.path.exists(token_file):
+                if self._load_from_token_file(token_file):
+                    logger.info("Đã load credentials từ token.json")
+                    return True
+            
+            # Thực hiện OAuth flow mới
+            logger.info(f"Bắt đầu OAuth flow trên port {port}...")
+            
+            # Kiểm tra port có available không
+            if not self._is_port_available(port):
+                logger.warning(f"Port {port} đang được sử dụng, thử port khác...")
+                port = self._find_available_port()
+                logger.info(f"Sử dụng port {port}")
+            
+            # Khởi tạo flow
+            flow = InstalledAppFlow.from_client_secrets_file(
+                self.credentials_path,
+                scopes=self.SCOPES
+            )
+            
+            # 🎯 TỰ ĐỘNG MỞ BROWSER VÀ NHẬN TOKEN
+            credentials = flow.run_local_server(
+                port=port,
+                prompt='select_account',  # Cho phép chọn account
+                open_browser=True,       # Tự động mở browser
+                success_message='✅ Authentication thành công! Bạn có thể đóng tab này.',
+                access_type='offline'    # Để lấy refresh token
+            )
+            
+            # Lưu credentials vào session
+            st.session_state['gmail_credentials'] = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            
+            # Lưu vào file token.json để dùng lần sau
+            self._save_to_token_file(credentials, token_file)
+            
+            # Khởi tạo Gmail service
+            self.service = build('gmail', 'v1', credentials=credentials)
+            
+            # 🆕 Initialize correction system
+            self._initialize_correction_system()
+            
+            logger.info("✅ Authentication thành công!")
+            st.success("🎉 Đã kết nối Gmail thành công!")
+            
+            return True
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Lỗi authentication: {error_msg}")
+            
+            # Xử lý lỗi cụ thể
+            if "invalid_client" in error_msg:
+                st.error("❌ File credentials.json không hợp lệ. Vui lòng kiểm tra lại.")
+            elif "access_denied" in error_msg:
+                st.error("❌ Người dùng từ chối cấp quyền. Vui lòng thử lại.")
+            elif "Connection refused" in error_msg or "WinError 10061" in error_msg:
+                st.error(f"❌ Không thể mở local server trên port {port}. Vui lòng thử port khác.")
+            else:
+                st.error(f"❌ Lỗi authentication: {error_msg}")
+            
+            return False
+    
+    def _is_port_available(self, port: int) -> bool:
+        """Kiểm tra port có available không."""
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(('localhost', port))
+                return True
+        except OSError:
+            return False
+    
+    def _find_available_port(self, start_port: int = 8080, max_attempts: int = 10) -> int:
+        """Tìm port available."""
+        for port in range(start_port, start_port + max_attempts):
+            if self._is_port_available(port):
+                return port
+        
+        # Fallback: let system choose
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('localhost', 0))
+            return s.getsockname()[1]
+    
+    def _load_from_token_file(self, token_file: str) -> bool:
+        """
+        Load credentials từ file token.json.
+        
+        Args:
+            token_file: Đường dẫn file token.json
+            
+        Returns:
+            True nếu load thành công
+        """
+        try:
+            with open(token_file, 'r') as f:
+                cred_info = json.load(f)
+            
+            credentials = Credentials.from_authorized_user_info(cred_info, self.SCOPES)
+            
+            # Refresh nếu expired
+            if credentials.expired and credentials.refresh_token:
+                try:
+                    credentials.refresh(Request())
+                    # Update file với token mới
+                    self._save_to_token_file(credentials, token_file)
+                    logger.info("Đã refresh token từ file")
+                except Exception as e:
+                    logger.warning(f"Không thể refresh token từ file: {str(e)}")
+                    return False
+            
+            # Lưu vào session
+            st.session_state['gmail_credentials'] = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            
+            # Khởi tạo service
+            self.service = build('gmail', 'v1', credentials=credentials)
+            self._initialize_correction_system()
+            
+            return True
+            
+        except Exception as e:
+            logger.warning(f"Không thể load từ token file: {str(e)}")
+            return False
+    
+    def _save_to_token_file(self, credentials: Credentials, token_file: str):
+        """
+        Lưu credentials vào file token.json.
+        
+        Args:
+            credentials: Google credentials object
+            token_file: Đường dẫn file để lưu
+        """
+        try:
+            cred_info = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            
+            with open(token_file, 'w') as f:
+                json.dump(cred_info, f, indent=2)
+            
+            logger.info(f"Đã lưu credentials vào {token_file}")
+            
+        except Exception as e:
+            logger.warning(f"Không thể lưu token file: {str(e)}")
+    
+    def logout(self):
+        """🆕 Logout và xóa tất cả credentials."""
+        try:
+            # Xóa từ session
+            if 'gmail_credentials' in st.session_state:
+                del st.session_state['gmail_credentials']
+            
+            # Xóa các oauth states nếu có
+            if 'oauth_flow' in st.session_state:
+                del st.session_state['oauth_flow']
+            if 'oauth_state' in st.session_state:
+                del st.session_state['oauth_state']
+            if 'oauth_flow_manual' in st.session_state:
+                del st.session_state['oauth_flow_manual']
+            if 'oauth_state_manual' in st.session_state:
+                del st.session_state['oauth_state_manual']
+            
+            # Xóa file token.json
+            token_file = 'token.json'
+            if os.path.exists(token_file):
+                os.remove(token_file)
+                logger.info("Đã xóa token.json")
+            
+            # Reset service
+            self.service = None
+            self._label_cache = {}
+            self._correction_label_id = None
+            
+            st.success("✅ Đã logout thành công!")
+            logger.info("Logout thành công")
+            
+        except Exception as e:
+            logger.error(f"Lỗi logout: {str(e)}")
+            st.error(f"❌ Lỗi logout: {str(e)}")
+    
+    def get_auth_status(self) -> Dict[str, Any]:
+        """
+        🆕 Lấy trạng thái authentication hiện tại.
+        
+        Returns:
+            Dict chứa thông tin auth status
+        """
+        status = {
+            'is_authenticated': False,
+            'has_service': False,
+            'user_email': None,
+            'token_expires': None,
+            'scopes': []
+        }
+        
+        try:
+            if self.service:
+                status['has_service'] = True
+                
+                # Lấy user profile
+                try:
+                    profile = self.get_user_profile()
+                    status['user_email'] = profile.get('email')
+                    status['is_authenticated'] = True
+                except:
+                    pass
+            
+            # Kiểm tra credentials trong session
+            cred_info = st.session_state.get('gmail_credentials')
+            if cred_info:
+                status['scopes'] = cred_info.get('scopes', [])
+                
+                # Check token expiry (nếu có thông tin)
+                try:
+                    credentials = Credentials.from_authorized_user_info(cred_info, self.SCOPES)
+                    if hasattr(credentials, 'expiry') and credentials.expiry:
+                        status['token_expires'] = credentials.expiry.isoformat()
+                except:
+                    pass
+            
+            return status
+            
+        except Exception as e:
+            logger.error(f"Lỗi get auth status: {str(e)}")
+            return status
+    
+    # ===== MANUAL AUTHENTICATION METHODS (TƯƠNG THÍCH VỚI APP.PY CŨ) =====
     
     def get_authorization_url(self) -> str:
         """
@@ -153,6 +422,9 @@ class GmailHandler:
                 'scopes': credentials.scopes
             }
             
+            # Lưu vào file token.json để dùng lần sau
+            self._save_to_token_file(credentials, 'token.json')
+            
             # Khởi tạo service
             self.service = build('gmail', 'v1', credentials=credentials)
             
@@ -177,6 +449,8 @@ class GmailHandler:
                 st.error(f"❌ Lỗi xác thực: {error_msg}")
             
             return False
+    
+    # ===== CORE GMAIL METHODS (GIỮ NGUYÊN) =====
     
     def initialize_service_from_session(self) -> bool:
         """
@@ -730,27 +1004,6 @@ class GmailHandler:
         
         return results
     
-    def create_correction_report_label(self, report_name: str = None) -> Optional[str]:
-        """
-        🆕 Tạo label đặc biệt cho correction report
-        
-        Args:
-            report_name: Tên custom cho report (optional)
-            
-        Returns:
-            Label ID nếu thành công, None nếu thất bại
-        """
-        try:
-            if not report_name:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_name = f"CORRECTION_REPORT_{timestamp}"
-            
-            return self._get_or_create_label(report_name)
-            
-        except Exception as e:
-            logger.error(f"Lỗi tạo correction report label: {str(e)}")
-            return None
-    
     def get_correction_statistics(self) -> Dict[str, int]:
         """
         🆕 Lấy thống kê emails đã corrected từ Gmail labels
@@ -901,9 +1154,6 @@ class GmailHandler:
             
             logger.info(f"Bắt đầu sync {len(local_corrections)} corrections với Gmail...")
             
-            # Get Gmail statistics để check đã sync chưa
-            gmail_stats = self.get_correction_statistics()
-            
             for email_id, correction_data in local_corrections.items():
                 try:
                     # Check xem email có đã được corrected trong Gmail chưa
@@ -957,342 +1207,3 @@ class GmailHandler:
             logger.error(f"Lỗi sync corrections: {str(e)}")
             sync_results['errors'].append(f"Lỗi general: {str(e)}")
             return sync_results
-    
-    def create_correction_summary_email(self, corrections_data: Dict[str, Dict], 
-                                      send_to_self: bool = False) -> Optional[str]:
-        """
-        🆕 Tạo email tóm tắt về corrections đã thực hiện
-        
-        Args:
-            corrections_data: Dict chứa correction data
-            send_to_self: Có gửi email cho chính mình không
-            
-        Returns:
-            Message ID của email tóm tắt nếu thành công
-        """
-        if not self.service or not corrections_data:
-            return None
-            
-        try:
-            # Tạo nội dung email tóm tắt
-            total_corrections = len(corrections_data)
-            spam_to_ham = sum(1 for c in corrections_data.values() 
-                            if c.get('original_prediction') == 'spam' and c.get('corrected_label') == 'ham')
-            ham_to_spam = sum(1 for c in corrections_data.values() 
-                            if c.get('original_prediction') == 'ham' and c.get('corrected_label') == 'spam')
-            
-            # HTML content
-            html_content = f"""
-            <html>
-            <body>
-                <h2>📧 Báo cáo Corrections - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</h2>
-                
-                <h3>📊 Thống kê tổng quan:</h3>
-                <ul>
-                    <li><strong>Tổng corrections:</strong> {total_corrections}</li>
-                    <li><strong>🗑️ → 📥 Spam to Ham:</strong> {spam_to_ham}</li>
-                    <li><strong>📥 → 🗑️ Ham to Spam:</strong> {ham_to_spam}</li>
-                </ul>
-                
-                <h3>📋 Chi tiết corrections:</h3>
-                <table border="1" style="border-collapse: collapse; width: 100%;">
-                    <tr>
-                        <th>Subject</th>
-                        <th>Sender</th>
-                        <th>Original</th>
-                        <th>Corrected</th>
-                        <th>Timestamp</th>
-                    </tr>
-            """
-            
-            # Add correction details
-            for email_id, correction in corrections_data.items():
-                html_content += f"""
-                    <tr>
-                        <td>{correction.get('subject', 'N/A')[:50]}...</td>
-                        <td>{correction.get('sender', 'N/A')[:30]}...</td>
-                        <td>{correction.get('original_prediction', 'N/A')}</td>
-                        <td>{correction.get('corrected_label', 'N/A')}</td>
-                        <td>{correction.get('timestamp', 'N/A')[:19]}</td>
-                    </tr>
-                """
-            
-            html_content += """
-                </table>
-                
-                <p><em>Email này được tạo tự động bởi AI Email Classifier.</em></p>
-            </body>
-            </html>
-            """
-            
-            # Nếu send_to_self, có thể implement gửi email
-            # Hiện tại chỉ return nội dung để log
-            logger.info(f"Đã tạo correction summary cho {total_corrections} corrections")
-            
-            # Trong thực tế, có thể save summary vào draft hoặc send
-            return html_content
-            
-        except Exception as e:
-            logger.error(f"Lỗi tạo correction summary: {str(e)}")
-            return None
-    
-    def cleanup_old_corrections(self, days_old: int = 30) -> Dict[str, int]:
-        """
-        🆕 Dọn dẹp corrections cũ (remove correction labels)
-        
-        Args:
-            days_old: Số ngày để coi là "cũ"
-            
-        Returns:
-            Dict với thống kê cleanup
-        """
-        cleanup_stats = {
-            'processed': 0,
-            'cleaned': 0,
-            'errors': 0
-        }
-        
-        if not self.service or not self._correction_label_id:
-            return cleanup_stats
-            
-        try:
-            # Get corrected emails
-            results = self.service.users().messages().list(
-                userId='me',
-                q='label:AI_CORRECTED'
-            ).execute()
-            
-            messages = results.get('messages', [])
-            
-            from datetime import datetime, timedelta
-            cutoff_date = datetime.now() - timedelta(days=days_old)
-            
-            for msg in messages:
-                try:
-                    cleanup_stats['processed'] += 1
-                    
-                    # Get message details để check date
-                    message = self.service.users().messages().get(
-                        userId='me',
-                        id=msg['id'],
-                        format='minimal'
-                    ).execute()
-                    
-                    # Simple cleanup: remove correction label from all old corrections
-                    # Trong thực tế có thể check date cụ thể hơn
-                    self.service.users().messages().modify(
-                        userId='me',
-                        id=msg['id'],
-                        body={'removeLabelIds': [self._correction_label_id]}
-                    ).execute()
-                    
-                    cleanup_stats['cleaned'] += 1
-                    
-                except Exception as e:
-                    logger.warning(f"Lỗi cleanup email {msg['id']}: {str(e)}")
-                    cleanup_stats['errors'] += 1
-            
-            logger.info(f"Cleanup hoàn tất: {cleanup_stats['cleaned']}/{cleanup_stats['processed']} cleaned")
-            return cleanup_stats
-            
-        except Exception as e:
-            logger.error(f"Lỗi cleanup corrections: {str(e)}")
-            return cleanup_stats
-    
-    def get_correction_insights(self) -> Dict[str, Any]:
-        """
-        🆕 Phân tích insights từ corrections để cải thiện model
-        
-        Returns:
-            Dict chứa insights về patterns trong corrections
-        """
-        insights = {
-            'total_corrections': 0,
-            'correction_patterns': {},
-            'sender_patterns': {},
-            'subject_patterns': {},
-            'recommendations': []
-        }
-        
-        if not self.service or not self._correction_label_id:
-            return insights
-            
-        try:
-            # Export corrected emails để analyze
-            corrected_emails = self.export_corrected_emails(max_results=200)
-            
-            if not corrected_emails:
-                return insights
-            
-            insights['total_corrections'] = len(corrected_emails)
-            
-            # Analyze correction patterns
-            spam_labels = ['SPAM']
-            ham_labels = ['INBOX']
-            
-            for email in corrected_emails:
-                current_labels = email.get('current_labels', [])
-                
-                # Determine current classification
-                if any(label in spam_labels for label in current_labels):
-                    current_class = 'spam'
-                else:
-                    current_class = 'ham'
-                
-                # Count patterns (giả sử có thông tin original prediction)
-                pattern_key = f"corrected_to_{current_class}"
-                insights['correction_patterns'][pattern_key] = insights['correction_patterns'].get(pattern_key, 0) + 1
-                
-                # Analyze sender patterns
-                sender = email.get('sender', '')
-                if '@' in sender:
-                    domain = sender.split('@')[-1].split('>')[0]
-                    insights['sender_patterns'][domain] = insights['sender_patterns'].get(domain, 0) + 1
-                
-                # Analyze subject patterns
-                subject = email.get('subject', '').lower()
-                common_spam_keywords = ['promotion', 'offer', 'free', 'win', 'urgent', 'limited']
-                for keyword in common_spam_keywords:
-                    if keyword in subject:
-                        insights['subject_patterns'][keyword] = insights['subject_patterns'].get(keyword, 0) + 1
-            
-            # Generate recommendations
-            if insights['correction_patterns'].get('corrected_to_ham', 0) > insights['correction_patterns'].get('corrected_to_spam', 0):
-                insights['recommendations'].append("Model có xu hướng classify spam quá mức - cần điều chỉnh threshold")
-            
-            top_sender_domains = sorted(insights['sender_patterns'].items(), key=lambda x: x[1], reverse=True)[:3]
-            if top_sender_domains:
-                insights['recommendations'].append(f"Domains hay bị misclassify: {', '.join([d[0] for d in top_sender_domains])}")
-            
-            logger.info(f"Đã analyze insights từ {len(corrected_emails)} corrections")
-            return insights
-            
-        except Exception as e:
-            logger.error(f"Lỗi analyze correction insights: {str(e)}")
-            return insights
-    
-    # 🆕 ===== ADVANCED FEATURES =====
-    
-    def auto_apply_corrections_from_file(self, corrections_file: str, 
-                                       dry_run: bool = True) -> Dict[str, Any]:
-        """
-        🆕 Tự động apply corrections từ file với option dry run
-        
-        Args:
-            corrections_file: Đường dẫn file corrections.json
-            dry_run: Nếu True, chỉ simulate không thực sự apply
-            
-        Returns:
-            Dict với kết quả operation
-        """
-        results = {
-            'total_corrections': 0,
-            'would_apply': 0,
-            'actually_applied': 0,
-            'errors': [],
-            'dry_run': dry_run
-        }
-        
-        if not os.path.exists(corrections_file):
-            results['errors'].append(f"File không tồn tại: {corrections_file}")
-            return results
-        
-        try:
-            with open(corrections_file, 'r', encoding='utf-8') as f:
-                corrections_data = json.load(f)
-            
-            results['total_corrections'] = len(corrections_data)
-            
-            for email_id, correction in corrections_data.items():
-                try:
-                    if dry_run:
-                        # Chỉ validate email có tồn tại không
-                        message = self.service.users().messages().get(
-                            userId='me',
-                            id=email_id,
-                            format='minimal'
-                        ).execute()
-                        results['would_apply'] += 1
-                    else:
-                        # Thực sự apply correction
-                        success = self.apply_single_correction(
-                            email_id,
-                            correction.get('corrected_label'),
-                            correction.get('original_prediction')
-                        )
-                        if success:
-                            results['actually_applied'] += 1
-                
-                except HttpError as e:
-                    if e.resp.status == 404:
-                        results['errors'].append(f"Email {email_id} không tồn tại")
-                    else:
-                        results['errors'].append(f"HTTP error {email_id}: {str(e)}")
-                except Exception as e:
-                    results['errors'].append(f"Error {email_id}: {str(e)}")
-            
-            mode = "DRY RUN" if dry_run else "LIVE"
-            logger.info(f"Auto apply corrections [{mode}]: "
-                       f"{results.get('actually_applied', results.get('would_apply', 0))}"
-                       f"/{results['total_corrections']} processed")
-            
-            return results
-            
-        except Exception as e:
-            results['errors'].append(f"Lỗi general: {str(e)}")
-            return results
-    
-    def generate_training_data_from_corrections(self, output_file: str = None) -> Tuple[List[str], List[str]]:
-        """
-        🆕 Generate training data từ corrected emails để retrain model
-        
-        Args:
-            output_file: File để save training data (optional)
-            
-        Returns:
-            Tuple (messages, labels) cho training
-        """
-        messages = []
-        labels = []
-        
-        try:
-            # Export corrected emails
-            corrected_emails = self.export_corrected_emails(max_results=500)
-            
-            spam_labels = ['SPAM']
-            
-            for email in corrected_emails:
-                # Extract text content
-                subject = email.get('subject', '')
-                body = email.get('body', '')
-                text_content = f"{subject} {body}".strip()
-                
-                if not text_content:
-                    continue
-                
-                # Determine label từ current Gmail labels
-                current_labels = email.get('current_labels', [])
-                if any(label in spam_labels for label in current_labels):
-                    label = 'spam'
-                else:
-                    label = 'ham'
-                
-                messages.append(text_content)
-                labels.append(label)
-            
-            # Save to file nếu được yêu cầu
-            if output_file and messages:
-                import pandas as pd
-                df = pd.DataFrame({
-                    'Message': messages,
-                    'Category': labels
-                })
-                df.to_csv(output_file, index=False, encoding='utf-8')
-                logger.info(f"Đã save {len(messages)} training samples vào {output_file}")
-            
-            logger.info(f"Generated {len(messages)} training samples từ corrections")
-            return messages, labels
-            
-        except Exception as e:
-            logger.error(f"Lỗi generate training data: {str(e)}")
-            return [], []

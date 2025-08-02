@@ -38,9 +38,26 @@ A comprehensive command-line spam email classification application developed as 
 ```bash
 pip install -r requirements.txt
 ```
+**Core Dependencies:**
+- `numpy` - Numerical computations
+- `pandas` - Data manipulation and analysis
+- `scikit-learn` - Machine learning utilities
+- `transformers` - Hugging Face transformer models
+- `faiss-cpu` - Efficient similarity search (use `faiss-gpu` if GPU available)
+- `google-api-python-client` - Gmail API integration
+- `google-auth-oauthlib` - Google OAuth authentication
+- `nltk` - Natural language processing
+- `matplotlib` - Data visualization
+- `seaborn` - Statistical data visualization
+- `streamlit` - Web application framework
 
-## Installation
+### Quick Setup
+For a simple Streamlit interface, run: 
+```bash
+streamlit run app.py
+```
 
+## Terminal Installation
 ### Step 1: Download the Repository
 
 1. Visit [GitHub Repository](https://github.com/sonvt8/AIO2025/tags)
@@ -398,3 +415,4 @@ This project is a product of Team GrID034, developed as part of the AIO2025 cour
 ---
 
 *This Project is maintained by Team GrID034. For questions or contributions, please contact the team.*
+

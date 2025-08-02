@@ -516,6 +516,69 @@ def compute_tsne_cached(sub_emb: np.ndarray) -> np.ndarray:
         learning_rate="auto"
     ).fit_transform(sub_emb)
 
+def show_authentication_ui():
+    """UI mới với auto authentication"""
+    st.markdown('<div class="auth-box">', unsafe_allow_html=True)
+    st.markdown("### 🔐 Cần xác thực Gmail")
+    
+    auth_tab = st.selectbox(
+        "Chọn phương thức đăng nhập:",
+        ["🚀 Tự động (Khuyến nghị)", "🔗 Thủ công"]
+    )
+    
+    if auth_tab == "🚀 Tự động (Khuyến nghị)":
+        st.info("🎯 Phương thức này sẽ tự động mở browser và nhận token")
+        
+        if st.button("🚀 Đăng nhập Tự động", type="primary", use_container_width=True):
+            with st.spinner("🔄 Đang khởi tạo OAuth flow..."):
+                try:
+                    success = gmail_handler.authenticate_auto()
+                    if success:
+                        st.balloons()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"❌ Auto auth failed: {str(e)}")
+                    st.info("💡 Thử phương thức thủ công bên dưới")
+    
+    else:
+        email_hint = st.text_input("Nhập email:", 
+                                  placeholder="user@gmail.com", 
+                                  key="email_hint_new")
+        
+        try:
+            if email_hint:
+                auth_url = gmail_handler.get_authorization_url_with_hint(email_hint)
+            else:
+                auth_url = gmail_handler.get_authorization_url()
+            
+            st.markdown(f'<a href="{auth_url}" target="_blank" style="background: var(--royal-green); color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0;">🔑 Đăng nhập Gmail</a>', unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Lỗi tạo auth URL: {str(e)}")
+
+        # Hướng dẫn
+        st.markdown("---")
+        st.markdown("**Hướng dẫn:**")
+        st.markdown("1. Click vào link đăng nhập bên trên")
+        st.markdown("2. Chọn tài khoản Gmail và cho phép quyền truy cập")
+        st.markdown("3. Copy authorization code từ URL redirect")
+        st.markdown("4. Paste code vào ô bên dưới")
+        
+        st.markdown("---")
+        st.markdown("**Nhập authorization code:**")
+
+        auth_code = st.text_input("Authorization code:", 
+                                 placeholder="Paste code từ Google...",
+                                 key="auth_code_new")
+        
+        if st.button("🔐 Xác thực", type="primary", key="auth_submit_new") and auth_code:
+            with st.spinner("Đang xác thực..."):
+                if gmail_handler.handle_oauth_callback(auth_code.strip()):
+                    st.success("✅ Xác thực thành công!")
+                    st.balloons()
+                    st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+
 # 🆕 --- Hàm quản lý correction data ---
 def load_corrections():
     """Load correction data từ file JSON"""
@@ -856,62 +919,7 @@ elif st.session_state.page == "✉️ Quét Gmail":
 
     # Kiểm tra xác thực
     if 'gmail_credentials' not in st.session_state:
-        st.markdown('<div class="auth-box">', unsafe_allow_html=True)
-        st.markdown("### 🔐 Cần xác thực Gmail")
-        st.markdown("Để quét email từ Gmail, bạn cần đăng nhập với tài khoản Google của mình.")
-        
-        # Tùy chọn đăng nhập
-        st.markdown("**Chọn cách đăng nhập:**")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Đăng nhập thông thường:**")
-            try:
-                auth_url = gmail_handler.get_authorization_url()
-                st.markdown(f'<a href="{auth_url}" target="_blank" style="background: linear-gradient(135deg, var(--royal-green) 0%, var(--royal-green-light) 100%); color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 12px; display: inline-block; margin: 1rem 0; font-weight: 600; font-size: 0.95rem; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 4px 6px rgba(26, 77, 46, 0.2); border: none;">🔑 Đăng nhập Gmail</a>', unsafe_allow_html=True)
-            except Exception as e:
-                st.error(f"Lỗi tạo auth URL: {str(e)}")
-        
-        with col2:
-            st.markdown("**Với email cụ thể:**")
-            email_hint = st.text_input("Nhập email:", placeholder="user@gmail.com", key="email_hint")
-            if email_hint:
-                try:
-                    auth_url_hint = gmail_handler.get_authorization_url_with_hint(email_hint)
-                    st.markdown(f'<a href="{auth_url_hint}" target="_blank" style="background-color: #22c55e; color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0;">🎯 Login {email_hint[:20]}...</a>', unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"Lỗi tạo auth URL với hint: {str(e)}")
-        
-        # Hướng dẫn
-        st.markdown("---")
-        st.markdown("**Hướng dẫn:**")
-        st.markdown("1. Click vào link đăng nhập bên trên")
-        st.markdown("2. Chọn tài khoản Gmail và cho phép quyền truy cập")
-        st.markdown("3. Copy authorization code từ URL redirect")
-        st.markdown("4. Paste code vào ô bên dưới")
-        
-        st.markdown("---")
-        st.markdown("**Nhập authorization code:**")
-        auth_code = st.text_input("Authorization code từ Google:", placeholder="Paste code từ Google tại đây...")
-        
-        if st.button("🔐 Xác thực", use_container_width=True, type="primary") and auth_code:
-            with st.spinner("Đang xác thực..."):
-                try:
-                    auth_code = auth_code.strip()
-                    if len(auth_code) < 10:
-                        st.error("❌ Authorization code quá ngắn. Vui lòng kiểm tra lại.")
-                    else:
-                        if gmail_handler.handle_oauth_callback(auth_code):
-                            st.success("✅ Xác thực thành công!")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error("❌ Xác thực thất bại. Vui lòng thử code mới.")
-                except Exception as e:
-                    st.error(f"❌ Lỗi xác thực: {str(e)}")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+        show_authentication_ui()
     
     else:
         # Đã xác thực, hiển thị giao diện quét email
