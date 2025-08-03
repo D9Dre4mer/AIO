@@ -12,6 +12,9 @@
 .Python
 *.so
 
+# Token files
+**/token.json
+
 # IDE files
 .vscode/
 .idea/
