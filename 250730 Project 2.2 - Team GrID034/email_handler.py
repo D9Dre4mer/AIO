@@ -11,7 +11,17 @@ from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.errors import HttpError
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
+    # Fallback cho non-streamlit environment
+    class MockStreamlit:
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: None
+    st = MockStreamlit()
+
 from datetime import datetime
 import json
 import threading
@@ -24,14 +34,27 @@ logger = logging.getLogger(__name__)
 class GmailHandler:
     """Class để xử lý Gmail API trong Streamlit với AUTO TOKEN flow và correction features"""
     
-    def __init__(self, credentials_path: str):
+    def __init__(self, pipeline=None, config=None, 
+                 credentials_path: str = None):
         """
         Khởi tạo GmailHandler.
         
         Args:
+            pipeline: SpamClassifierPipeline object (optional)
+            config: SpamClassifierConfig object (optional)
             credentials_path: Đường dẫn đến file credentials.json
         """
-        self.credentials_path = credentials_path
+        self.pipeline = pipeline
+        self.config = config
+        
+        # Xác định đường dẫn credentials
+        if credentials_path:
+            self.credentials_path = credentials_path
+        elif config and hasattr(config, 'credentials_path'):
+            self.credentials_path = config.credentials_path
+        else:
+            self.credentials_path = './cache/input/credentials.json'
+        
         self.SCOPES = [
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.modify',
@@ -44,8 +67,8 @@ class GmailHandler:
         self._correction_label_id = None
         
         # Kiểm tra file credentials
-        if not os.path.exists(credentials_path):
-            raise FileNotFoundError(f"Không tìm thấy file credentials.json tại: {credentials_path}")
+        if not os.path.exists(self.credentials_path):
+            raise FileNotFoundError(f"Không tìm thấy file credentials.json tại: {self.credentials_path}")
     
     # 🆕 ===== AUTO AUTHENTICATION METHODS =====
     
@@ -1207,3 +1230,141 @@ class GmailHandler:
             logger.error(f"Lỗi sync corrections: {str(e)}")
             sync_results['errors'].append(f"Lỗi general: {str(e)}")
             return sync_results
+    
+    # 🆕 ===== EMAIL PROCESSING METHODS FOR MAIN.PY COMPATIBILITY =====
+    
+    def process_emails(self, max_results: int = 10) -> Dict[str, Any]:
+        """
+        🆕 Xử lý emails mới và phân loại spam (tương thích với main.py)
+        
+        Args:
+            max_results: Số lượng email tối đa để xử lý
+            
+        Returns:
+            Dict chứa kết quả xử lý
+        """
+        if not self.service:
+            logger.error("Gmail service chưa được khởi tạo")
+            return {'processed': 0, 'spam_count': 0, 'ham_count': 0, 'errors': []}
+        
+        if not self.pipeline:
+            logger.error("Spam classifier pipeline chưa được khởi tạo")
+            return {'processed': 0, 'spam_count': 0, 'ham_count': 0, 'errors': []}
+        
+        try:
+            # Fetch emails mới
+            emails = self.fetch_emails(max_results=max_results, query="is:unread")
+            
+            if not emails:
+                logger.info("Không có email mới để xử lý")
+                return {'processed': 0, 'spam_count': 0, 'ham_count': 0, 'errors': []}
+            
+            results = {
+                'processed': 0,
+                'spam_count': 0,
+                'ham_count': 0,
+                'errors': []
+            }
+            
+            for email in emails:
+                try:
+                    # Phân loại email
+                    prediction_result = self.pipeline.predict(email['body'], k=3)
+                    prediction = prediction_result['prediction']
+                    confidence = prediction_result.get('confidence', 0.0)
+                    
+                    # Log kết quả
+                    logger.info(f"Email {email['id']}: {prediction} (confidence: {confidence:.2f})")
+                    
+                    # Áp dụng phân loại vào Gmail
+                    if prediction.lower() == 'spam':
+                        success = self._move_to_spam(email['id'])
+                        if success:
+                            results['spam_count'] += 1
+                        else:
+                            results['errors'].append(f"Không thể move email {email['id']} vào spam")
+                    else:
+                        # Đánh dấu đã đọc cho ham emails
+                        success = self.mark_as_read(email['id'])
+                        if success:
+                            results['ham_count'] += 1
+                        else:
+                            results['errors'].append(f"Không thể mark email {email['id']} as read")
+                    
+                    results['processed'] += 1
+                    
+                except Exception as e:
+                    error_msg = f"Lỗi xử lý email {email['id']}: {str(e)}"
+                    logger.error(error_msg)
+                    results['errors'].append(error_msg)
+            
+            logger.info(f"Đã xử lý {results['processed']} emails: {results['spam_count']} spam, {results['ham_count']} ham")
+            return results
+            
+        except Exception as e:
+            error_msg = f"Lỗi trong process_emails: {str(e)}"
+            logger.error(error_msg)
+            return {'processed': 0, 'spam_count': 0, 'ham_count': 0, 'errors': [error_msg]}
+    
+    def get_unread_emails(self, max_results: int = 10) -> List[Dict[str, Any]]:
+        """
+        🆕 Lấy danh sách emails chưa đọc
+        
+        Args:
+            max_results: Số lượng email tối đa
+            
+        Returns:
+            List emails chưa đọc
+        """
+        return self.fetch_emails(max_results=max_results, query="is:unread")
+    
+    def get_spam_emails(self, max_results: int = 10) -> List[Dict[str, Any]]:
+        """
+        🆕 Lấy danh sách emails trong spam folder
+        
+        Args:
+            max_results: Số lượng email tối đa
+            
+        Returns:
+            List emails trong spam
+        """
+        return self.fetch_emails(max_results=max_results, query="label:spam")
+    
+    def get_inbox_emails(self, max_results: int = 10) -> List[Dict[str, Any]]:
+        """
+        🆕 Lấy danh sách emails trong inbox
+        
+        Args:
+            max_results: Số lượng email tối đa
+            
+        Returns:
+            List emails trong inbox
+        """
+        return self.fetch_emails(max_results=max_results, query="label:inbox")
+    
+    def initialize_for_main(self) -> bool:
+        """
+        🆕 Khởi tạo Gmail service cho main.py (tương thích với main.py)
+        
+        Returns:
+            True nếu thành công, False nếu thất bại
+        """
+        try:
+            # Thử load từ token file trước
+            token_file = 'token.json'
+            if os.path.exists(token_file):
+                if self._load_from_token_file(token_file):
+                    logger.info("Đã khởi tạo service từ token file")
+                    return True
+            
+            # Nếu không có token, thử authenticate auto
+            if self.authenticate_auto():
+                logger.info("Đã khởi tạo service qua auto authentication")
+                return True
+            
+            logger.error("Không thể khởi tạo Gmail service")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Lỗi khởi tạo service cho main.py: {str(e)}")
+            return False

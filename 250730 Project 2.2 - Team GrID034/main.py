@@ -9,11 +9,9 @@ import logging
 import os
 import argparse
 from spam_classifier import SpamClassifierPipeline
-from knn_classifier import KNNClassifier
 from config import SpamClassifierConfig
-from email_handler import EmailHandler
+from email_handler import GmailHandler
 from evaluator import ModelEvaluator
-from tfidf_classifier import TFIDFClassifier  # Thêm import
 
 # Thiết lập logging
 log_dir = 'logs'
@@ -45,7 +43,8 @@ def signal_handler(sig: int, frame: str) -> None:
     logger("Nhận tín hiệu Ctrl+C. Đang dừng chương trình an toàn...")
 
 
-def prepare_evaluation_data(evaluator: ModelEvaluator, config: SpamClassifierConfig) -> tuple:
+def prepare_evaluation_data(evaluator: ModelEvaluator,
+                           config: SpamClassifierConfig) -> tuple:
     """
     Tải và chuẩn bị dữ liệu cho đánh giá mô hình.
 
@@ -155,7 +154,13 @@ def main():
         # Chạy phân loại email nếu được yêu cầu
         if args.run_email_classifier:
             logger("Đang khởi động chế độ phân loại email qua Gmail API ở chế độ nền...")
-            handler = EmailHandler(pipeline, config)
+            handler = GmailHandler(pipeline, config)
+            
+            # Khởi tạo Gmail service
+            if not handler.initialize_for_main():
+                logger("Không thể khởi tạo Gmail service. Dừng chương trình.")
+                return
+            
             last_page_token = None
 
             # Đăng ký trình xử lý tín hiệu Ctrl+C

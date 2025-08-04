@@ -1,5 +1,10 @@
+# Installation note: Install PyTorch with CUDA support using:
+# conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia
+
 # Core ML libraries
 torch==2.6.0
+torchvision
+torchaudio
 numpy==2.2.6
 pandas==2.2.3
 scikit-learn==1.7.1

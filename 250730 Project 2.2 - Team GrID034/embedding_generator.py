@@ -11,6 +11,7 @@ import os
 import joblib
 import logging
 
+
 class EmbeddingGenerator:
     """Class để tạo embeddings từ văn bản."""
     
@@ -26,13 +27,24 @@ class EmbeddingGenerator:
             Exception: Nếu lỗi khi tải model hoặc tokenizer
         """
         self.config = config
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Tối ưu device selection
+        if self.config.use_gpu and torch.cuda.is_available():
+            self.device = torch.device('cuda')
+            # Tối ưu GPU memory
+            torch.backends.cudnn.benchmark = True
+            torch.backends.cudnn.deterministic = False
+        else:
+            self.device = torch.device('cpu')
         
         # Đường dẫn lưu model và tokenizer
         cache_dir = os.path.join('cache', 'models')
         os.makedirs(cache_dir, exist_ok=True)
-        model_cache_path = os.path.join(cache_dir, f"model_{self.config.model_name.replace('/', '_')}.joblib")
-        tokenizer_cache_path = os.path.join(cache_dir, f"tokenizer_{self.config.model_name.replace('/', '_')}.joblib")
+        model_name_safe = self.config.model_name.replace('/', '_')
+        model_cache_path = os.path.join(cache_dir, f"model_{model_name_safe}.joblib")
+        tokenizer_cache_path = os.path.join(
+            cache_dir, f"tokenizer_{model_name_safe}.joblib"
+        )
         
         # Kiểm tra và tải model từ cache nếu có
         if os.path.exists(model_cache_path) and os.path.exists(tokenizer_cache_path):
@@ -41,9 +53,14 @@ class EmbeddingGenerator:
                 self.tokenizer = joblib.load(tokenizer_cache_path)
                 self.model = self.model.to(self.device)
                 self.model.eval()
-                logging.info(f"Đã tải model và tokenizer từ cache: {model_cache_path}, {tokenizer_cache_path}")
+                logging.info(
+                    f"Đã tải model và tokenizer từ cache: "
+                    f"{model_cache_path}, {tokenizer_cache_path}"
+                )
             except Exception as e:
-                logging.error(f"Lỗi khi tải model hoặc tokenizer từ cache: {str(e)}")
+                logging.error(
+                    f"Lỗi khi tải model hoặc tokenizer từ cache: {str(e)}"
+                )
                 self._load_new_model()
         else:
             self._load_new_model()
@@ -51,9 +68,14 @@ class EmbeddingGenerator:
             try:
                 joblib.dump(self.model, model_cache_path)
                 joblib.dump(self.tokenizer, tokenizer_cache_path)
-                logging.info(f"Đã lưu model và tokenizer vào cache: {model_cache_path}, {tokenizer_cache_path}")
+                logging.info(
+                    f"Đã lưu model và tokenizer vào cache: "
+                    f"{model_cache_path}, {tokenizer_cache_path}"
+                )
             except Exception as e:
-                logging.error(f"Lỗi khi lưu model hoặc tokenizer vào cache: {str(e)}")
+                logging.error(
+                    f"Lỗi khi lưu model hoặc tokenizer vào cache: {str(e)}"
+                )
         
         logging.info(f'Sử dụng device: {self.device}')
         logging.info(f'Model đã tải: {config.model_name}')
@@ -69,7 +91,8 @@ class EmbeddingGenerator:
             logging.error(f"Lỗi khi tải model hoặc tokenizer: {str(e)}")
             raise
     
-    def _average_pool(self, last_hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+    def _average_pool(self, last_hidden_states: torch.Tensor, 
+                     attention_mask: torch.Tensor) -> torch.Tensor:
         """
         Tính average pooling cho embeddings.
         
@@ -80,10 +103,13 @@ class EmbeddingGenerator:
         Returns:
             Pooled embeddings
         """
-        last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
+        last_hidden = last_hidden_states.masked_fill(
+            ~attention_mask[..., None].bool(), 0.0
+        )
         return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
     
-    def generate_embeddings(self, texts: List[str], prefix: str = "passage") -> np.ndarray:
+    def generate_embeddings(self, texts: List[str], 
+                           prefix: str = "passage") -> np.ndarray:
         """
         Tạo embeddings cho danh sách văn bản, với tùy chọn tải từ file nếu đã tồn tại.
         
@@ -100,13 +126,19 @@ class EmbeddingGenerator:
         # Đường dẫn lưu embeddings
         embeddings_dir = os.path.join('cache', 'embeddings')
         os.makedirs(embeddings_dir, exist_ok=True)
-        embeddings_file = os.path.join(embeddings_dir, f"embeddings_{self.config.model_name.replace('/', '_')}.npy")
+        model_name_safe = self.config.model_name.replace('/', '_')
+        embeddings_file = os.path.join(
+            embeddings_dir, f"embeddings_{model_name_safe}.npy"
+        )
         
         # Nếu flag regenerate_embeddings là True, xóa cache nếu tồn tại
         if self.config.regenerate_embeddings:
             if os.path.exists(embeddings_file):
                 os.remove(embeddings_file)
-                logging.info(f"Đã xóa embeddings cache cũ: {embeddings_file} (do flag regenerate_embeddings=True)")
+                logging.info(
+                    f"Đã xóa embeddings cache cũ: {embeddings_file} "
+                    f"(do flag regenerate_embeddings=True)"
+                )
         
         # Kiểm tra xem file embeddings đã tồn tại chưa
         if os.path.exists(embeddings_file):
@@ -116,18 +148,26 @@ class EmbeddingGenerator:
                     logging.info(f"Đã tải embeddings từ file: {embeddings_file}")
                     return embeddings
                 else:
-                    logging.warning(f"Kích thước embeddings trong file không khớp. Tạo mới embeddings.")
+                    logging.warning(
+                        "Kích thước embeddings trong file không khớp. "
+                        "Tạo mới embeddings."
+                    )
             except Exception as e:
-                logging.error(f"Lỗi khi tải embeddings từ file {embeddings_file}: {str(e)}")
+                logging.error(
+                    f"Lỗi khi tải embeddings từ file {embeddings_file}: {str(e)}"
+                )
         
-        # Tạo embeddings mới
+        # Tạo embeddings mới với tối ưu hiệu suất
         embeddings = []
         batch_size = self.config.batch_size
         
-        for i in tqdm(range(0, len(texts), batch_size), desc="Đang tạo embeddings"):
+        # Tối ưu: Xử lý theo batch lớn hơn
+        for i in tqdm(range(0, len(texts), batch_size), 
+                     desc="Đang tạo embeddings"):
             batch_texts = texts[i:i+batch_size]
             batch_texts_with_prefix = [f"{prefix}: {text}" for text in batch_texts]
             
+            # Tokenize batch
             batch_dict = self.tokenizer(
                 batch_texts_with_prefix,
                 max_length=self.config.max_length,
@@ -136,8 +176,16 @@ class EmbeddingGenerator:
                 return_tensors='pt'
             )
             
-            batch_dict = {k: v.to(self.device) for k, v in batch_dict.items()}
+            # Chuyển sang device với pin_memory nếu có GPU
+            if self.device.type == 'cuda' and self.config.pin_memory:
+                batch_dict = {
+                    k: v.pin_memory().to(self.device, non_blocking=True) 
+                    for k, v in batch_dict.items()
+                }
+            else:
+                batch_dict = {k: v.to(self.device) for k, v in batch_dict.items()}
             
+            # Tạo embeddings với torch.no_grad() để tiết kiệm memory
             with torch.no_grad():
                 outputs = self.model(**batch_dict)
                 batch_embeddings = self._average_pool(
@@ -146,6 +194,11 @@ class EmbeddingGenerator:
                 )
                 batch_embeddings = F.normalize(batch_embeddings, p=2, dim=1)
                 embeddings.append(batch_embeddings.cpu().numpy())
+            
+            # Giải phóng memory sau mỗi batch
+            del batch_dict, outputs, batch_embeddings
+            if self.device.type == 'cuda':
+                torch.cuda.empty_cache()
         
         embeddings = np.vstack(embeddings)
         
@@ -154,7 +207,9 @@ class EmbeddingGenerator:
             np.save(embeddings_file, embeddings)
             logging.info(f"Đã lưu embeddings vào file: {embeddings_file}")
         except Exception as e:
-            logging.error(f"Lỗi khi lưu embeddings vào file {embeddings_file}: {str(e)}")
+            logging.error(
+                f"Lỗi khi lưu embeddings vào file {embeddings_file}: {str(e)}"
+            )
         
         return embeddings
     
@@ -177,7 +232,14 @@ class EmbeddingGenerator:
             return_tensors='pt'
         )
         
-        batch_dict = {k: v.to(self.device) for k, v in batch_dict.items()}
+        # Tối ưu device transfer
+        if self.device.type == 'cuda' and self.config.pin_memory:
+            batch_dict = {
+                k: v.pin_memory().to(self.device, non_blocking=True) 
+                for k, v in batch_dict.items()
+            }
+        else:
+            batch_dict = {k: v.to(self.device) for k, v in batch_dict.items()}
         
         with torch.no_grad():
             outputs = self.model(**batch_dict)
