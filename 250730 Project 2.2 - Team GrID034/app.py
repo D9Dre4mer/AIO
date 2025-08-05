@@ -505,6 +505,9 @@ def get_embeddings_cached(messages: list) -> np.ndarray:
     """Cache embeddings generation."""
     cfg = SpamClassifierConfig()
     eg = EmbeddingGenerator(cfg)
+    
+    # The EmbeddingGenerator already handles .npy file caching internally
+    # It will automatically load from cache if available, or generate and save if not
     return eg.generate_embeddings(messages)
 
 @st.cache_data
@@ -780,9 +783,14 @@ elif st.session_state.page == "📈 Đánh giá Bộ phân loại":
 
     # Train hai mô hình KNN và TF-IDF
     pipe_knn = SpamClassifierPipeline(cfg, classifier_type="knn")
-    pipe_knn.train()
+
     pipe_tfidf = SpamClassifierPipeline(cfg, classifier_type="tfidf")
-    pipe_tfidf.train()
+    
+    # Train models only when needed (deferred training)
+    with st.spinner("Đang huấn luyện mô hình KNN..."):
+        pipe_knn.train()
+    with st.spinner("Đang huấn luyện mô hình TF-IDF..."):
+        pipe_tfidf.train()
 
     evaluator = ModelEvaluator(cfg)
 

@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 class TFIDFClassifier:
     """Bộ phân loại TF-IDF nâng cấp sử dụng SVM với preprocessing và auto-tuning."""
     
-    def __init__(self, max_features: int = 5000):
+    def __init__(self, max_features: int = 2000):
         """
         Khởi tạo bộ phân loại.
         
@@ -75,7 +75,7 @@ class TFIDFClassifier:
                 strip_accents='unicode'         # Loại bỏ dấu
             )),
             ('svd', TruncatedSVD(
-                n_components=100,               # Giảm chiều để tránh overfitting
+                n_components=50,                # Giảm chiều để tiết kiệm memory
                 random_state=42
             )),
             ('clf', LinearSVC(
