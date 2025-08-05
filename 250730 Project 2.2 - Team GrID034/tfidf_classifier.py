@@ -97,7 +97,7 @@ class TFIDFClassifier:
             param_grid=param_grid,
             cv=3,                               # 3-fold cross validation
             scoring='f1_macro',                 # Sử dụng F1-macro cho balanced evaluation
-            n_jobs=-1,                          # Sử dụng tất cả CPU cores
+            n_jobs=1,                           # Sử dụng 1 CPU core để tránh lỗi parallel processing trên Windows
             verbose=0                           # Tắt verbose để không spam console
         )
         

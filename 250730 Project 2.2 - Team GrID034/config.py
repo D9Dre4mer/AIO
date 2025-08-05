@@ -13,7 +13,7 @@ class SpamClassifierConfig:
     # Cài đặt mô hình
     model_name: str = 'intfloat/multilingual-e5-base'
     max_length: int = 512
-    batch_size: int = 128  # Tăng từ 32 lên 128 để tối ưu hiệu suất
+    batch_size: int = 32  # Tăng từ 32 lên 128 để tối ưu hiệu suất
     
     # Cài đặt hiệu suất
     use_gpu: bool = True
