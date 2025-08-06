@@ -48,6 +48,19 @@ class KNNClassifier:
         Returns:
             Tuple chứa prediction và thông tin neighbors
         """
+        # Debug: Kiểm tra kích thước embedding
+        print(f"Debug: Query embedding shape: {query_embedding.shape}")
+        print(f"Debug: FAISS index dimension: {self.index.d}")
+        print(f"Debug: Query embedding dtype: {query_embedding.dtype}")
+        
+        # Đảm bảo kích thước đúng
+        if query_embedding.shape[1] != self.index.d:
+            raise ValueError(
+                f"Embedding dimension mismatch! "
+                f"Query: {query_embedding.shape[1]}, "
+                f"Index: {self.index.d}"
+            )
+        
         # Tìm kiếm trong FAISS index
         scores, indices = self.index.search(query_embedding, k)
         
