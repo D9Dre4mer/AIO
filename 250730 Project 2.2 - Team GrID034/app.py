@@ -519,11 +519,20 @@ def retrain_model_with_corrections(classifier_type: str = 'knn') -> Dict[str, An
     Returns:
         Dict chứa thông tin training
     """
-    # Clear cache để force retrain
+    # Clear tất cả cache để force retrain hoàn toàn
     load_pipeline_with_corrections.clear()
+    load_pipeline_with_classifier.clear()
+    load_pipeline.clear()
+    get_embeddings_cached.clear()
+    compute_tsne_cached.clear()
     
-    # Retrain với corrections
-    pipeline, training_info = load_pipeline_with_corrections(classifier_type)
+    # Thiết lập regenerate_embeddings = True để force regenerate embeddings
+    cfg = SpamClassifierConfig()
+    cfg.regenerate_embeddings = True
+    
+    # Retrain với corrections và regenerate embeddings
+    pipeline = SpamClassifierPipeline(cfg, classifier_type=classifier_type)
+    training_info = pipeline.train_with_corrections()
     
     # Update session state
     st.session_state['current_pipeline'] = pipeline
