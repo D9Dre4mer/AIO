@@ -4,6 +4,7 @@ Pipeline chính cho spam classification.
 import numpy as np
 import os
 import logging
+import json
 from typing import Dict, Any
 from config import SpamClassifierConfig
 from data_loader import DataLoader
@@ -34,11 +35,90 @@ class SpamClassifierPipeline:
         self.classifier = None
         self.classifier_type = classifier_type
         
+    def load_corrections(self) -> Dict[str, Any]:
+        """Load correction data từ file JSON"""
+        correction_file = "./cache/corrections.json"
+        if os.path.exists(correction_file):
+            try:
+                with open(correction_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Lỗi load corrections: {e}")
+                return {}
+        return {}
+        
+    def train_with_corrections(self) -> Dict[str, Any]:
+        """
+        🆕 Huấn luyện mô hình với dữ liệu gốc + corrections.
+        
+        Returns:
+            Dict chứa thông tin training với corrections
+        """
+        logger.info("Đang tải dữ liệu gốc...")
+        messages, labels = self.data_loader.load_data()
+        
+        corrections = self.load_corrections()
+        logger.info(f"Tìm thấy {len(corrections)} corrections")
+        
+        if corrections:
+            logger.info("Đang merge corrections vào dataset...")
+            
+            extended_messages = messages.copy()
+            extended_labels = labels.copy()
+            
+            for email_id, correction in corrections.items():
+                subject = correction.get('subject', '')
+                sender = correction.get('sender', '')
+                snippet = correction.get('snippet', '')
+                
+                correction_text = (
+                    f"Subject: {subject}\nFrom: {sender}\n{snippet}"
+                )
+                
+                corrected_label = correction.get('corrected_label', 'ham')
+                extended_messages.append(correction_text)
+                extended_labels.append(corrected_label)
+                
+                logger.info(f"Thêm correction: {email_id} -> {corrected_label}")
+            
+            messages = extended_messages
+            labels = extended_labels
+            
+            logger.info(f"Dataset sau merge: {len(messages)} samples")
+        
+        return self._train_with_data(messages, labels, use_corrections=True)
+        
     def train(self) -> None:
-        """Huấn luyện mô hình với dữ liệu."""
-        # Tải dữ liệu
+        """Huấn luyện mô hình với dữ liệu gốc."""
         logger.info("Đang tải dữ liệu...")
         messages, labels = self.data_loader.load_data()
+        
+        self._train_with_data(messages, labels, use_corrections=False)
+        
+    def _train_with_data(self, messages: list, labels: list,
+                         use_corrections: bool = False) -> Dict[str, Any]:
+        """
+        🆕 Internal method để train với data được cung cấp.
+        
+        Args:
+            messages: List messages
+            labels: List labels
+            use_corrections: Có sử dụng corrections không
+            
+        Returns:
+            Dict chứa thông tin training
+        """
+        training_info = {
+            'total_samples': len(messages),
+            'original_samples': (
+                len(messages) - len(self.load_corrections())
+                if use_corrections else len(messages)
+            ),
+            'correction_samples': (
+                len(self.load_corrections()) if use_corrections else 0
+            ),
+            'use_corrections': use_corrections
+        }
         
         if self.classifier_type == 'knn':
             # Kiểm tra số dòng dataset so với embeddings cache
@@ -74,7 +154,7 @@ class SpamClassifierPipeline:
         logger.info(f"Các lớp: {self.data_loader.get_class_names()}")
 
         # Chia dữ liệu
-        train_idx, test_idx, y_train, y_test = (
+        train_idx, _, y_train, _ = (
             self.data_loader.split_data(messages, labels)
         )
         train_msgs = [messages[i] for i in train_idx]
@@ -111,6 +191,14 @@ class SpamClassifierPipeline:
             raise ValueError(
                 f"Loại classifier không hợp lệ: {self.classifier_type}"
             )
+            
+        training_info['train_samples'] = len(train_msgs)
+        training_info['label_distribution'] = {
+            label: train_lbls.count(label) for label in set(train_lbls)
+        }
+        
+        logger.info(f"Training hoàn tất: {training_info}")
+        return training_info
             
     def predict(self, text: str, k: int = None) -> Dict[str, Any]:
         """

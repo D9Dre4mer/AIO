@@ -6,6 +6,7 @@ import plotly.express as px
 from sklearn.manifold import TSNE
 import json
 from datetime import datetime
+from typing import Dict, Any
 
 from config import SpamClassifierConfig
 from data_loader import DataLoader
@@ -15,7 +16,7 @@ from spam_classifier import SpamClassifierPipeline
 from email_handler import GmailHandler
 
 # --- Cấu hình trang và CSS tùy chỉnh ---
-st.set_page_config(page_title="Bảng điều khiển Spam Mail", layout="centered")
+st.set_page_config(page_title="Bảng điều khiển Email Classifier", layout="centered")
 st.markdown("""
 <style>
 /* Royal Green Theme - Professional Design */
@@ -494,6 +495,42 @@ def load_pipeline_with_classifier(classifier_type: str = 'knn'):
     """
     return load_pipeline(classifier_type)
 
+@st.cache_resource
+def load_pipeline_with_corrections(classifier_type: str = 'knn'):
+    """
+    🆕 Khởi tạo và train pipeline với corrections.
+    Cache riêng cho pipeline với corrections.
+    
+    Args:
+        classifier_type: Loại bộ phân loại ('knn' hoặc 'tfidf')
+    """
+    cfg = SpamClassifierConfig()
+    pipeline = SpamClassifierPipeline(cfg, classifier_type=classifier_type)
+    training_info = pipeline.train_with_corrections()
+    return pipeline, training_info
+
+def retrain_model_with_corrections(classifier_type: str = 'knn') -> Dict[str, Any]:
+    """
+    🆕 Retrain model với corrections và clear cache.
+    
+    Args:
+        classifier_type: Loại classifier
+        
+    Returns:
+        Dict chứa thông tin training
+    """
+    # Clear cache để force retrain
+    load_pipeline_with_corrections.clear()
+    
+    # Retrain với corrections
+    pipeline, training_info = load_pipeline_with_corrections(classifier_type)
+    
+    # Update session state
+    st.session_state['current_pipeline'] = pipeline
+    st.session_state['training_info'] = training_info
+    
+    return training_info
+
 # --- Tải dữ liệu mẫu vào session_state ---
 @st.cache_data
 def load_sample_data(path: str) -> pd.DataFrame:
@@ -537,11 +574,11 @@ def show_authentication_ui():
                 try:
                     success = gmail_handler.authenticate_auto()
                     if success:
-                        st.balloons()
+                        st.toast("🎉 Đăng nhập thành công! Bắt đầu phân loại Email.", icon="✅")
                         st.rerun()
                 except Exception as e:
                     st.error(f"❌ Auto auth failed: {str(e)}")
-                    st.info("💡 Thử phương thức thủ công bên dưới")
+                    st.info("💡 Thử phương thức thủ công")
     
     else:
         email_hint = st.text_input("Nhập email:", 
@@ -561,7 +598,8 @@ def show_authentication_ui():
         # Hướng dẫn
         st.markdown("---")
         st.markdown("**Hướng dẫn:**")
-        st.markdown("1. Click vào link đăng nhập bên trên")
+        st.markdown("0. Phương thức này dùng cho lần đăng nhập đầu tiên")
+        st.markdown("1. Click vào nút đăng nhập bên trên")
         st.markdown("2. Chọn tài khoản Gmail và cho phép quyền truy cập")
         st.markdown("3. Copy authorization code từ URL redirect")
         st.markdown("4. Paste code vào ô bên dưới")
@@ -885,7 +923,7 @@ elif st.session_state.page == "🔧 Quản lý Corrections":
             st.dataframe(df_corrections, use_container_width=True)
             
             # Export corrections
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("📥 Export Corrections (JSON)", use_container_width=True):
                     st.download_button(
@@ -896,6 +934,12 @@ elif st.session_state.page == "🔧 Quản lý Corrections":
                     )
             
             with col2:
+                # 🆕 Retrain Model button
+                if st.button("🔄 Retrain Model", type="primary", use_container_width=True):
+                    st.session_state.page = "🔄 Retrain Model"
+                    st.rerun()
+            
+            with col3:
                 # Sử dụng session state để quản lý trạng thái xác nhận
                 if 'show_delete_confirmation' not in st.session_state:
                     st.session_state.show_delete_confirmation = False
@@ -920,6 +964,123 @@ elif st.session_state.page == "🔧 Quản lý Corrections":
                         if st.button("❌ Hủy", use_container_width=True):
                             st.session_state.show_delete_confirmation = False
                             st.rerun()
+
+# --- Trang Retrain Model ---
+elif st.session_state.page == "🔄 Retrain Model":
+    st.header("🔄 Retrain Model với Corrections")
+    
+    st.markdown("""
+    ### 📝 Hướng dẫn:
+    - Model sẽ được retrain với dataset gốc + corrections
+    - Corrections sẽ được merge vào training data
+    - Cache sẽ được clear để force retrain
+    - Quá trình có thể mất vài phút
+    """)
+    
+    # Hiển thị thống kê corrections
+    correction_stats = get_correction_stats()
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📝 Total Corrections", correction_stats['total'])
+    with col2:
+        st.metric("🗑️→📥 Spam→Ham", correction_stats['spam_to_ham'])
+    with col3:
+        st.metric("📥→🗑️ Ham→Spam", correction_stats['ham_to_spam'])
+    
+    if correction_stats['total'] > 0:
+        st.success(f"✅ Có {correction_stats['total']} corrections có thể dùng để retrain")
+        
+        # Form retrain
+        st.markdown("### ⚙️ Cài đặt Retrain")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            classifier_type = st.selectbox(
+                "🔍 Chọn loại classifier:",
+                ["knn", "tfidf"],
+                help="KNN: Dùng embeddings, TF-IDF: Dùng text features"
+            )
+            
+            # Hiển thị thông tin classifier
+            classifier_info = {
+                'knn': {
+                    'name': 'KNN với Embeddings',
+                    'description': 'Sử dụng mô hình đa ngôn ngữ E5 để tạo embeddings, sau đó dùng K-Nearest Neighbors để phân loại',
+                    'pros': '✅ Độ chính xác cao, hỗ trợ đa ngôn ngữ',
+                    'cons': '⚠️ Tốc độ chậm hơn, cần nhiều bộ nhớ'
+                },
+                'tfidf': {
+                    'name': 'TF-IDF + SVM',
+                    'description': 'Sử dụng TF-IDF để vector hóa văn bản, kết hợp với SVM để phân loại',
+                    'pros': '⚡ Tốc độ nhanh, ít tốn bộ nhớ',
+                    'cons': '⚠️ Có thể kém chính xác hơn với văn bản phức tạp'
+                }
+            }
+            
+            info = classifier_info[classifier_type]
+            with st.expander(f"ℹ️ Thông tin classifier: {info['name']}", expanded=False):
+                st.markdown(f"**Mô tả:** {info['description']}")
+                st.markdown(f"**Ưu điểm:** {info['pros']}")
+                st.markdown(f"**Nhược điểm:** {info['cons']}")
+        
+        with col2:
+            if st.button("🔄 Bắt đầu Retrain", type="primary", use_container_width=True):
+                with st.spinner("🔄 Đang retrain model với corrections..."):
+                    try:
+                        # Hiển thị progress
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        status_text.text("📊 Đang load dataset gốc...")
+                        progress_bar.progress(20)
+                        
+                        status_text.text("📝 Đang merge corrections...")
+                        progress_bar.progress(40)
+                        
+                        status_text.text("🔧 Đang train model...")
+                        progress_bar.progress(60)
+                        
+                        # Thực hiện retrain
+                        training_info = retrain_model_with_corrections(classifier_type)
+                        
+                        status_text.text("✅ Hoàn tất!")
+                        progress_bar.progress(100)
+                        
+                        st.success("🎉 Retrain thành công!")
+                        
+                        # Hiển thị thông tin chi tiết
+                        st.markdown("### 📊 Thông tin Training")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("📊 Tổng samples", training_info['total_samples'])
+                            st.metric("📝 Original samples", training_info['original_samples'])
+                        with col2:
+                            st.metric("🔧 Correction samples", training_info['correction_samples'])
+                            st.metric("🔍 Classifier", classifier_type.upper())
+                        
+                        # Hiển thị phân bố labels
+                        if 'label_distribution' in training_info:
+                            st.markdown("### 📈 Phân bố Labels")
+                            for label, count in training_info['label_distribution'].items():
+                                percentage = (count / training_info['total_samples']) * 100
+                                st.write(f"- **{label}**: {count} samples ({percentage:.1f}%)")
+                        
+                        # Hiển thị thông tin cache
+                        st.info("💡 Model đã được cache và sẵn sàng sử dụng!")
+                        
+                    except Exception as e:
+                        st.error(f"❌ Lỗi retrain: {str(e)}")
+                        st.info("💡 Kiểm tra lại corrections hoặc thử classifier khác")
+    else:
+        st.warning("⚠️ Chưa có corrections nào.")
+        st.info("💡 Hãy sửa một số predictions trong trang '🔧 Quản lý Corrections' trước khi retrain.")
+        
+        # Nút chuyển đến trang corrections
+        if st.button("🔧 Đi đến Quản lý Corrections", use_container_width=True):
+            st.session_state.page = "🔧 Quản lý Corrections"
+            st.rerun()
 
 # --- Trang Quét Gmail ---
 elif st.session_state.page == "✉️ Quét Gmail":

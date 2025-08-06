@@ -333,7 +333,7 @@ class GmailHandler:
             logger.error(f"Lỗi get auth status: {str(e)}")
             return status
     
-    # ===== MANUAL AUTHENTICATION METHODS (TƯƠNG THÍCH VỚI APP.PY CŨ) =====
+    # ===== MANUAL AUTHENTICATION METHODS  =====
     
     def get_authorization_url(self) -> str:
         """
@@ -1231,7 +1231,7 @@ class GmailHandler:
             sync_results['errors'].append(f"Lỗi general: {str(e)}")
             return sync_results
     
-    # 🆕 ===== EMAIL PROCESSING METHODS FOR MAIN.PY COMPATIBILITY =====
+    # 🆕 ===== EMAIL PROCESSING METHODS FOR MAIN.PY =====
     
     def process_emails(self, max_results: int = 10) -> Dict[str, Any]:
         """
