@@ -726,6 +726,29 @@ if "code" in query_params and "state" in query_params:
 
 # --- Trang Tổng quan (Overview) ---
 if st.session_state.page == "🏠 Tổng quan":
+    # Hiển thị messages từ session state
+    if 'success_message' in st.session_state:
+        st.success(st.session_state['success_message'])
+        del st.session_state['success_message']
+    
+    if 'warning_message' in st.session_state:
+        st.warning(st.session_state['warning_message'])
+        del st.session_state['warning_message']
+    
+    if 'error_message' in st.session_state:
+        st.error(st.session_state['error_message'])
+        del st.session_state['error_message']
+    
+    # Hiển thị debug info nếu có
+    if 'debug_info' in st.session_state:
+        st.info(f"🔍 Debug: {st.session_state['debug_info']}")
+        del st.session_state['debug_info']
+    
+    # Trigger rerun nếu cần
+    if st.session_state.get('needs_rerun', False):
+        del st.session_state['needs_rerun']
+        st.rerun()
+    
     st.markdown('<h1 class="main-title">📧 <span>Email Classifier</span></h1>', unsafe_allow_html=True)
     st.markdown('<div class="subtext">Khám phá và phân loại email với giao diện tương tác!</div>', unsafe_allow_html=True)
 
@@ -1093,6 +1116,29 @@ elif st.session_state.page == "🔄 Retrain Model":
 
 # --- Trang Quét Gmail ---
 elif st.session_state.page == "✉️ Quét Gmail":
+    # Hiển thị messages từ session state
+    if 'success_message' in st.session_state:
+        st.success(st.session_state['success_message'])
+        del st.session_state['success_message']
+    
+    if 'warning_message' in st.session_state:
+        st.warning(st.session_state['warning_message'])
+        del st.session_state['warning_message']
+    
+    if 'error_message' in st.session_state:
+        st.error(st.session_state['error_message'])
+        del st.session_state['error_message']
+    
+    # Hiển thị debug info nếu có
+    if 'debug_info' in st.session_state:
+        st.info(f"🔍 Debug: {st.session_state['debug_info']}")
+        del st.session_state['debug_info']
+    
+    # Trigger rerun nếu cần
+    if st.session_state.get('needs_rerun', False):
+        del st.session_state['needs_rerun']
+        st.rerun()
+    
     st.header("✉️ Quét Gmail")
 
     # Kiểm tra xác thực
@@ -1482,96 +1528,141 @@ elif st.session_state.page == "✉️ Quét Gmail":
 
                     col1, col2, col3 = st.columns(3)
 
-                    def relabel_ham_action():
-                        # Lưu correction vào file local
-                        if add_correction(
-                            email['id'], email['prediction'], 'ham', email
-                        ):
-                            # Gọi Gmail API để cập nhật label thật
-                            try:
-                                gmail_handler = get_gmail_handler()
-                                if gmail_handler.apply_single_correction(
-                                    email['id'], 'ham', email['prediction']
-                                ):
-                                    st.success("✅ Đã đánh dấu lại thành HAM và cập nhật Gmail!")
-                                else:
-                                    st.warning("⚠️ Đã lưu correction nhưng không thể cập nhật Gmail")
-                            except Exception as e:
-                                st.error(f"❌ Lỗi cập nhật Gmail: {str(e)}")
+                    # Tạo các hàm callback với closure để capture email data
+                    def create_relabel_ham_action(email_data):
+                        def relabel_ham_action():
+                            # Debug logging
+                            st.session_state['debug_info'] = f"Bắt đầu relabel_ham_action cho email {email_data['id']}"
                             
-                            # Cập nhật session state
-                            for e in st.session_state['classified_emails']:
-                                if e['id'] == email['id']:
-                                    e['corrected_label'] = 'ham'
-                                    e['is_corrected'] = True
-                                    break
-                            st.session_state['inbox_emails'] = [
-                                e for e in st.session_state['classified_emails']
-                                if e.get('corrected_label', e['prediction']) == 'ham'
-                            ]
-                            st.session_state['spam_emails'] = [
-                                e for e in st.session_state['classified_emails']
-                                if e.get('corrected_label', e['prediction']) == 'spam'
-                            ]
-                            st.rerun()
+                            # Lưu correction vào file local
+                            if add_correction(
+                                email_data['id'], email_data['prediction'], 'ham', email_data
+                            ):
+                                # Gọi Gmail API để cập nhật label thật
+                                try:
+                                    gmail_handler = get_gmail_handler()
+                                    st.session_state['debug_info'] = f"Đang gọi Gmail API cho email {email_data['id']}..."
+                                    
+                                    # Thực hiện correction
+                                    result = gmail_handler.apply_single_correction(
+                                        email_data['id'], 'ham', email_data['prediction']
+                                    )
+                                    
+                                    if result:
+                                        st.session_state['success_message'] = "✅ Đã đánh dấu lại thành HAM và cập nhật Gmail!"
+                                        st.session_state['debug_info'] = f"Gmail API thành công cho email {email_data['id']}"
+                                    else:
+                                        st.session_state['warning_message'] = "⚠️ Đã lưu correction nhưng không thể cập nhật Gmail"
+                                        st.session_state['debug_info'] = f"Gmail API thất bại cho email {email_data['id']}"
+                                except Exception as e:
+                                    st.session_state['error_message'] = f"❌ Lỗi cập nhật Gmail: {str(e)}"
+                                    st.session_state['debug_info'] = f"Exception khi gọi Gmail API: {str(e)}"
+                                
+                                # Cập nhật session state
+                                for e in st.session_state['classified_emails']:
+                                    if e['id'] == email_data['id']:
+                                        e['corrected_label'] = 'ham'
+                                        e['is_corrected'] = True
+                                        break
+                                st.session_state['inbox_emails'] = [
+                                    e for e in st.session_state['classified_emails']
+                                    if e.get('corrected_label', e['prediction']) == 'ham'
+                                ]
+                                st.session_state['spam_emails'] = [
+                                    e for e in st.session_state['classified_emails']
+                                    if e.get('corrected_label', e['prediction']) == 'spam'
+                                ]
+                                st.session_state['needs_rerun'] = True
+                        return relabel_ham_action
 
-                    def relabel_spam_action():
-                        # Lưu correction vào file local
-                        if add_correction(
-                            email['id'], email['prediction'], 'spam', email
-                        ):
-                            # Gọi Gmail API để cập nhật label thật
-                            try:
-                                gmail_handler = get_gmail_handler()
-                                if gmail_handler.apply_single_correction(
-                                    email['id'], 'spam', email['prediction']
-                                ):
-                                    st.success("✅ Đã đánh dấu lại thành SPAM và cập nhật Gmail!")
-                                else:
-                                    st.warning("⚠️ Đã lưu correction nhưng không thể cập nhật Gmail")
-                            except Exception as e:
-                                st.error(f"❌ Lỗi cập nhật Gmail: {str(e)}")
+                    def create_relabel_spam_action(email_data):
+                        def relabel_spam_action():
+                            # Debug logging
+                            st.session_state['debug_info'] = f"Bắt đầu relabel_spam_action cho email {email_data['id']}"
                             
-                            # Cập nhật session state
-                            for e in st.session_state['classified_emails']:
-                                if e['id'] == email['id']:
-                                    e['corrected_label'] = 'spam'
-                                    e['is_corrected'] = True
-                                    break
-                            st.session_state['inbox_emails'] = [
-                                e for e in st.session_state['classified_emails']
-                                if e.get('corrected_label', e['prediction']) == 'ham'
-                            ]
-                            st.session_state['spam_emails'] = [
-                                e for e in st.session_state['classified_emails']
-                                if e.get('corrected_label', e['prediction']) == 'spam'
-                            ]
-                            st.rerun()
+                            # Lưu correction vào file local
+                            if add_correction(
+                                email_data['id'], email_data['prediction'], 'spam', email_data
+                            ):
+                                # Gọi Gmail API để cập nhật label thật
+                                try:
+                                    gmail_handler = get_gmail_handler()
+                                    st.session_state['debug_info'] = f"Đang gọi Gmail API cho email {email_data['id']}..."
+                                    
+                                    # Thực hiện correction
+                                    result = gmail_handler.apply_single_correction(
+                                        email_data['id'], 'spam', email_data['prediction']
+                                    )
+                                    
+                                    if result:
+                                        st.session_state['success_message'] = "✅ Đã đánh dấu lại thành SPAM và cập nhật Gmail!"
+                                        st.session_state['debug_info'] = f"Gmail API thành công cho email {email_data['id']}"
+                                    else:
+                                        st.session_state['warning_message'] = "⚠️ Đã lưu correction nhưng không thể cập nhật Gmail"
+                                        st.session_state['debug_info'] = f"Gmail API thất bại cho email {email_data['id']}"
+                                except Exception as e:
+                                    st.session_state['error_message'] = f"❌ Lỗi cập nhật Gmail: {str(e)}"
+                                    st.session_state['debug_info'] = f"Exception khi gọi Gmail API: {str(e)}"
+                                
+                                # Cập nhật session state
+                                for e in st.session_state['classified_emails']:
+                                    if e['id'] == email_data['id']:
+                                        e['corrected_label'] = 'spam'
+                                        e['is_corrected'] = True
+                                        break
+                                st.session_state['inbox_emails'] = [
+                                    e for e in st.session_state['classified_emails']
+                                    if e.get('corrected_label', e['prediction']) == 'ham'
+                                ]
+                                st.session_state['spam_emails'] = [
+                                    e for e in st.session_state['classified_emails']
+                                    if e.get('corrected_label', e['prediction']) == 'spam'
+                                ]
+                                st.session_state['needs_rerun'] = True
+                        return relabel_spam_action
 
-                    def confirm_action():
-                        # Lưu correction vào file local
-                        if add_correction(
-                            email['id'], email['prediction'], email['prediction'], email
-                        ):
-                            # Gọi Gmail API để cập nhật label thật
-                            try:
-                                gmail_handler = get_gmail_handler()
-                                if gmail_handler.apply_single_correction(
-                                    email['id'], email['prediction'], email['prediction']
-                                ):
-                                    st.success("✅ Đã xác nhận phân loại và cập nhật Gmail!")
-                                else:
-                                    st.warning("⚠️ Đã lưu correction nhưng không thể cập nhật Gmail")
-                            except Exception as e:
-                                st.error(f"❌ Lỗi cập nhật Gmail: {str(e)}")
+                    def create_confirm_action(email_data):
+                        def confirm_action():
+                            # Debug logging
+                            st.session_state['debug_info'] = f"Bắt đầu confirm_action cho email {email_data['id']}"
                             
-                            # Cập nhật session state
-                            for e in st.session_state['classified_emails']:
-                                if e['id'] == email['id']:
-                                    e['corrected_label'] = email['prediction']
-                                    e['is_corrected'] = True
-                                    break
-                            st.rerun()
+                            # Lưu correction vào file local
+                            if add_correction(
+                                email_data['id'], email_data['prediction'], email_data['prediction'], email_data
+                            ):
+                                # Gọi Gmail API để cập nhật label thật
+                                try:
+                                    gmail_handler = get_gmail_handler()
+                                    st.session_state['debug_info'] = f"Đang gọi Gmail API cho email {email_data['id']}..."
+                                    
+                                    # Thực hiện correction
+                                    result = gmail_handler.apply_single_correction(
+                                        email_data['id'], email_data['prediction'], email_data['prediction']
+                                    )
+                                    
+                                    if result:
+                                        st.session_state['success_message'] = "✅ Đã xác nhận phân loại và cập nhật Gmail!"
+                                        st.session_state['debug_info'] = f"Gmail API thành công cho email {email_data['id']}"
+                                    else:
+                                        st.session_state['warning_message'] = "⚠️ Đã lưu correction nhưng không thể cập nhật Gmail"
+                                        st.session_state['debug_info'] = f"Gmail API thất bại cho email {email_data['id']}"
+                                except Exception as e:
+                                    st.session_state['error_message'] = f"❌ Lỗi cập nhật Gmail: {str(e)}"
+                                    st.session_state['debug_info'] = f"Exception khi gọi Gmail API: {str(e)}"
+                                
+                                # Cập nhật session state
+                                for e in st.session_state['classified_emails']:
+                                    if e['id'] == email_data['id']:
+                                        e['corrected_label'] = email_data['prediction']
+                                        e['is_corrected'] = True
+                                        break
+                                st.session_state['needs_rerun'] = True
+                        return confirm_action
+
+                    # Tạo các callback với email data
+                    relabel_ham_action = create_relabel_ham_action(email)
+                    relabel_spam_action = create_relabel_spam_action(email)
+                    confirm_action = create_confirm_action(email)
 
                     with col1:
                         st.button(

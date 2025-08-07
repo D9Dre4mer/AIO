@@ -852,22 +852,29 @@ class GmailHandler:
             Label ID
         """
         try:
+            logger.info(f"🔍 Tìm kiếm label: {label_name}")
+            
             # Check cache trước
             if label_name in self._label_cache:
+                logger.info(f"✅ Tìm thấy trong cache: {label_name} = {self._label_cache[label_name]}")
                 return self._label_cache[label_name]
             
             # Refresh cache và check lại
+            logger.info("🔄 Refresh label cache...")
             self._refresh_label_cache()
             if label_name in self._label_cache:
+                logger.info(f"✅ Tìm thấy sau refresh: {label_name} = {self._label_cache[label_name]}")
                 return self._label_cache[label_name]
             
             # Tạo label mới nếu không tìm thấy
+            logger.info(f"➕ Tạo label mới: {label_name}")
             new_label = {
                 'name': label_name,
                 'labelListVisibility': 'labelShow',
                 'messageListVisibility': 'show'
             }
             
+            logger.info(f"📝 Label config: {new_label}")
             created_label = self.service.users().labels().create(
                 userId='me',
                 body=new_label
@@ -877,14 +884,18 @@ class GmailHandler:
             label_id = created_label['id']
             self._label_cache[label_name] = label_id
             
-            logger.info(f"Đã tạo label mới: {label_name}")
+            logger.info(f"✅ Đã tạo label mới: {label_name} = {label_id}")
+            logger.info(f"📋 Response: {created_label}")
             return label_id
             
         except HttpError as e:
-            logger.error(f"Lỗi Gmail API khi tạo/lấy label: {str(e)}")
+            logger.error(f"💥 Lỗi Gmail API khi tạo/lấy label '{label_name}': {str(e)}")
+            logger.error(f"📍 HTTP Error details: {e.resp.status} - {e.content}")
             raise
         except Exception as e:
-            logger.error(f"Lỗi không xác định khi tạo/lấy label: {str(e)}")
+            logger.error(f"💥 Lỗi không xác định khi tạo/lấy label '{label_name}': {str(e)}")
+            import traceback
+            logger.error(f"📍 Stack trace: {traceback.format_exc()}")
             raise
     
     def get_user_profile(self) -> Dict[str, str]:
@@ -931,29 +942,93 @@ class GmailHandler:
             return False
             
         try:
-            # Add correction label
+            logger.info(f"🚀 Bắt đầu apply_single_correction cho email {email_id}: {original_prediction} → {corrected_label}")
+            
+            # Khởi tạo correction system nếu chưa có
+            if not self._correction_label_id:
+                logger.info("⚡ Khởi tạo correction system...")
+                self._initialize_correction_system()
+                logger.info(f"✅ Correction label ID: {self._correction_label_id}")
+            
+            # Thử approach đơn giản: từng bước một
+            success_steps = []
+            
+            # Bước 1: Thêm AI_CORRECTED label
             if self._correction_label_id:
-                self.service.users().messages().modify(
+                try:
+                    logger.info("📝 Bước 1: Thêm AI_CORRECTED label...")
+                    result1 = self.service.users().messages().modify(
+                        userId='me',
+                        id=email_id,
+                        body={'addLabelIds': [self._correction_label_id]}
+                    ).execute()
+                    logger.info(f"✅ Đã thêm AI_CORRECTED: {result1.get('id', 'unknown')}")
+                    success_steps.append("AI_CORRECTED")
+                except Exception as e:
+                    logger.error(f"❌ Lỗi thêm AI_CORRECTED: {str(e)}")
+            
+            # Bước 2: Thêm label phân loại
+            try:
+                if corrected_label.lower() == 'spam':
+                    logger.info("📝 Bước 2: Tạo và thêm AI_detected_Spam label...")
+                    ai_spam_label_id = self._get_or_create_label("AI_detected_Spam")
+                    logger.info(f"🏷️ AI_detected_Spam label ID: {ai_spam_label_id}")
+                    
+                    result2 = self.service.users().messages().modify(
+                        userId='me',
+                        id=email_id,
+                        body={'addLabelIds': [ai_spam_label_id]}
+                    ).execute()
+                    logger.info(f"✅ Đã thêm AI_detected_Spam: {result2.get('id', 'unknown')}")
+                    success_steps.append("AI_detected_Spam")
+                    
+                else:
+                    logger.info("📝 Bước 2: Tạo và thêm AI_detected_Ham label...")
+                    ai_ham_label_id = self._get_or_create_label("AI_detected_Ham")
+                    logger.info(f"🏷️ AI_detected_Ham label ID: {ai_ham_label_id}")
+                    
+                    result2 = self.service.users().messages().modify(
+                        userId='me',
+                        id=email_id,
+                        body={'addLabelIds': [ai_ham_label_id]}
+                    ).execute()
+                    logger.info(f"✅ Đã thêm AI_detected_Ham: {result2.get('id', 'unknown')}")
+                    success_steps.append("AI_detected_Ham")
+                    
+            except Exception as e:
+                logger.error(f"❌ Lỗi thêm label phân loại: {str(e)}")
+                # Vẫn tiếp tục để kiểm tra xem AI_CORRECTED có hoạt động không
+            
+            # Kiểm tra kết quả cuối cùng
+            try:
+                logger.info("🔍 Kiểm tra email sau khi apply labels...")
+                final_result = self.service.users().messages().get(
                     userId='me',
                     id=email_id,
-                    body={'addLabelIds': [self._correction_label_id]}
+                    format='minimal'
                 ).execute()
+                current_labels = final_result.get('labelIds', [])
+                logger.info(f"📋 Labels hiện tại trên email: {current_labels}")
+                
+                # Map label IDs thành tên để dễ đọc
+                label_names = []
+                for label_id in current_labels:
+                    label_name = self._get_label_name_by_id(label_id)
+                    label_names.append(f"{label_name} ({label_id})")
+                logger.info(f"📋 Label names: {label_names}")
+                
+            except Exception as e:
+                logger.error(f"❌ Lỗi kiểm tra email sau apply: {str(e)}")
             
-            # Apply corrected classification
-            if corrected_label.lower() == 'spam':
-                # Move to spam và remove inbox
-                success = self._move_to_spam(email_id)
-            else:
-                # Move to inbox và remove spam
-                success = self._move_to_inbox(email_id)
-            
-            if success:
-                logger.info(f"Đã apply correction cho email {email_id}: {original_prediction} → {corrected_label}")
-            
+            # Xác định thành công dựa trên số bước hoàn thành
+            success = len(success_steps) > 0
+            logger.info(f"🎯 Kết quả: {success} - Hoàn thành {len(success_steps)} bước: {success_steps}")
             return success
             
         except Exception as e:
-            logger.error(f"Lỗi apply correction cho email {email_id}: {str(e)}")
+            logger.error(f"💥 Lỗi tổng thể trong apply_single_correction: {str(e)}")
+            import traceback
+            logger.error(f"📍 Stack trace: {traceback.format_exc()}")
             return False
     
     def _move_to_spam(self, email_id: str) -> bool:
