@@ -1483,10 +1483,23 @@ elif st.session_state.page == "✉️ Quét Gmail":
                     col1, col2, col3 = st.columns(3)
 
                     def relabel_ham_action():
+                        # Lưu correction vào file local
                         if add_correction(
                             email['id'], email['prediction'], 'ham', email
                         ):
-                            st.success("✅ Đã đánh dấu lại thành HAM!")
+                            # Gọi Gmail API để cập nhật label thật
+                            try:
+                                gmail_handler = get_gmail_handler()
+                                if gmail_handler.apply_single_correction(
+                                    email['id'], 'ham', email['prediction']
+                                ):
+                                    st.success("✅ Đã đánh dấu lại thành HAM và cập nhật Gmail!")
+                                else:
+                                    st.warning("⚠️ Đã lưu correction nhưng không thể cập nhật Gmail")
+                            except Exception as e:
+                                st.error(f"❌ Lỗi cập nhật Gmail: {str(e)}")
+                            
+                            # Cập nhật session state
                             for e in st.session_state['classified_emails']:
                                 if e['id'] == email['id']:
                                     e['corrected_label'] = 'ham'
@@ -1503,10 +1516,23 @@ elif st.session_state.page == "✉️ Quét Gmail":
                             st.rerun()
 
                     def relabel_spam_action():
+                        # Lưu correction vào file local
                         if add_correction(
                             email['id'], email['prediction'], 'spam', email
                         ):
-                            st.success("✅ Đã đánh dấu lại thành SPAM!")
+                            # Gọi Gmail API để cập nhật label thật
+                            try:
+                                gmail_handler = get_gmail_handler()
+                                if gmail_handler.apply_single_correction(
+                                    email['id'], 'spam', email['prediction']
+                                ):
+                                    st.success("✅ Đã đánh dấu lại thành SPAM và cập nhật Gmail!")
+                                else:
+                                    st.warning("⚠️ Đã lưu correction nhưng không thể cập nhật Gmail")
+                            except Exception as e:
+                                st.error(f"❌ Lỗi cập nhật Gmail: {str(e)}")
+                            
+                            # Cập nhật session state
                             for e in st.session_state['classified_emails']:
                                 if e['id'] == email['id']:
                                     e['corrected_label'] = 'spam'
@@ -1523,10 +1549,23 @@ elif st.session_state.page == "✉️ Quét Gmail":
                             st.rerun()
 
                     def confirm_action():
+                        # Lưu correction vào file local
                         if add_correction(
                             email['id'], email['prediction'], email['prediction'], email
                         ):
-                            st.success("✅ Đã xác nhận phân loại!")
+                            # Gọi Gmail API để cập nhật label thật
+                            try:
+                                gmail_handler = get_gmail_handler()
+                                if gmail_handler.apply_single_correction(
+                                    email['id'], email['prediction'], email['prediction']
+                                ):
+                                    st.success("✅ Đã xác nhận phân loại và cập nhật Gmail!")
+                                else:
+                                    st.warning("⚠️ Đã lưu correction nhưng không thể cập nhật Gmail")
+                            except Exception as e:
+                                st.error(f"❌ Lỗi cập nhật Gmail: {str(e)}")
+                            
+                            # Cập nhật session state
                             for e in st.session_state['classified_emails']:
                                 if e['id'] == email['id']:
                                     e['corrected_label'] = email['prediction']
