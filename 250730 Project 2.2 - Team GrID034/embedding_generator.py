@@ -47,19 +47,39 @@ class EmbeddingGenerator:
         )
         
         # Kiểm tra và tải model từ cache nếu có
-        if os.path.exists(model_cache_path) and os.path.exists(tokenizer_cache_path):
+        if (os.path.exists(model_cache_path) and 
+                os.path.exists(tokenizer_cache_path)):
             try:
+                # Load model with proper device mapping
                 self.model = joblib.load(model_cache_path)
                 self.tokenizer = joblib.load(tokenizer_cache_path)
-                self.model = self.model.to(self.device)
-                self.model.eval()
+                
+                # Handle device mapping for PyTorch models
+                if hasattr(self.model, 'to'):
+                    self.model = self.model.to(self.device)
+                    self.model.eval()
+                
                 logging.info(
                     f"Đã tải model và tokenizer từ cache: "
                     f"{model_cache_path}, {tokenizer_cache_path}"
                 )
+            except RuntimeError as e:
+                if "CUDA" in str(e) and not torch.cuda.is_available():
+                    logging.warning(
+                        f"Model được lưu trên GPU nhưng đang chạy trên CPU. "
+                        f"Đang tải lại model mới: {str(e)}"
+                    )
+                    self._load_new_model()
+                else:
+                    logging.error(
+                        f"Lỗi khi tải model hoặc tokenizer từ cache: "
+                        f"{str(e)}"
+                    )
+                    self._load_new_model()
             except Exception as e:
                 logging.error(
-                    f"Lỗi khi tải model hoặc tokenizer từ cache: {str(e)}"
+                    f"Lỗi khi tải model hoặc tokenizer từ cache: "
+                    f"{str(e)}"
                 )
                 self._load_new_model()
         else:
