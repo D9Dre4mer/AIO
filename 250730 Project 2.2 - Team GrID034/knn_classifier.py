@@ -116,7 +116,8 @@ class KNNClassifier:
         """
         # Debug: Kiểm tra kích thước embedding
         print(f"Debug: Query embedding shape: {query_embedding.shape}")
-        print(f"Debug: FAISS index dimension: {self.index.d}")
+        # Chỉ hiển thị số vectors và số chiều của FAISS index
+        print(f"FAISS INDEX: vectors = {self.index.ntotal}, dimension = {self.index.d}")
         print(f"Debug: Query embedding dtype: {query_embedding.dtype}")
         
         # Đảm bảo kích thước đúng
