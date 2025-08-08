@@ -25,7 +25,7 @@ class SpamClassifierConfig:
     random_state: int = 42
     
     # Cài đặt KNN
-    default_k: int = 3
+    default_k: int = 5  # Tăng từ 3 lên 5 để robust hơn
     k_values: List[int] = None
     
     # Đường dẫn
@@ -47,7 +47,8 @@ class SpamClassifierConfig:
     def __post_init__(self):
         """Khởi tạo các giá trị mặc định sau khi tạo object."""
         if self.k_values is None:
-            self.k_values = [1, 3, 5]
+            # Mở rộng range để tìm best K tốt hơn
+            self.k_values = [1, 3, 5, 7, 9, 11]
         # Tạo các thư mục nếu chưa tồn tại
         os.makedirs(self.output_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self.credentials_path), exist_ok=True)

@@ -620,15 +620,16 @@ def show_authentication_ui():
                     st.info("💡 Thử phương thức thủ công")
     
     else:
-        email_hint = st.text_input("Nhập email:", 
-                                  placeholder="user@gmail.com", 
-                                  key="email_hint_new")
+        # email_hint = st.text_input("Nhập email:", 
+        #                          placeholder="user@gmail.com", 
+        #                           key="email_hint_new")
         
-        try:
-            if email_hint:
-                auth_url = gmail_handler.get_authorization_url_with_hint(email_hint)
-            else:
-                auth_url = gmail_handler.get_authorization_url()
+        try:        
+            auth_url = gmail_handler.get_authorization_url()    
+            # if email_hint:
+            #     auth_url = gmail_handler.get_authorization_url_with_hint(email_hint)
+            # else:
+            #     auth_url = gmail_handler.get_authorization_url()
             
             st.markdown(f'<a href="{auth_url}" target="_blank" style="background: var(--royal-green); color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 8px; display: inline-block; margin: 1rem 0;">🔑 Đăng nhập Gmail</a>', unsafe_allow_html=True)
         except Exception as e:

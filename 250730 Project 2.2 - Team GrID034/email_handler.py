@@ -399,7 +399,7 @@ class GmailHandler:
             auth_params = {
                 'access_type': 'offline',
                 'include_granted_scopes': 'true',
-                'prompt': 'select_account',  # ✅ FIX: Chỉ dùng prompt
+                'prompt': 'consent select_account',  # ✅ FIX: Chỉ dùng prompt
             }
             
             # Thêm login_hint nếu có
