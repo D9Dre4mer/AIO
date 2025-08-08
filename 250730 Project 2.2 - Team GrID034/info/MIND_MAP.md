@@ -5,7 +5,7 @@
 ```
 🎯 MỤC TIÊU: Phân loại email spam/ham sử dụng AI
 🛠️ CÔNG NGHỆ: KNN + TF-IDF + Gmail API
-📊 DỮ LIỆU: Email dataset + Real-time Gmail
+📊 DỮ LIỆU: Email dataset + Real-time Gmail + User Corrections
 🎨 GIAO DIỆN: Command Line + Streamlit Web
 ```
 
@@ -25,6 +25,7 @@
 🔄 PROCESSING:
 ├── Khởi tạo config
 ├── Tạo pipeline
+├── Cache priority logic (corrections > original)
 ├── Huấn luyện mô hình
 ├── Chạy chức năng được chọn
 └── Logging và error handling
@@ -71,6 +72,12 @@
 
 🔄 WORKFLOW:
 1. Load Data → 2. Generate Embeddings → 3. Train Classifier → 4. Predict
+
+🆕 CORRECTIONS HANDLING:
+├── train_with_corrections(): Merge CSV + JSON corrections
+├── _save_corrections_dataset(): Cache merged dataset
+├── _load_corrections_dataset(): Load cached dataset
+└── Cache priority: corrections > original
 ```
 
 ---
@@ -82,7 +89,8 @@
 📥 INPUT SOURCES:
 ├── CSV Dataset: 2cls_spam_text_cls.csv
 ├── Local Folders: inbox/ (ham) + spam/ (spam)
-└── Gmail API: Real-time emails
+├── Gmail API: Real-time emails
+└── User Corrections: corrections.json
 
 🛠️ PREPROCESSING:
 ├── Text Cleaning
@@ -117,7 +125,7 @@
 ⚡ OPTIMIZATION:
 ├── GPU acceleration
 ├── Batch processing
-├── Caching system
+├── Caching system (with suffixes)
 └── Memory optimization
 
 🔄 PROCESS:
@@ -126,6 +134,11 @@
 3. Average pooling
 4. Normalize vectors
 5. Cache results
+
+🆕 CACHE SUFFIXES:
+├── _original: Base dataset embeddings
+├── _with_corrections: Merged dataset embeddings
+└── Priority system for Gmail classification
 ```
 
 ### **2. KNN Classifier** (`knn_classifier.py`)
@@ -138,7 +151,8 @@
 ⚡ FAISS OPTIMIZATION:
 ├── IndexFlatIP: Fast similarity search
 ├── GPU acceleration (optional)
-└── Efficient memory usage
+├── Efficient memory usage
+└── Cache management (with suffixes)
 
 🔄 PREDICTION:
 1. Generate query embedding
@@ -146,6 +160,11 @@
 3. Collect neighbor labels
 4. Majority voting
 5. Return prediction + confidence
+
+🆕 CACHE MANAGEMENT:
+├── save_index(cache_suffix): Save FAISS index
+├── load_index(cache_suffix): Load FAISS index
+└── Priority: corrections > original
 ```
 
 ### **3. TF-IDF Classifier** (`tfidf_classifier.py`)
@@ -183,6 +202,11 @@
 🏷️ LABELING STRATEGY:
 ├── Inbox_Custom: Ham emails
 └── Spam_Custom: Spam emails
+
+🆕 CACHE PRIORITY:
+├── Use corrections model if available
+├── Fallback to original model
+└── Terminal logging for verification
 ```
 
 ---
@@ -206,7 +230,7 @@
 
 🔄 EVALUATION PROCESS:
 1. Load test data
-2. Generate embeddings
+2. Generate embeddings (with _original suffix)
 3. Run predictions
 4. Calculate metrics
 5. Create visualizations
@@ -228,10 +252,35 @@
 │   │   ├── evaluation_summary.png
 │   │   └── error_analysis.json
 │   ├── embeddings/
-│   │   └── embeddings_multilingual-e5-base.npy
+│   │   ├── embeddings_intfloat_multilingual-e5-base_original.npy
+│   │   └── embeddings_intfloat_multilingual-e5-base_with_corrections.npy
+│   ├── datasets/
+│   │   └── with_corrections_dataset_intfloat_multilingual-e5-base.pkl
+│   ├── faiss_index/
+│   │   ├── faiss_index_intfloat_multilingual-e5-base_original.faiss
+│   │   ├── faiss_index_intfloat_multilingual-e5-base_original.pkl
+│   │   ├── faiss_index_intfloat_multilingual-e5-base_with_corrections.faiss
+│   │   └── faiss_index_intfloat_multilingual-e5-base_with_corrections.pkl
 │   └── models/
-│       ├── model_multilingual-e5-base.joblib
-│       └── tokenizer_multilingual-e5-base.joblib
+│       ├── model_intfloat_multilingual-e5-base.joblib
+│       └── tokenizer_intfloat_multilingual-e5-base.joblib
+```
+
+### **Cache Priority System**
+```
+🔄 CACHE PRIORITY LOGIC:
+├── Gmail Classification:
+│   ├── Check _with_corrections cache first
+│   ├── Fallback to _original cache
+│   └── Terminal logging for verification
+├── Training:
+│   ├── train_with_corrections(): Use merged dataset
+│   ├── train(): Use original dataset
+│   └── Save separate caches for each
+└── FAISS Index:
+    ├── Load corresponding index for each cache
+    ├── Save index with appropriate suffix
+    └── Maintain consistency between embeddings and index
 ```
 
 ---
@@ -259,7 +308,15 @@ python main.py --merge-emails --regenerate
 ### **4. Real-time Classification**
 ```bash
 python main.py --run-email-classifier
-# → Monitor Gmail + Auto-classify
+# → Monitor Gmail + Auto-classify (with cache priority)
+```
+
+### **5. Retrain with Corrections**
+```bash
+# Via Streamlit interface
+# → Merge CSV + corrections.json
+# → Save merged dataset cache
+# → Update embeddings and FAISS index
 ```
 
 ---
@@ -319,10 +376,13 @@ python main.py --run-email-classifier
 - [x] Real-time Gmail integration
 - [x] Local email management
 - [x] Comprehensive evaluation
-- [x] Caching system
+- [x] Advanced caching system
 - [x] Multi-language support
 - [x] Command-line interface
 - [x] Error handling & logging
+- [x] User corrections handling
+- [x] Cache priority system
+- [x] FAISS index management
 
 ### **🚀 Advanced Features**
 - [x] GPU acceleration
@@ -331,6 +391,8 @@ python main.py --run-email-classifier
 - [x] Configurable parameters
 - [x] Performance metrics
 - [x] Visualization tools
+- [x] Terminal logging for cache verification
+- [x] Stable merged dataset caching
 
 ---
 
@@ -347,7 +409,14 @@ python main.py --run-email-classifier
 ├── Model loading status
 ├── Embedding generation progress
 ├── Classification results
-└── Performance metrics
+├── Performance metrics
+├── Cache usage verification
+└── FAISS index loading status
+
+🆕 TERMINAL LOGGING:
+├── Cache priority decisions
+├── FAISS index loading
+└── Gmail classification cache usage
 ```
 
 ---
@@ -362,8 +431,10 @@ python main.py --run-email-classifier
 └── Batch processing
 
 💾 MEMORY OPTIMIZATION:
-├── Embedding caching
+├── Embedding caching (with suffixes)
 ├── Model caching
+├── FAISS index caching
+├── Merged dataset caching
 └── Efficient data structures
 ```
 
@@ -384,6 +455,8 @@ python main.py --evaluate --k-values "1,3,7" --classifier knn
 ```bash
 streamlit run app.py
 # → Interactive web dashboard
+# → Cache priority logic for email scanning
+# → Terminal logging for verification
 ```
 
 ---
@@ -414,14 +487,18 @@ streamlit run app.py
 - [x] Machine learning pipelines
 - [x] Data preprocessing
 - [x] Model evaluation
+- [x] Cache management systems
+- [x] User feedback integration
 
 ### **Software Engineering**
 - [x] Modular architecture
 - [x] Configuration management
 - [x] Error handling
 - [x] Logging systems
-- [x] Caching strategies
+- [x] Advanced caching strategies
 - [x] Performance optimization
+- [x] Cache priority systems
+- [x] Data consistency management
 
 ---
 
@@ -434,14 +511,19 @@ streamlit run app.py
 ├── Comprehensive evaluation system
 ├── Gmail API integration
 ├── Performance optimization
-└── User-friendly interfaces
+├── User-friendly interfaces
+├── Advanced cache management
+├── User corrections handling
+└── FAISS index optimization
 
 🚀 INNOVATION:
 ├── Multilingual support
 ├── GPU acceleration
-├── Intelligent caching
+├── Intelligent caching with priorities
 ├── Configurable parameters
-└── Comprehensive documentation
+├── Comprehensive documentation
+├── Stable dataset caching
+└── Terminal logging for verification
 ```
 
 ---

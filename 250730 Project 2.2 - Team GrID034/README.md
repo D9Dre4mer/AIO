@@ -1,16 +1,20 @@
 
-# Spam Email Classifier (Command Line Version)
+# Spam Email Classifier (Advanced Version)
 
-A comprehensive command-line spam email classification application developed as part of the AIO2025 course. This application leverages K-Nearest Neighbors (KNN) classifier with FAISS for efficient embedding-based classification, integrated with Google Gmail API for real-time email processing.
+A comprehensive spam email classification application developed as part of the AIO2025 course. This application leverages K-Nearest Neighbors (KNN) classifier with FAISS for efficient embedding-based classification, integrated with Google Gmail API for real-time email processing, and advanced cache management with user corrections handling.
 
 ## Features
 
 - **Dual Classifier System**: KNN with FAISS embeddings + TF-IDF baseline for performance comparison
 - **Real-time Gmail Integration**: Automatic classification and labeling of incoming emails
+- **Advanced Cache Management**: Priority system (corrections > original) with separate caches
+- **User Corrections Handling**: Learn from user feedback and improve model accuracy
+- **FAISS Index Management**: Efficient similarity search with persistent caching
+- **Terminal Logging**: Real-time cache verification and debugging
 - **Local Email Management**: Merge and process emails from local folders
 - **Comprehensive Evaluation**: Performance metrics, visualizations, and error analysis
-- **Caching System**: Efficient embedding storage and reuse
 - **Multi-language Support**: Uses multilingual transformer models
+- **Web Interface**: Streamlit dashboard with interactive features
 
 ## Table of Contents
 
@@ -18,6 +22,7 @@ A comprehensive command-line spam email classification application developed as 
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Usage Guide](#usage-guide)
+- [Advanced Features](#advanced-features)
 - [API Reference](#api-reference)
 - [File Structure](#file-structure)
 - [Troubleshooting](#troubleshooting)
@@ -205,7 +210,7 @@ python main.py --merge-emails --regenerate
 
 #### Real-time Gmail Classification
 
-**Purpose**: Automatically classify and label incoming Gmail messages.
+**Purpose**: Automatically classify and label incoming Gmail messages with cache priority.
 
 ```bash
 python main.py --run-email-classifier
@@ -213,11 +218,13 @@ python main.py --run-email-classifier
 
 **What happens**:
 - Authenticates with Gmail API
+- Checks cache priority (corrections > original)
 - Fetches up to 10 unread emails every 30 seconds
-- Classifies each email as spam/ham
+- Classifies each email as spam/ham using best available model
 - Applies labels: `Inbox_Custom` or `Spam_Custom`
 - Marks emails as read
 - Saves locally as `.txt` files
+- Logs cache usage to terminal
 
 **Stop**: Press `Ctrl+C` to safely terminate
 
@@ -237,6 +244,92 @@ python main.py --regenerate
 - When embedding cache is corrupted
 
 **Note**: Can be time-consuming for large datasets.
+
+## Advanced Features
+
+### Cache Priority System
+
+The system implements an intelligent cache priority system that automatically selects the best available model:
+
+#### Cache Hierarchy
+1. **Corrections Cache** (`_with_corrections`): Highest priority
+2. **Original Cache** (`_original`): Fallback option
+3. **No Cache**: Train new model
+
+#### Cache Types
+- **Embeddings**: `.npy` files with suffixes
+- **FAISS Indices**: `.faiss` and `.pkl` files
+- **Merged Dataset**: `.pkl` file for corrections
+
+#### Terminal Logging
+```bash
+# Example terminal output during Gmail scanning
+EMAIL SCAN: Using cache _with_corrections for Gmail classification
+FAISS INDEX: Loading from cache _with_corrections
+```
+
+### User Corrections Handling
+
+#### Corrections File
+Store user corrections in `cache/corrections.json`:
+```json
+[
+  {
+    "text": "email content here",
+    "corrected_label": "ham"
+  }
+]
+```
+
+#### Retrain with Corrections
+Via Streamlit interface:
+1. Add corrections to `corrections.json`
+2. Click "Retrain with Corrections"
+3. System merges CSV + corrections
+4. Saves merged dataset cache
+5. Updates embeddings and FAISS index
+
+#### Benefits
+- **Improved Accuracy**: Learn from user feedback
+- **Stable Caching**: Persistent merged dataset
+- **Consistency**: Robust data validation
+- **Performance**: Efficient cache management
+
+### FAISS Index Management
+
+#### Index Caching
+- **Separate Indices**: Original vs. corrections
+- **Persistent Storage**: `.faiss` and `.pkl` files
+- **Consistency**: Matches embedding cache
+- **Performance**: Fast similarity search
+
+#### Index Operations
+```python
+# Save index with suffix
+classifier.save_index("_with_corrections")
+
+# Load index with suffix
+classifier.load_index("_with_corrections")
+```
+
+### Cache Structure
+
+```
+cache/
+├── input/          # credentials.json, token.json
+├── output/         # plots, evaluation results
+├── embeddings/     # cached embeddings (with suffixes)
+│   ├── embeddings_intfloat_multilingual-e5-base_original.npy
+│   └── embeddings_intfloat_multilingual-e5-base_with_corrections.npy
+├── datasets/       # merged corrections dataset
+│   └── with_corrections_dataset_intfloat_multilingual-e5-base.pkl
+├── faiss_index/    # FAISS indices (with suffixes)
+│   ├── faiss_index_intfloat_multilingual-e5-base_original.faiss
+│   ├── faiss_index_intfloat_multilingual-e5-base_original.pkl
+│   ├── faiss_index_intfloat_multilingual-e5-base_with_corrections.faiss
+│   └── faiss_index_intfloat_multilingual-e5-base_with_corrections.pkl
+└── models/         # cached models & tokenizers
+```
 
 ## API Reference
 
@@ -262,7 +355,7 @@ python main.py --evaluate --k-values "1,3,7"
 # Merge emails and regenerate embeddings
 python main.py --merge-emails --regenerate
 
-# Run Gmail classification
+# Run Gmail classification (with cache priority)
 python main.py --run-email-classifier
 
 # Regenerate embeddings only
@@ -276,7 +369,9 @@ project_spam_mails/
 ├── cache/
 │   ├── input/           # credentials.json, token.json
 │   ├── output/          # plots and evaluation results
-│   ├── embeddings/      # precomputed vectors
+│   ├── embeddings/      # precomputed vectors (with suffixes)
+│   ├── datasets/        # merged corrections dataset
+│   ├── faiss_index/     # FAISS indices (with suffixes)
 │   └── models/          # transformers & tokenizer
 ├── dataset/             # 2cls_spam_text_cls.csv
 ├── inbox/               # local ham emails (.txt files)
@@ -291,6 +386,7 @@ project_spam_mails/
 ├── main.py              # main application entry point
 ├── spam_classifier.py   # spam classification pipeline
 ├── tfidf_classifier.py  # TF-IDF baseline classifier
+├── app.py               # Streamlit web interface
 └── README.md            # this file
 ```
 
@@ -323,7 +419,20 @@ python main.py --run-email-classifier
 python main.py --regenerate
 ```
 
-#### 5. Gmail API Issues
+#### 5. Cache Priority Issues
+
+**Wrong cache being used**:
+- Check terminal logging for cache decisions
+- Verify corrections.json format
+- Clear caches if needed
+
+**Corrections not loading**:
+```bash
+# Check corrections file format
+cat cache/corrections.json
+```
+
+#### 6. Gmail API Issues
 
 **No emails processed**:
 - Ensure emails are unread in Gmail
@@ -346,10 +455,12 @@ Check `logs/spam_classifier.log` for:
 - Classification results
 - Error messages
 - Dataset statistics
+- Cache usage information
 
 Example log entry:
 ```
 2025-07-27 10:00:00,000 - root: Saved email ID 12345 to ./spam/email_12345.txt
+2025-07-27 10:00:01,000 - root: Using cache _with_corrections for classification
 ```
 
 ### Performance Optimization
@@ -357,6 +468,7 @@ Example log entry:
 - **Large datasets**: Use `--regenerate` sparingly
 - **Memory issues**: Close other applications
 - **Slow processing**: Consider GPU acceleration with `faiss-gpu`
+- **Cache management**: Monitor cache usage via terminal logging
 
 ## Contributing
 
@@ -372,7 +484,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Version History
 
-### v2.0 (Current)
+### v2.1 (Current)
+- **Advanced Cache Management**: Priority system with corrections > original
+- **User Corrections Handling**: Learn from user feedback
+- **FAISS Index Management**: Persistent caching with suffixes
+- **Terminal Logging**: Real-time cache verification
+- **Stable Dataset Caching**: Merged corrections dataset
+- **Web Interface**: Streamlit dashboard with cache priority
+
+### v2.0
 - Added TF-IDF classifier for benchmarking
 - Enhanced visualization with 5-row layout
 - Improved performance optimization
@@ -388,16 +508,17 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 For issues and questions:
 1. Check the troubleshooting section
 2. Review logs in `logs/spam_classifier.log`
-3. Create an issue on GitHub
+3. Check terminal logging for cache decisions
+4. Create an issue on GitHub
 
 ## Future Development
 
 Planned features:
-- Streamlit web interface
-- Real-time dashboard
 - Advanced visualization tools
 - Multi-language email support
 - Cloud deployment options
+- Real-time dashboard enhancements
+- Advanced cache optimization
 
 ---
 
