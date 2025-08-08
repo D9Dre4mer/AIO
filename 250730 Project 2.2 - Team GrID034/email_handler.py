@@ -55,6 +55,12 @@ class GmailHandler:
         else:
             self.credentials_path = './cache/input/credentials.json'
         
+        # Xác định đường dẫn token.json an toàn ngay cả khi không truyền config
+        if config and hasattr(config, 'token_path'):
+            self.token_path = config.token_path
+        else:
+            self.token_path = './cache/input/token.json'
+        
         self.SCOPES = [
             'https://www.googleapis.com/auth/gmail.readonly',
             'https://www.googleapis.com/auth/gmail.modify',
@@ -69,6 +75,12 @@ class GmailHandler:
         # Kiểm tra file credentials
         if not os.path.exists(self.credentials_path):
             raise FileNotFoundError(f"Không tìm thấy file credentials.json tại: {self.credentials_path}")
+        
+        # Đảm bảo thư mục chứa token tồn tại
+        try:
+            os.makedirs(os.path.dirname(self.token_path), exist_ok=True)
+        except Exception:
+            pass
     
     # 🆕 ===== AUTO AUTHENTICATION METHODS =====
     
@@ -89,7 +101,7 @@ class GmailHandler:
                 return True
             
             # Kiểm tra file token.json nếu có
-            token_file = 'token.json'
+            token_file = self.token_path
             if os.path.exists(token_file):
                 if self._load_from_token_file(token_file):
                     logger.info("Đã load credentials từ token.json")
@@ -270,7 +282,7 @@ class GmailHandler:
                 del st.session_state['oauth_state_manual']
             
             # Xóa file token.json
-            token_file = 'token.json'
+            token_file = self.token_path
             if os.path.exists(token_file):
                 os.remove(token_file)
                 logger.info("Đã xóa token.json")
@@ -446,7 +458,7 @@ class GmailHandler:
             }
             
             # Lưu vào file token.json để dùng lần sau
-            self._save_to_token_file(credentials, 'token.json')
+            self._save_to_token_file(credentials, self.token_path)
             
             # Khởi tạo service
             self.service = build('gmail', 'v1', credentials=credentials)
@@ -972,28 +984,63 @@ class GmailHandler:
                 if corrected_label.lower() == 'spam':
                     logger.info("📝 Bước 2: Tạo và thêm AI_detected_Spam label...")
                     ai_spam_label_id = self._get_or_create_label("AI_detected_Spam")
-                    logger.info(f"🏷️ AI_detected_Spam label ID: {ai_spam_label_id}")
-                    
-                    result2 = self.service.users().messages().modify(
-                        userId='me',
-                        id=email_id,
-                        body={'addLabelIds': [ai_spam_label_id]}
-                    ).execute()
-                    logger.info(f"✅ Đã thêm AI_detected_Spam: {result2.get('id', 'unknown')}")
-                    success_steps.append("AI_detected_Spam")
-                    
+                    logger.info(
+                        f"🏷️ AI_detected_Spam label ID: {ai_spam_label_id}"
+                    )
+                    if not ai_spam_label_id:
+                        logger.error(
+                            "❌ Không lấy được AI_detected_Spam label ID!"
+                        )
+                    else:
+                        # Giữ INBOX, chỉ add AI_detected_Spam
+                        result2 = self.service.users().messages().modify(
+                            userId='me',
+                            id=email_id,
+                            body={
+                                'addLabelIds': [ai_spam_label_id, 'INBOX']
+                            }
+                        ).execute()
+                        if result2 is None:
+                            logger.error(
+                                "❌ API trả về None khi thêm AI_detected_Spam cho email %s",
+                                email_id
+                            )
+                        else:
+                            logger.info(
+                                "✅ Đã thêm AI_detected_Spam & giữ INBOX: %s",
+                                result2.get('id', 'unknown')
+                            )
+                        success_steps.append("AI_detected_Spam")
                 else:
                     logger.info("📝 Bước 2: Tạo và thêm AI_detected_Ham label...")
                     ai_ham_label_id = self._get_or_create_label("AI_detected_Ham")
-                    logger.info(f"🏷️ AI_detected_Ham label ID: {ai_ham_label_id}")
-                    
-                    result2 = self.service.users().messages().modify(
-                        userId='me',
-                        id=email_id,
-                        body={'addLabelIds': [ai_ham_label_id]}
-                    ).execute()
-                    logger.info(f"✅ Đã thêm AI_detected_Ham: {result2.get('id', 'unknown')}")
-                    success_steps.append("AI_detected_Ham")
+                    logger.info(
+                        f"🏷️ AI_detected_Ham label ID: {ai_ham_label_id}"
+                    )
+                    if not ai_ham_label_id:
+                        logger.error(
+                            "❌ Không lấy được AI_detected_Ham label ID!"
+                        )
+                    else:
+                        # Giữ INBOX, chỉ add AI_detected_Ham
+                        result2 = self.service.users().messages().modify(
+                            userId='me',
+                            id=email_id,
+                            body={
+                                'addLabelIds': [ai_ham_label_id, 'INBOX']
+                            }
+                        ).execute()
+                        if result2 is None:
+                            logger.error(
+                                "❌ API trả về None khi thêm AI_detected_Ham cho email %s",
+                                email_id
+                            )
+                        else:
+                            logger.info(
+                                "✅ Đã thêm AI_detected_Ham & giữ INBOX: %s",
+                                result2.get('id', 'unknown')
+                            )
+                        success_steps.append("AI_detected_Ham")
                     
             except Exception as e:
                 logger.error(f"❌ Lỗi thêm label phân loại: {str(e)}")
@@ -1426,7 +1473,7 @@ class GmailHandler:
         """
         try:
             # Thử load từ token file trước
-            token_file = 'token.json'
+            token_file = self.token_path
             if os.path.exists(token_file):
                 if self._load_from_token_file(token_file):
                     logger.info("Đã khởi tạo service từ token file")
