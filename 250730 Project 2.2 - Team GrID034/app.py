@@ -554,7 +554,8 @@ def get_embeddings_cached(messages: list) -> np.ndarray:
     
     # The EmbeddingGenerator already handles .npy file caching internally
     # It will automatically load from cache if available, or generate and save if not
-    return eg.generate_embeddings(messages)
+    # 🆕 Sử dụng cache với suffix _original cho app
+    return eg.generate_embeddings(messages, cache_suffix="_original")
 
 @st.cache_data
 def compute_tsne_cached(sub_emb: np.ndarray) -> np.ndarray:
@@ -842,7 +843,8 @@ elif st.session_state.page == "📈 Đánh giá Bộ phân loại":
     cfg = SpamClassifierConfig()
     loader = DataLoader(cfg)
     messages, labels = loader.load_data()
-    emb = EmbeddingGenerator(cfg).generate_embeddings(messages)
+    # 🆕 Sử dụng cache với suffix _original cho evaluation
+    emb = EmbeddingGenerator(cfg).generate_embeddings(messages, cache_suffix="_original")
     train_idx, test_idx, _, _ = loader.split_data(messages, labels)
     test_emb = emb[test_idx]
     test_meta = []

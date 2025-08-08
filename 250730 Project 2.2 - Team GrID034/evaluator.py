@@ -410,7 +410,10 @@ def main():
     # Chạy đánh giá
     evaluator = ModelEvaluator(config)
     messages, labels = evaluator.data_loader.load_data()
-    embeddings = evaluator.embedding_generator.generate_embeddings(messages)
+    # 🆕 Sử dụng cache với suffix _original cho evaluation
+    embeddings = evaluator.embedding_generator.generate_embeddings(
+        messages, cache_suffix="_original"
+    )
     train_indices, test_indices, y_train, y_test = evaluator.data_loader.split_data(messages, labels)
     test_embeddings = embeddings[test_indices]
     test_metadata = [evaluator.data_loader.create_metadata(messages, labels, evaluator.data_loader.label_encoder.transform(labels))[i] for i in test_indices]

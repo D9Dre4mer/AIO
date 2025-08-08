@@ -121,22 +121,30 @@ class SpamClassifierPipeline:
         }
         
         if self.classifier_type == 'knn':
-            # Kiểm tra số dòng dataset so với embeddings cache
+            # 🆕 Tạo tên file cache dựa trên loại training
+            cache_suffix = "_with_corrections" if use_corrections else "_original"
             emb_file = os.path.join(
                 'cache', 'embeddings',
-                f"embeddings_{self.config.model_name.replace('/', '_')}.npy"
+                f"embeddings_{self.config.model_name.replace('/', '_')}{cache_suffix}.npy"
             )
             dataset_count = len(messages)
+            
+            logger.info(f"Training type: {'with corrections' if use_corrections else 'original'}")
+            logger.info(f"Dataset count: {dataset_count}")
+            logger.info(f"Cache file: {emb_file}")
 
             if os.path.exists(emb_file):
                 try:
                     cache = np.load(emb_file)
                     cache_count = cache.shape[0]
+                    logger.info(f"Cache count: {cache_count}")
+                    
                     if (cache_count != dataset_count
                             and not self.config.regenerate_embeddings):
                         msg = (
                             f"Số dòng trong dataset ({dataset_count}) "
                             f"không khớp với embeddings cache ({cache_count}). "
+                            f"Training type: {'with corrections' if use_corrections else 'original'}. "
                             "Chạy lại với --regenerate để cập nhật."
                         )
                         raise ValueError(msg)
@@ -144,7 +152,8 @@ class SpamClassifierPipeline:
                             and self.config.regenerate_embeddings):
                         logger.info(
                             f"Xóa cache cũ: {emb_file} "
-                            "(flag regenerate_embeddings=True)"
+                            f"(flag regenerate_embeddings=True, "
+                            f"training type: {'with corrections' if use_corrections else 'original'})"
                         )
                         os.remove(emb_file)
                 except Exception as e:
@@ -163,7 +172,10 @@ class SpamClassifierPipeline:
         if self.classifier_type == 'knn':
             # Tạo embeddings
             logger.info(f"Tạo embeddings cho {len(messages)} tin nhắn...")
-            embeddings = self.embedding_generator.generate_embeddings(messages)
+            cache_suffix = "_with_corrections" if use_corrections else "_original"
+            embeddings = self.embedding_generator.generate_embeddings(
+                messages, cache_suffix=cache_suffix
+            )
             logger.info(f"Kích thước embeddings: {embeddings.shape}")
 
             # Tạo metadata
@@ -179,9 +191,15 @@ class SpamClassifierPipeline:
             logger.info(f"Kích thước tập train: {len(train_emb)}")
             logger.info(f"Phân bố nhãn train: {np.bincount(y_train)}")
 
-            # Tạo và huấn luyện classifier
+            # 🆕 Tạo và huấn luyện classifier với cache FAISS index
             self.classifier = KNNClassifier(train_emb.shape[1])
-            self.classifier.fit(train_emb, train_meta)
+            
+            # Thử load FAISS index từ cache trước
+            cache_suffix = "_with_corrections" if use_corrections else "_original"
+            if not self.classifier.load_index(cache_suffix):
+                # Nếu không có cache, train mới và lưu cache
+                self.classifier.fit(train_emb, train_meta)
+                self.classifier.save_index(cache_suffix)
 
         elif self.classifier_type == 'tfidf':
             self.classifier = TFIDFClassifier()

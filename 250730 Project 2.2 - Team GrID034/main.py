@@ -61,7 +61,10 @@ def prepare_evaluation_data(evaluator: ModelEvaluator,
 
     # Tạo embedding
     logger(f"Đang tạo embedding cho {len(messages)} tin nhắn...")
-    embeddings = evaluator.embedding_generator.generate_embeddings(messages)
+    # 🆕 Sử dụng cache với suffix _original cho evaluation
+    embeddings = evaluator.embedding_generator.generate_embeddings(
+        messages, cache_suffix="_original"
+    )
 
     # Chia dữ liệu thành tập train/test
     logger("Đang chia dữ liệu thành tập train và test...")
@@ -116,27 +119,66 @@ def main():
             logger("Đang gộp email từ thư mục inbox/spam vào dataset...")
             pipeline.data_loader.merge_emails_to_dataset()
 
-            # Kiểm tra tính nhất quán giữa dataset và cache embedding
+            # 🆕 Kiểm tra tính nhất quán giữa dataset và cache embedding
+            # Sử dụng cache cho dataset gốc (không có corrections)
             dataset_path = config.dataset_path
             embeddings_file = os.path.join('cache', 'embeddings',
-                                          f"embeddings_{config.model_name.replace('/', '_')}.npy")
+                                          f"embeddings_{config.model_name.replace('/', '_')}_original.npy")
             if os.path.exists(dataset_path) and os.path.exists(embeddings_file):
                 df = pd.read_csv(dataset_path)
                 dataset_count = len(df)
                 embeddings = np.load(embeddings_file)
                 cache_count = embeddings.shape[0]
+                
+                logger(f"Dataset count: {dataset_count}")
+                logger(f"Cache count: {cache_count}")
+                logger(f"Cache file: {embeddings_file}")
+                
                 if cache_count != dataset_count and not args.regenerate:
                     logger(
-                        f"CẢNH BÁO: Số dòng trong dataset ({dataset_count}) không khớp với cache embedding ({cache_count}). "
+                        f"CẢNH BÁO: Số dòng trong dataset ({dataset_count}) "
+                        f"không khớp với cache embedding ({cache_count}). "
                         "Chạy lại với --regenerate để cập nhật embedding."
                     )
                     return
                 elif cache_count != dataset_count and args.regenerate:
-                    logger("Phát hiện số dòng không khớp. Đang tái tạo embedding...")
+                    logger("Phát hiện số dòng không khớp. "
+                           "Đang tái tạo embedding...")
 
-        # Huấn luyện mô hình (chỉ một lần cho pipeline chính)
-        logger("Đang bắt đầu huấn luyện mô hình...")
-        pipeline.train()
+                    # 🆕 Kiểm tra và ưu tiên cache với corrections cho Gmail classification
+            if args.run_email_classifier:
+                # Kiểm tra xem có cache _with_corrections không
+                model_name_safe = config.model_name.replace('/', '_')
+                corrections_cache_file = os.path.join(
+                    'cache', 'embeddings',
+                    f"embeddings_{model_name_safe}_with_corrections.npy"
+                )
+                original_cache_file = os.path.join(
+                    'cache', 'embeddings',
+                    f"embeddings_{model_name_safe}_original.npy"
+                )
+                
+                # Kiểm tra sự tồn tại
+                corrections_emb_exists = os.path.exists(corrections_cache_file)
+                original_emb_exists = os.path.exists(original_cache_file)
+                
+                # Logic ưu tiên cache - concise logging
+                if corrections_emb_exists:
+                    print(f"EMAIL SCAN: Using cache _with_corrections for Gmail classification")
+                    print(f"FAISS INDEX: Loading from cache _with_corrections")
+                    pipeline.train_with_corrections()
+                elif original_emb_exists:
+                    print(f"EMAIL SCAN: Using cache _original for Gmail classification")
+                    print(f"FAISS INDEX: Loading from cache _original")
+                    pipeline.train()
+                else:
+                    print(f"EMAIL SCAN: No cache found, training new model")
+                    print(f"FAISS INDEX: Creating new index from original data")
+                    pipeline.train()
+        else:
+            # Huấn luyện mô hình (chỉ một lần cho pipeline chính)
+            logger("Đang bắt đầu huấn luyện mô hình...")
+            pipeline.train()
 
         # Đánh giá mô hình nếu được yêu cầu
         if args.evaluate:

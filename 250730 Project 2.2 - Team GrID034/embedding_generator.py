@@ -129,13 +129,15 @@ class EmbeddingGenerator:
         return last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
     
     def generate_embeddings(self, texts: List[str], 
-                           prefix: str = "passage") -> np.ndarray:
+                           prefix: str = "passage",
+                           cache_suffix: str = "") -> np.ndarray:
         """
         Tạo embeddings cho danh sách văn bản, với tùy chọn tải từ file nếu đã tồn tại.
         
         Args:
             texts: Danh sách văn bản
             prefix: Prefix cho văn bản (passage hoặc query)
+            cache_suffix: Suffix cho tên file cache (ví dụ: "_with_corrections")
             
         Returns:
             Array embeddings đã được normalize
@@ -148,7 +150,7 @@ class EmbeddingGenerator:
         os.makedirs(embeddings_dir, exist_ok=True)
         model_name_safe = self.config.model_name.replace('/', '_')
         embeddings_file = os.path.join(
-            embeddings_dir, f"embeddings_{model_name_safe}.npy"
+            embeddings_dir, f"embeddings_{model_name_safe}{cache_suffix}.npy"
         )
         
         # Nếu flag regenerate_embeddings là True, xóa cache nếu tồn tại
