@@ -484,7 +484,36 @@ def load_pipeline(classifier_type: str = 'knn'):
     """
     cfg = SpamClassifierConfig()
     pipeline = SpamClassifierPipeline(cfg, classifier_type=classifier_type)
-    pipeline.train()
+    
+    # Logic ưu tiên cache - concise logging
+    model_name_safe = cfg.model_name.replace('/', '_')
+    corrections_cache_file = os.path.join(
+        'cache', 'embeddings',
+        f"embeddings_{model_name_safe}_with_corrections.npy"
+    )
+    original_cache_file = os.path.join(
+        'cache', 'embeddings',
+        f"embeddings_{model_name_safe}_original.npy"
+    )
+    
+    # Kiểm tra sự tồn tại
+    corrections_emb_exists = os.path.exists(corrections_cache_file)
+    original_emb_exists = os.path.exists(original_cache_file)
+    
+    # Logic ưu tiên cache - concise logging
+    if corrections_emb_exists:
+        print(f"EMAIL SCAN: Using cache _with_corrections for Gmail classification")
+        print(f"FAISS INDEX: Loading from cache _with_corrections")
+        pipeline.train_with_corrections()
+    elif original_emb_exists:
+        print(f"EMAIL SCAN: Using cache _original for Gmail classification")
+        print(f"FAISS INDEX: Loading from cache _original")
+        pipeline.train()
+    else:
+        print(f"EMAIL SCAN: No cache found, training new model")
+        print(f"FAISS INDEX: Creating new index from original data")
+        pipeline.train()
+    
     return pipeline
 
 @st.cache_resource
@@ -762,7 +791,24 @@ if st.session_state.page == "🏠 Tổng quan":
     correction_stats = get_correction_stats()
     
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Tổng số Email", total)
+    # Đọc tổng số email từ file pkl corrections dataset, nếu không có thì lấy số total mặc định
+    import pickle
+    corrections_dataset_path = (
+        "./cache/datasets/with_corrections_dataset_intfloat_multilingual-e5-base.pkl"
+    )
+    if os.path.exists(corrections_dataset_path):
+        try:
+            with open(corrections_dataset_path, "rb") as f:
+                corrections_data = pickle.load(f)
+            if isinstance(corrections_data, dict) and "messages" in corrections_data:
+                total_from_file = len(corrections_data["messages"])
+            else:
+                total_from_file = len(corrections_data)
+        except Exception:
+            total_from_file = total
+    else:
+        total_from_file = total
+    c1.metric("Tổng số Email", total_from_file)
     c2.metric("Email Spam", spam_cnt, f"{spam_cnt/total*100:.1f}%")
     c3.metric("Email Ham", ham_cnt, f"{ham_cnt/total*100:.1f}%")
     c4.metric("🔧 Corrections", correction_stats['total'])
@@ -1155,7 +1201,7 @@ elif st.session_state.page == "✉️ Quét Gmail":
         try:
             user_profile = gmail_handler.get_user_profile()
             st.markdown('<div class="user-profile">', unsafe_allow_html=True)
-            st.markdown(f"**👤 Đăng nhập với:** {user_profile['email']}")
+            st.markdown(f"**👤 Đã đăng nhập với:** {user_profile['email']}")
             st.markdown(f"**📊 Tổng emails:** {user_profile['total_messages']:,}")
             st.markdown('</div>', unsafe_allow_html=True)
         except Exception as e:
@@ -1197,13 +1243,9 @@ elif st.session_state.page == "✉️ Quét Gmail":
             }
             
             info = classifier_info[selected_classifier]
+
             
-            with st.expander(f"ℹ️ Thông tin bộ phân loại: {info['name']}", expanded=False):
-                st.markdown(f"**Mô tả:** {info['description']}")
-                st.markdown(f"**Ưu điểm:** {info['pros']}")
-                st.markdown(f"**Nhược điểm:** {info['cons']}")
-            
-            st.success(f"✅ Đã tải bộ phân loại: {info['name']}")
+            st.toast(f"✅ Đã tải bộ phân loại: {info['name']}", icon="✅")
             
             # Lưu thông tin classifier vào session state
             st.session_state['current_classifier'] = selected_classifier
@@ -1301,7 +1343,7 @@ elif st.session_state.page == "✉️ Quét Gmail":
                         corrected_count = len([e for e in classified_emails if e.get('is_corrected', False)])
                         
                         classifier_name = "KNN với Embeddings" if selected_classifier == 'knn' else "TF-IDF"
-                        st.success(f"✅ Đã quét và phân loại {total_emails} emails bằng {classifier_name}!")
+                        st.info(f"Đã quét và phân loại {total_emails} emails bằng {classifier_name}.")
                         
                         col1, col2, col3, col4 = st.columns(4)
                         col1.metric("Tổng số", total_emails)
