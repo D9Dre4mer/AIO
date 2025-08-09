@@ -168,12 +168,17 @@ class SpamClassifierPipeline:
         Returns:
             Dict chứa thông tin training
         """
-        # Nếu train với corrections, ưu tiên dùng merged corrections dataset đã lưu
+        # Nếu train với corrections và có dữ liệu được truyền vào từ bên ngoài,
+        # thì sử dụng dữ liệu đó thay vì load từ cache
         original_messages_count = None
         if use_corrections:
-            cached = self._load_corrections_dataset()
-            if cached is not None:
-                messages, labels = cached
+            # Chỉ load cache nếu messages rỗng (tức là được gọi trực tiếp)
+            if len(messages) == 0:
+                cached = self._load_corrections_dataset()
+                if cached is not None:
+                    messages, labels = cached
+                    logger.info("Đã load merged corrections dataset từ cache")
+            
             # Ghi nhận số mẫu gốc để thống kê
             try:
                 orig_msgs, _ = self.data_loader.load_data()

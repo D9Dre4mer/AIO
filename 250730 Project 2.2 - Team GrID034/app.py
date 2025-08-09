@@ -684,8 +684,72 @@ def save_corrections(corrections):
         st.error(f"Lỗi lưu corrections: {str(e)}")
         return False
 
+def remove_duplicate_corrections(email_data):
+    """
+    🆕 Xóa email trùng lặp trong file corrections.json dựa trên nội dung.
+    So sánh subject, sender, và snippet để xác định trùng lặp.
+    
+    Args:
+        email_data: Dữ liệu email mới được thêm vào
+        
+    Returns:
+        bool: True nếu có xóa trùng lặp, False nếu không có
+    """
+    try:
+        corrections = load_corrections()
+        if not corrections:
+            return False
+        
+        # Lấy thông tin email mới
+        new_subject = email_data.get('subject', '').strip().lower()
+        new_sender = email_data.get('sender', '').strip().lower()
+        new_snippet = email_data.get('snippet', '').strip().lower()
+        
+        # Tạo key để so sánh (kết hợp subject + sender + snippet)
+        new_content_key = f"{new_subject}|{new_sender}|{new_snippet}"
+        
+        emails_to_remove = []
+        
+        # Kiểm tra từng email trong corrections
+        for email_id, correction_data in corrections.items():
+            existing_subject = correction_data.get('subject', '').strip().lower()
+            existing_sender = correction_data.get('sender', '').strip().lower()
+            existing_snippet = correction_data.get('snippet', '').strip().lower()
+            
+            # Tạo key cho email hiện tại
+            existing_content_key = (f"{existing_subject}|{existing_sender}|"
+                                   f"{existing_snippet}")
+            
+            # So sánh nội dung (bỏ qua email_id vì đó là email mới)
+            if (new_content_key == existing_content_key and 
+                email_id != email_data.get('id', '')):
+                emails_to_remove.append(email_id)
+        
+        # Xóa các email trùng lặp
+        if emails_to_remove:
+            for email_id in emails_to_remove:
+                del corrections[email_id]
+                st.session_state['debug_info'] = (f"Đã xóa email trùng lặp: "
+                                                  f"{email_id}")
+            
+            # Lưu lại file đã được làm sạch
+            save_corrections(corrections)
+            st.session_state['debug_info'] = (f"Đã xóa {len(emails_to_remove)} "
+                                              f"email trùng lặp")
+            return True
+        
+        return False
+        
+    except Exception as e:
+        st.session_state['debug_info'] = (f"Lỗi khi xóa email trùng lặp: "
+                                          f"{str(e)}")
+        return False
+
 def add_correction(email_id, original_prediction, corrected_label, email_data):
-    """Thêm correction mới"""
+    """Thêm correction mới và xóa trùng lặp"""
+    # 🆕 Xóa email trùng lặp trước khi thêm mới
+    removed_duplicates = remove_duplicate_corrections(email_data)
+    
     corrections = load_corrections()
     corrections[email_id] = {
         'original_prediction': original_prediction,
@@ -695,7 +759,15 @@ def add_correction(email_id, original_prediction, corrected_label, email_data):
         'sender': email_data.get('sender', ''),
         'snippet': email_data.get('snippet', '')[:100]
     }
-    return save_corrections(corrections)
+    
+    success = save_corrections(corrections)
+    
+    # Thông báo nếu có xóa trùng lặp
+    if removed_duplicates:
+        st.session_state['info_message'] = ("🔄 Đã xóa email trùng lặp và "
+                                            "thêm correction mới")
+    
+    return success
 
 def get_correction_stats():
     """Lấy thống kê về corrections"""
@@ -769,6 +841,11 @@ if st.session_state.page == "🏠 Tổng quan":
     if 'error_message' in st.session_state:
         st.error(st.session_state['error_message'])
         del st.session_state['error_message']
+    
+    # 🆕 Thêm xử lý cho info_message
+    if 'info_message' in st.session_state:
+        st.info(st.session_state['info_message'])
+        del st.session_state['info_message']
     
     # Hiển thị debug info nếu có
     if 'debug_info' in st.session_state:
@@ -1177,6 +1254,11 @@ elif st.session_state.page == "✉️ Quét Gmail":
     if 'error_message' in st.session_state:
         st.error(st.session_state['error_message'])
         del st.session_state['error_message']
+    
+    # 🆕 Thêm xử lý cho info_message
+    if 'info_message' in st.session_state:
+        st.info(st.session_state['info_message'])
+        del st.session_state['info_message']
     
     # Hiển thị debug info nếu có
     if 'debug_info' in st.session_state:
