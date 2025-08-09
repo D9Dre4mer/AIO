@@ -625,7 +625,7 @@ def show_authentication_ui():
         #                           key="email_hint_new")
         
         try:        
-            auth_url = gmail_handler.get_authorization_url()    
+            auth_url = gmail_handler.get_authorization_url()
             # if email_hint:
             #     auth_url = gmail_handler.get_authorization_url_with_hint(email_hint)
             # else:

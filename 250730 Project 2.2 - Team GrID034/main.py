@@ -190,50 +190,74 @@ def main():
             tfidf_pipeline = SpamClassifierPipeline(config, classifier_type='tfidf')
             tfidf_pipeline.train()
             
-            evaluator.evaluate_accuracy(test_embeddings, test_metadata, pipeline.classifier, tfidf_pipeline.classifier, config.k_values)
+            evaluator.evaluate_accuracy(
+                test_embeddings, test_metadata, 
+                pipeline.classifier, tfidf_pipeline.classifier, 
+                config.k_values
+            )
             return
 
         # Chạy phân loại email nếu được yêu cầu
         if args.run_email_classifier:
-            logger("Đang khởi động chế độ phân loại email qua Gmail API ở chế độ nền...")
-            handler = GmailHandler(pipeline, config)
+            logger("Đang khởi động chế độ phân loại email qua Gmail API "
+                   "ở chế độ nền...")
             
-            # Khởi tạo Gmail service
-            if not handler.initialize_for_main():
-                logger("Không thể khởi tạo Gmail service. Dừng chương trình.")
+            # Kiểm tra file credentials.json trước khi khởi tạo GmailHandler
+            credentials_path = './cache/input/credentials.json'
+            if not os.path.exists(credentials_path):
+                logger(f"❌ Lỗi: Không tìm thấy file credentials.json tại: "
+                       f"{credentials_path}")
                 return
             
-            last_page_token = None
+            try:
+                handler = GmailHandler(pipeline, config)
+                
+                # Khởi tạo Gmail service
+                if not handler.initialize_for_main():
+                    logger("Không thể khởi tạo Gmail service. Dừng chương trình.")
+                    logger("💡 Gợi ý: Kiểm tra lại file credentials.json và "
+                           "thử xóa file token.json nếu có")
+                    return
+                
+                last_page_token = None
 
-            # Đăng ký trình xử lý tín hiệu Ctrl+C
-            signal.signal(signal.SIGINT, signal_handler)
+                # Đăng ký trình xử lý tín hiệu Ctrl+C
+                signal.signal(signal.SIGINT, signal_handler)
 
-            while running:
-                try:
-                    # Lấy danh sách email mới
-                    results = handler.service.users().messages().list(
-                        userId='me',
-                        q='is:unread',
-                        maxResults=10,
-                        includeSpamTrash=True,
-                        pageToken=last_page_token
-                    ).execute()
-                    messages = results.get('messages', [])
+                while running:
+                    try:
+                        # Lấy danh sách email mới
+                        results = handler.service.users().messages().list(
+                            userId='me',
+                            q='is:unread',
+                            maxResults=10,
+                            includeSpamTrash=True,
+                            pageToken=last_page_token
+                        ).execute()
+                        messages = results.get('messages', [])
 
-                    if messages:
-                        logger(f"Phát hiện {len(messages)} email mới. Đang xử lý...")
-                        handler.process_emails(max_results=10)
-                        last_page_token = results.get('nextPageToken')
-                    else:
-                        logger("Không có email mới. Chờ 30 giây...")
+                        if messages:
+                            logger(f"Phát hiện {len(messages)} email mới. "
+                                   "Đang xử lý...")
+                            handler.process_emails(max_results=10)
+                            last_page_token = results.get('nextPageToken')
+                        else:
+                            logger("Không có email mới. Chờ 30 giây...")
 
-                    time.sleep(30)
-                except Exception as e:
-                    logger(f"Lỗi khi xử lý email: {str(e)}")
-                    time.sleep(60)
+                        time.sleep(30)
+                    except Exception as e:
+                        logger(f"Lỗi khi xử lý email: {str(e)}")
+                        time.sleep(60)
 
-            logger("Chương trình đã dừng an toàn.")
-            return
+                logger("Chương trình đã dừng an toàn.")
+                return
+                
+            except FileNotFoundError as e:
+                logger(f"❌ Lỗi: {str(e)}")
+                return
+            except Exception as e:
+                logger(f"❌ Lỗi không mong muốn: {str(e)}")
+                return
 
         # Kiểm tra với các ví dụ mẫu
         logger("Đang kiểm tra pipeline với các ví dụ mẫu...")

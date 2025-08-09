@@ -25,7 +25,7 @@ class SpamClassifierConfig:
     random_state: int = 42
     
     # Cài đặt KNN
-    default_k: int = 5  # Tăng từ 3 lên 5 để robust hơn
+    default_k: int = 3 # Tăng từ 3 lên 5 để robust hơn
     k_values: List[int] = None
     
     # Đường dẫn
