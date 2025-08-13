@@ -38,3 +38,7 @@ ENV/
 # Temporary files
 *.tmp
 *.temp
+
+# Cursor config files
+.cursorrules
+.cursorignore
