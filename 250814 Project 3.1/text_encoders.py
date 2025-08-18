@@ -8,7 +8,10 @@ import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sentence_transformers import SentenceTransformer
 
-from config import EMBEDDING_MODEL_NAME, EMBEDDING_NORMALIZE, EMBEDDING_DEVICE
+from config import (
+    EMBEDDING_MODEL_NAME, EMBEDDING_NORMALIZE, EMBEDDING_DEVICE,
+    MAX_VOCABULARY_SIZE
+)
 
 
 class EmbeddingVectorizer:
@@ -66,37 +69,97 @@ class EmbeddingVectorizer:
         texts: List[str],
         mode: Literal['query', 'passage'] = 'query'
     ) -> np.ndarray:
-        """Transform texts to numpy array of embeddings"""
-        return np.array(self.transform(texts, mode=mode))
+        """Transform texts to numpy array of embeddings with progress tracking"""
+        return np.array(self.transform_with_progress(texts, mode=mode))
+    
+    def transform_with_progress(
+        self,
+        texts: List[str],
+        mode: Literal['query', 'passage'] = 'query',
+        batch_size: int = 100
+    ) -> List[List[float]]:
+        """Transform texts to embeddings with progress bar"""
+        total_texts = len(texts)
+        print(f"🔧 Processing {total_texts:,} texts for embeddings...")
+        
+        if mode == 'raw':
+            inputs = texts
+        else:
+            inputs = self._format_inputs(texts, mode)
+        
+        all_embeddings = []
+        
+        # Process in batches to show progress
+        for i in range(0, total_texts, batch_size):
+            batch_end = min(i + batch_size, total_texts)
+            batch_inputs = inputs[i:batch_end]
+            
+            # Generate embeddings for current batch
+            batch_embeddings = self.model.encode(
+                batch_inputs,
+                normalize_embeddings=self.normalize
+            )
+            all_embeddings.extend(batch_embeddings.tolist())
+            
+            # Show progress
+            progress_percent = (batch_end / total_texts) * 100
+            progress_bar = self._create_progress_bar(progress_percent, 50)
+            progress_text = (f"\r🔄 Embedding Progress: {progress_bar} "
+                           f"{progress_percent:.1f}% "
+                           f"({batch_end:,}/{total_texts:,})")
+            print(progress_text, end="", flush=True)
+        
+        print()  # New line after progress bar
+        print(f"✅ Embedding completed! Generated {len(all_embeddings):,} embeddings")
+        return all_embeddings
+    
+    def _create_progress_bar(self, percentage: float, width: int = 50) -> str:
+        """Create a progress bar string"""
+        filled_width = int(width * percentage / 100)
+        bar = '█' * filled_width + '░' * (width - filled_width)
+        return bar
 
 
 class TextVectorizer:
     """Class for handling different text vectorization methods"""
     
     def __init__(self):
-        self.bow_vectorizer = CountVectorizer()
-        self.tfidf_vectorizer = TfidfVectorizer()
+        # Limit vocabulary size to prevent memory issues
+        self.bow_vectorizer = CountVectorizer(
+            max_features=MAX_VOCABULARY_SIZE,  # Configurable vocabulary limit
+            min_df=2,           # Ignore words appearing in < 2 documents
+            max_df=0.95,        # Ignore words appearing in > 95% documents
+            stop_words='english'
+        )
+        self.tfidf_vectorizer = TfidfVectorizer(
+            max_features=MAX_VOCABULARY_SIZE,  # Configurable vocabulary limit
+            min_df=2,           # Ignore words appearing in < 2 documents  
+            max_df=0.95,        # Ignore words appearing in > 95% documents
+            stop_words='english'
+        )
         self.embedding_vectorizer = EmbeddingVectorizer()
         
-    def fit_transform_bow(self, texts: List[str]) -> np.ndarray:
-        """Fit and transform texts using Bag of Words"""
+    def fit_transform_bow(self, texts: List[str]):
+        """Fit and transform texts using Bag of Words (returns sparse matrix)"""
         vectors = self.bow_vectorizer.fit_transform(texts)
-        return np.array(vectors.toarray())
+        print(f"📊 BoW Features: {vectors.shape[1]:,} | Sparsity: {1 - vectors.nnz / (vectors.shape[0] * vectors.shape[1]):.3f}")
+        return vectors  # Keep sparse for memory efficiency
         
-    def transform_bow(self, texts: List[str]) -> np.ndarray:
-        """Transform texts using fitted Bag of Words vectorizer"""
+    def transform_bow(self, texts: List[str]):
+        """Transform texts using fitted Bag of Words vectorizer (returns sparse matrix)"""
         vectors = self.bow_vectorizer.transform(texts)
-        return np.array(vectors.toarray())
+        return vectors  # Keep sparse for memory efficiency
         
-    def fit_transform_tfidf(self, texts: List[str]) -> np.ndarray:
-        """Fit and transform texts using TF-IDF"""
+    def fit_transform_tfidf(self, texts: List[str]):
+        """Fit and transform texts using TF-IDF (returns sparse matrix)"""
         vectors = self.tfidf_vectorizer.fit_transform(texts)
-        return np.array(vectors.toarray())
+        print(f"📊 TF-IDF Features: {vectors.shape[1]:,} | Sparsity: {1 - vectors.nnz / (vectors.shape[0] * vectors.shape[1]):.3f}")
+        return vectors  # Keep sparse for memory efficiency
         
-    def transform_tfidf(self, texts: List[str]) -> np.ndarray:
-        """Transform texts using fitted TF-IDF vectorizer"""
+    def transform_tfidf(self, texts: List[str]):
+        """Transform texts using fitted TF-IDF vectorizer (returns sparse matrix)"""
         vectors = self.tfidf_vectorizer.transform(texts)
-        return np.array(vectors.toarray())
+        return vectors  # Keep sparse for memory efficiency
         
     def transform_embeddings(self, texts: List[str]) -> np.ndarray:
         """Transform texts using word embeddings"""

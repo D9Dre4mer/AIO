@@ -46,21 +46,24 @@ class DataLoader:
         print(f"🎉 Dataset loaded successfully!")
         print(f"📊 Dataset info: {self.dataset}")
         
-        # Ask user if they want CSV backup (can be slow for large datasets)
+        # CSV Backup Options
         print("\n💾 CSV Backup Options:")
-        print("1. Create full CSV backup (may take several minutes)")
-        print("2. Skip CSV backup (faster)")
-        print("3. Create sample CSV backup (1000 samples only)")
+        print(f"📊 Dataset size: {len(self.dataset['train']):,} samples")
+        print("1. 🚀 Quick Sample (1,000 samples) - 30 seconds")
+        print("2. 📋 Full Export (2.3M+ samples) - ~45 minutes, ~1.7GB")
+        print("3. ⏭️  Skip CSV backup (fastest)")
         
-        # For now, auto-skip to avoid hanging
-        print("⏭️ Auto-skipping CSV backup for faster execution...")
-        print("💡 You can manually create CSV backup later if needed")
+        choice = input("Choose option (1/2/3) [default: 1]: ").strip()
         
-        # Uncomment the line below if you want CSV backup
-        # self._create_csv_backup(csv_backup_path)
-        
-        # Create a quick sample backup instead (much faster)
-        self._create_sample_csv_backup(csv_backup_path)
+        if choice == "2":
+            print("\n📋 Creating Full CSV Backup (this will take ~45 minutes):")
+            print("💡 You can stop anytime with Ctrl+C and use option 1 next time")
+            self._create_csv_backup_chunked(csv_backup_path)
+        elif choice == "3":
+            print("⏭️  Skipping CSV backup")
+        else:
+            print("\n🚀 Creating Quick Sample Backup:")
+            self._create_sample_csv_backup(csv_backup_path)
         
     def _create_sample_csv_backup(self, csv_path: Path) -> None:
         """Create a quick CSV backup with only sample data (much faster)"""
@@ -107,6 +110,77 @@ class DataLoader:
             print(f"⚠️ Warning: Failed to create sample CSV backup: {e}")
             print("Dataset will continue to work normally")
         
+    def _create_csv_backup_chunked(self, csv_path: Path, chunk_size: int = 10000) -> None:
+        """Create CSV backup with chunked processing to avoid memory issues"""
+        try:
+            import pandas as pd
+            
+            print(f"💾 Creating chunked CSV backup at: {csv_path}")
+            
+            # Get total samples for progress tracking
+            total_samples = len(self.dataset['train'])
+            print(f"📝 Processing {total_samples:,} samples in chunks of {chunk_size:,}")
+            
+            # Process in chunks to avoid memory issues
+            first_chunk = True
+            
+            for i in range(0, total_samples, chunk_size):
+                chunk_end = min(i + chunk_size, total_samples)
+                chunk_data = []
+                
+                # Process current chunk
+                for j in range(i, chunk_end):
+                    sample = self.dataset['train'][j]
+                    sample_info = {
+                        "id": j,
+                        "abstract": sample['abstract'],
+                        "categories": sample['categories'],
+                        "title": sample.get('title', ''),
+                        "authors": sample.get('authors', ''),
+                        "doi": sample.get('doi', ''),
+                        "date": sample.get('date', ''),
+                        "journal_ref": sample.get('journal_ref', ''),
+                        "report_no": sample.get('report_no', ''),
+                        "license": sample.get('license', ''),
+                        "update_date": sample.get('update_date', '')
+                    }
+                    chunk_data.append(sample_info)
+                
+                # Write chunk to CSV
+                df_chunk = pd.DataFrame(chunk_data)
+                df_chunk.to_csv(csv_path, 
+                               mode='w' if first_chunk else 'a',
+                               header=first_chunk, 
+                               index=False, 
+                               encoding='utf-8')
+                first_chunk = False
+                
+                # Progress update
+                progress_percent = (chunk_end / total_samples) * 100
+                progress_bar = self._create_progress_bar(progress_percent, 50)
+                elapsed_time = (chunk_end / total_samples) * 45  # Estimate based on 45 min total
+                remaining_time = 45 - elapsed_time
+                
+                progress_text = (f"\r🔄 Progress: {progress_bar} "
+                               f"{progress_percent:.1f}% "
+                               f"({chunk_end:,}/{total_samples:,}) "
+                               f"ETA: {remaining_time:.1f}m")
+                print(progress_text, end="", flush=True)
+            
+            print()  # New line after progress bar
+            
+            print(f"✅ Chunked CSV backup created successfully!")
+            print(f"📁 File size: {csv_path.stat().st_size / 1024 / 1024:.2f} MB")
+            print(f"📊 Total rows: {total_samples:,}")
+            print(f"🔗 Path: {csv_path}")
+            
+            # Also create a statistics summary file
+            self._create_statistics_summary(csv_path.parent)
+            
+        except Exception as e:
+            print(f"⚠️ Warning: Failed to create chunked CSV backup: {e}")
+            print("Dataset will continue to work normally")
+    
     def _create_csv_backup(self, csv_path: Path) -> None:
         """Create a CSV backup file containing all dataset information"""
         try:

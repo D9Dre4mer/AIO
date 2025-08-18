@@ -8,10 +8,6 @@ Write-Host "Installing dependencies..." -ForegroundColor Yellow
 pip install -r requirements.txt
 
 Write-Host ""
-Write-Host "Testing modules..." -ForegroundColor Yellow
-python test_modules.py
-
-Write-Host ""
 Write-Host "Running the complete project..." -ForegroundColor Yellow
 python main.py
 

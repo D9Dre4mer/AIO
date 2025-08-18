@@ -74,7 +74,12 @@ def main():
     
     # Word Embeddings
     print("Processing Word Embeddings...")
+    print("📊 Using sentence-transformers for semantic embeddings")
+    
+    print("🔄 Processing training set embeddings...")
     X_train_embeddings = text_vectorizer.transform_embeddings(X_train)
+    
+    print("🔄 Processing test set embeddings...")
     X_test_embeddings = text_vectorizer.transform_embeddings(X_test)
     
     # Print shapes

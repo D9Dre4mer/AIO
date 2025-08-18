@@ -4,16 +4,20 @@ Handles different machine learning models and their training/testing
 """
 
 from collections import Counter
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Union
 
 import numpy as np
+from scipy import sparse
 from sklearn.cluster import KMeans
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
 from sklearn.metrics import accuracy_score, classification_report
 
-from config import KMEANS_N_CLUSTERS, KNN_N_NEIGHBORS
+from config import (
+    KMEANS_N_CLUSTERS, KNN_N_NEIGHBORS, 
+    KMEANS_SVD_THRESHOLD, KMEANS_SVD_COMPONENTS
+)
 
 
 class ModelTrainer:
@@ -24,13 +28,48 @@ class ModelTrainer:
         
     def train_and_test_kmeans(
         self, 
-        X_train: np.ndarray, 
+        X_train: Union[np.ndarray, sparse.csr_matrix], 
         y_train: np.ndarray, 
-        X_test: np.ndarray, 
+        X_test: Union[np.ndarray, sparse.csr_matrix], 
         y_test: np.ndarray, 
         n_clusters: int = KMEANS_N_CLUSTERS
     ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
         """Train and test K-Means clustering model"""
+        # Convert sparse to dense for KMeans if needed (memory efficient)
+        if sparse.issparse(X_train):
+            print(f"💾 K-Means preprocessing: {X_train.shape[0]:,} samples × {X_train.shape[1]:,} features")
+            
+            if X_train.shape[1] > KMEANS_SVD_THRESHOLD:
+                print(f"📊 High-dimensional data detected ({X_train.shape[1]:,} > {KMEANS_SVD_THRESHOLD:,} features)")
+                print(f"🔧 Applying Truncated SVD dimensionality reduction...")
+                
+                from sklearn.decomposition import TruncatedSVD
+                n_components = min(KMEANS_SVD_COMPONENTS, X_train.shape[1] - 1, X_train.shape[0] - 1)
+                svd = TruncatedSVD(n_components=n_components, random_state=42)
+                
+                from tqdm import tqdm
+                print(f"⚡ Reducing {X_train.shape[1]:,} → {n_components:,} dimensions...")
+
+                # Show progress bar for SVD fit_transform on X_train
+                print("🔄 Performing SVD fit_transform on training data...")
+                X_train = svd.fit_transform(
+                    tqdm(X_train, desc="SVD fit_transform (train)", unit="samples", total=X_train.shape[0])
+                )
+
+                # Show progress bar for SVD transform on X_test
+                print("🔄 Performing SVD transform on test data...")
+                X_test = svd.transform(
+                    tqdm(X_test, desc="SVD transform (test)", unit="samples", total=X_test.shape[0])
+                )
+                
+                explained_variance = svd.explained_variance_ratio_.sum()
+                print(f"✅ SVD completed: {X_train.shape[1]:,} dimensions | "
+                      f"Variance preserved: {explained_variance:.1%}")
+            else:
+                print(f"✅ Converting to dense matrix ({X_train.shape[1]:,} features ≤ {KMEANS_SVD_THRESHOLD:,} threshold)")
+                X_train = X_train.toarray()
+                X_test = X_test.toarray()
+        
         kmeans = KMeans(n_clusters=n_clusters, random_state=42)
         cluster_ids = kmeans.fit_predict(X_train)
 
@@ -62,14 +101,15 @@ class ModelTrainer:
         
     def train_and_test_knn(
         self, 
-        X_train: np.ndarray, 
+        X_train: Union[np.ndarray, sparse.csr_matrix], 
         y_train: np.ndarray, 
-        X_test: np.ndarray, 
+        X_test: Union[np.ndarray, sparse.csr_matrix], 
         y_test: np.ndarray, 
         n_neighbors: int = KNN_N_NEIGHBORS
     ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
         """Train and test K-Nearest Neighbors classifier"""
-        knn = KNeighborsClassifier(n_neighbors=n_neighbors)
+        # KNN works with sparse matrices
+        knn = KNeighborsClassifier(n_neighbors=n_neighbors, algorithm='brute' if sparse.issparse(X_train) else 'auto')
         knn.fit(X_train, y_train)
 
         # Predict on the test set
@@ -88,9 +128,9 @@ class ModelTrainer:
         
     def train_and_test_decision_tree(
         self, 
-        X_train: np.ndarray, 
+        X_train: Union[np.ndarray, sparse.csr_matrix], 
         y_train: np.ndarray, 
-        X_test: np.ndarray, 
+        X_test: Union[np.ndarray, sparse.csr_matrix], 
         y_test: np.ndarray
     ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
         """Train and test Decision Tree classifier"""
@@ -113,22 +153,23 @@ class ModelTrainer:
         
     def train_and_test_naive_bayes(
         self, 
-        X_train: np.ndarray, 
+        X_train: Union[np.ndarray, sparse.csr_matrix], 
         y_train: np.ndarray, 
-        X_test: np.ndarray, 
+        X_test: Union[np.ndarray, sparse.csr_matrix], 
         y_test: np.ndarray
     ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
         """Train and test Naive Bayes classifier"""
-        nb = GaussianNB()
-
-        # Naive Bayes requires input to be in dense format
-        X_train_dense = X_train.toarray() if hasattr(X_train, 'toarray') else X_train
-        X_test_dense = X_test.toarray() if hasattr(X_test, 'toarray') else X_test
-
-        nb.fit(X_train_dense, y_train)
-
-        # Predict on the test set
-        y_pred = nb.predict(X_test_dense)
+        # Use MultinomialNB for sparse matrices (better for text data)
+        if sparse.issparse(X_train):
+            print("📊 Using MultinomialNB for sparse text features")
+            nb = MultinomialNB()
+            nb.fit(X_train, y_train)
+            y_pred = nb.predict(X_test)
+        else:
+            print("📊 Using GaussianNB for dense features")
+            nb = GaussianNB()
+            nb.fit(X_train, y_train)
+            y_pred = nb.predict(X_test)
 
         # Calculate accuracy and classification report
         accuracy = accuracy_score(y_test, y_pred)
