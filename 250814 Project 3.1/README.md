@@ -149,13 +149,31 @@ Typical performance across vectorization methods:
 
 ## 📁 File Descriptions
 
-- **`config.py`**: Centralized configuration and constants
+### **Core Modules**
+- **`main.py`**: Main execution script orchestrating the entire pipeline
 - **`data_loader.py`**: Handles dataset loading, preprocessing, and text cleaning
+  - **NEW!** Now creates CSV backup files with comprehensive dataset information
+  - Automatically generates `arxiv_dataset_backup.csv` when loading datasets
+  - Includes ALL samples without limits for complete data export
+  - Creates separate statistics files for easy analysis
 - **`text_encoders.py`**: Implements different text vectorization methods
-- **`models.py`**: Contains ML model training and testing functions
-- **`visualization.py`**: Handles plotting, confusion matrices, and results display
-- **`main.py`**: Orchestrates the entire pipeline execution
-- **`demo.py`**: Demonstrates text encoding functionality
+- **`models.py`**: Handles different machine learning models and their training/testing
+- **`visualization.py`**: Handles plotting and visualization functions
+- **`config.py`**: Centralized configuration and constants
+
+### **Configuration & Data**
+- **`config.py`**: Project configuration (cache directory, sample limits, etc.)
+- **`requirements.txt`**: Python dependencies for the project
+- **`cache/`**: Directory for storing downloaded datasets and CSV backups
+  - **NEW!** Contains `arxiv_dataset_backup.csv` with ALL dataset samples
+  - **NEW!** Contains `arxiv_dataset_statistics.csv` with summary metrics
+  - **NEW!** Contains `arxiv_categories_distribution.csv` with category counts
+
+### **Execution Scripts**
+- **`run_project.bat`**: Windows batch script to run the project
+- **`run_project.ps1`**: PowerShell script to run the project
+- **`demo.py`**: Demo script for testing individual components
+- **`test_modules.py`**: Unit tests for project modules
 
 ## 🚨 Notes
 
