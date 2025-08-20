@@ -4,15 +4,14 @@ Model Factory for creating model instances
 
 from typing import Dict, Any
 from ..base.base_model import BaseModel
-from .model_registry import model_registry
 
 
 class ModelFactory:
     """Factory for creating model instances"""
     
-    def __init__(self):
+    def __init__(self, registry=None):
         """Initialize model factory"""
-        self.registry = model_registry
+        self.registry = registry
         
     def create_model(
         self, 
@@ -20,6 +19,9 @@ class ModelFactory:
         **kwargs
     ) -> BaseModel:
         """Create a model instance by name"""
+        
+        if not self.registry:
+            raise ValueError("Model registry not set. Please set registry first.")
         
         # Get model class from registry
         model_class = self.registry.get_model(model_name)
@@ -33,6 +35,9 @@ class ModelFactory:
         config: Dict[str, Any]
     ) -> BaseModel:
         """Create a model instance with configuration dictionary"""
+        
+        if not self.registry:
+            raise ValueError("Model registry not set. Please set registry first.")
         
         # Get model class from registry
         model_class = self.registry.get_model(model_name)
@@ -59,18 +64,26 @@ class ModelFactory:
     
     def get_available_models(self) -> list:
         """Get list of available model names"""
+        if not self.registry:
+            return []
         return self.registry.list_models()
     
     def get_model_info(self, model_name: str) -> Dict[str, Any]:
         """Get information about a specific model"""
+        if not self.registry:
+            return {}
         return self.registry.get_model_metadata(model_name)
     
     def get_model_categories(self) -> Dict[str, list]:
         """Get models grouped by category"""
+        if not self.registry:
+            return {}
         return self.registry.get_model_categories()
     
     def validate_model_name(self, model_name: str) -> bool:
         """Check if a model name is valid"""
+        if not self.registry:
+            return False
         return self.registry.is_model_registered(model_name)
     
     def suggest_models(
@@ -79,6 +92,9 @@ class ModelFactory:
         data_type: str = None
     ) -> list:
         """Suggest models based on task and data type"""
+        
+        if not self.registry:
+            return []
         
         suggestions = []
         all_metadata = self.registry.get_all_metadata()

@@ -3,6 +3,7 @@ Comprehensive Evaluation System for Topic Modeling Project
 Combines all embedding methods with all models for comprehensive evaluation
 Evaluates overfitting/underfitting and provides cross-validation results
 Designed with extensible architecture for future model/embedding additions
+Uses new modular architecture exclusively
 """
 
 import warnings
@@ -18,9 +19,7 @@ from datetime import datetime
 # Import project modules
 from data_loader import DataLoader
 from text_encoders import TextVectorizer
-from models.new_model_trainer import NewModelTrainer
-from models.utils.validation_manager import validation_manager
-from models.base.metrics import ModelMetrics
+from models import NewModelTrainer, validation_manager, ModelMetrics
 
 # Import visualization
 from visualization import create_output_directories

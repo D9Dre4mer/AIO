@@ -64,7 +64,3 @@ class ModelRegistry:
                 categories[category] = []
             categories[category].append(name)
         return categories
-
-
-# Global model registry instance
-model_registry = ModelRegistry()

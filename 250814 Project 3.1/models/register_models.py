@@ -7,14 +7,13 @@ from .classification.knn_model import KNNModel
 from .classification.decision_tree_model import DecisionTreeModel
 from .classification.naive_bayes_model import NaiveBayesModel
 from .classification.svm_model import SVMModel
-from .utils.model_registry import model_registry
 
 
-def register_all_models():
+def register_all_models(registry):
     """Register all available models in the registry"""
     
     # Register clustering models
-    model_registry.register_model(
+    registry.register_model(
         'kmeans',
         KMeansModel,
         {
@@ -28,7 +27,7 @@ def register_all_models():
     )
     
     # Register classification models
-    model_registry.register_model(
+    registry.register_model(
         'knn',
         KNNModel,
         {
@@ -41,7 +40,7 @@ def register_all_models():
         }
     )
     
-    model_registry.register_model(
+    registry.register_model(
         'decision_tree',
         DecisionTreeModel,
         {
@@ -55,7 +54,7 @@ def register_all_models():
         }
     )
     
-    model_registry.register_model(
+    registry.register_model(
         'naive_bayes',
         NaiveBayesModel,
         {
@@ -69,7 +68,7 @@ def register_all_models():
         }
     )
     
-    model_registry.register_model(
+    registry.register_model(
         'svm',
         SVMModel,
         {
@@ -85,14 +84,17 @@ def register_all_models():
     )
     
     print("✅ All models registered successfully!")
-    print(f"📊 Available models: {model_registry.list_models()}")
+    print(f"📊 Available models: {registry.list_models()}")
     
     # Print model categories
-    categories = model_registry.get_model_categories()
+    categories = registry.get_model_categories()
     print("\n📁 Model Categories:")
     for category, models in categories.items():
         print(f"  {category}: {', '.join(models)}")
 
 
 if __name__ == "__main__":
-    register_all_models()
+    # For standalone testing
+    from .utils.model_registry import ModelRegistry
+    test_registry = ModelRegistry()
+    register_all_models(test_registry)

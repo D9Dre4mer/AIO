@@ -1,6 +1,7 @@
 """
 Main execution script for Topic Modeling Project
 Orchestrates the entire pipeline from data loading to model evaluation
+Uses new modular architecture exclusively
 """
 
 import warnings
@@ -8,8 +9,7 @@ import numpy as np
 
 from data_loader import DataLoader
 from text_encoders import TextVectorizer
-from models.new_model_trainer import NewModelTrainer
-from models.utils.validation_manager import validation_manager
+from models import NewModelTrainer, validation_manager
 from visualization import (
     plot_confusion_matrix, 
     create_output_directories,
@@ -21,11 +21,11 @@ warnings.filterwarnings("ignore")
 
 
 def main():
-    """Main execution function"""
-    print("🚀 Starting Topic Modeling Project")
-    print("=" * 50)
+    """Main execution function using new modular architecture"""
+    print("🚀 Starting Topic Modeling Project (New Architecture)")
+    print("=" * 60)
     
-    # Initialize components
+    # Initialize components with new architecture
     data_loader = DataLoader()
     text_vectorizer = TextVectorizer()
     model_trainer = NewModelTrainer(
@@ -46,7 +46,7 @@ def main():
     all_categories = data_loader.get_all_categories(1000)
     print(f"Sample categories: {all_categories}")
     
-    # Get primary categories for reference (not used in current pipeline)
+    # Get primary categories for reference
     _ = data_loader.get_primary_categories()
     
     # Step 3: Select and preprocess samples
@@ -94,9 +94,6 @@ def main():
     print(f"   • Validation: {len(X_val)} samples")
     print(f"   • Test: {len(X_test)} samples")
     
-    # Store original test size for visualization
-    original_test_size = len(X_test)
-    
     # Step 6: Text vectorization
     print("\n🔤 Step 6: Text Vectorization")
     print("-" * 30)
@@ -134,8 +131,8 @@ def main():
     print(f"Shape of X_train_embeddings: {X_train_embeddings.shape}")
     print(f"Shape of X_test_embeddings: {X_test_embeddings.shape}")
     
-    # Step 7: Train and test models
-    print("\n🤖 Step 7: Training and Testing Models")
+    # Step 7: Train and test models using new architecture
+    print("\n🤖 Step 7: Training and Testing Models (New Architecture)")
     print("-" * 30)
     
     # Create output directories
@@ -144,7 +141,7 @@ def main():
     # Store results
     results = {}
     
-    # K-Means - Using train_validate_test_model for consistent data splits
+    # K-Means - Using new architecture
     print("\n--- K-Means Clustering ---")
     km_bow_labels, _, _, _, km_bow_accuracy, km_bow_report = model_trainer.train_validate_test_model(
         'kmeans', X_train_bow, y_train_full, X_val_bow, y_val, X_test_bow, y_test
@@ -240,7 +237,7 @@ def main():
     print("\n📊 Step 8: Generating Visualizations")
     print("-" * 30)
     
-    # Plot confusion matrices - use y_test from validation manager (200 samples)
+    # Plot confusion matrices
     plot_confusion_matrix(
         y_test, km_bow_labels, sorted_labels, 
         "KMeans Confusion Matrix (Bag of Words)", 
@@ -318,6 +315,7 @@ def main():
     
     print("\n🎉 Topic Modeling Project completed successfully!")
     print("📁 Results and visualizations saved to 'pdf/Figures/' directory")
+    print("🚀 Using new modular architecture exclusively!")
 
 
 if __name__ == "__main__":

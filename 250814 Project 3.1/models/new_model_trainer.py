@@ -6,8 +6,7 @@ from typing import Dict, Any, Union, Tuple, List
 import numpy as np
 from scipy import sparse
 
-from .utils.model_factory import model_factory
-from .utils.validation_manager import validation_manager
+# Will receive instances via constructor
 from .base.metrics import ModelMetrics
 
 
@@ -15,11 +14,10 @@ class NewModelTrainer:
     """New model trainer using modular architecture with validation and cross-validation"""
     
     def __init__(self, test_size: float = 0.2, validation_size: float = 0.2, 
-                 cv_folds: int = 5, cv_stratified: bool = True):
+                 cv_folds: int = 5, cv_stratified: bool = True,
+                 model_factory=None, validation_manager=None):
         """Initialize new model trainer with validation and cross-validation support"""
-        # Register all models
-        from .register_models import register_all_models
-        register_all_models()
+        # Models are now registered in models/__init__.py
         
         # Set validation parameters
         self.test_size = test_size
@@ -29,8 +27,13 @@ class NewModelTrainer:
         self.cv_folds = cv_folds
         self.cv_stratified = cv_stratified
         
-        # Update validation manager with new CV parameters
-        validation_manager.set_cv_parameters(cv_folds, cv_stratified)
+        # Store instances
+        self.model_factory = model_factory
+        self.validation_manager = validation_manager
+        
+        # Update validation manager with new CV parameters if provided
+        if self.validation_manager:
+            self.validation_manager.set_cv_parameters(cv_folds, cv_stratified)
     
     def cross_validate_model(
         self,
@@ -43,16 +46,20 @@ class NewModelTrainer:
         """Perform cross-validation on a specific model"""
         
         # Create model instance
-        model = model_factory.create_model(model_name, **model_params)
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        model = self.model_factory.create_model(model_name, **model_params)
         
         # Perform cross-validation
-        cv_results = validation_manager.cross_validate_model(model, X, y, metrics)
+        if not self.validation_manager:
+            raise ValueError("Validation manager not set. Please provide validation_manager in constructor.")
+        cv_results = self.validation_manager.cross_validate_model(model, X, y, metrics)
         
         # Print summary
-        validation_manager.print_cv_summary(cv_results)
+        self.validation_manager.print_cv_summary(cv_results)
         
         # Get recommendations
-        recommendations = validation_manager.get_cv_recommendations(cv_results)
+        recommendations = self.validation_manager.get_cv_recommendations(cv_results)
         if recommendations:
             print("\n💡 Recommendations:")
             for rec in recommendations:
@@ -69,7 +76,9 @@ class NewModelTrainer:
         """Perform cross-validation on all available models"""
         
         results = {}
-        available_models = model_factory.get_available_models()
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        available_models = self.model_factory.get_available_models()
         
         print(f"🔄 Cross-Validating {len(available_models)} models...")
         
@@ -184,16 +193,20 @@ class NewModelTrainer:
             print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Val: {X_val.shape[0] if hasattr(X_val, 'shape') else len(X_val)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
         else:
             # Split data into train/validation/test
-            X_train, X_val, X_test, y_train, y_val, y_test = validation_manager.split_data(
+            if not self.validation_manager:
+                raise ValueError("Validation manager not set. Please provide validation_manager in constructor.")
+            X_train, X_val, X_test, y_train, y_val, y_test = self.validation_manager.split_data(
                 X, y, stratify=y
             )
             
             # Print split summary
-            split_info = validation_manager.get_split_info(X, y)
-            validation_manager.print_split_summary(split_info)
+            split_info = self.validation_manager.get_split_info(X, y)
+            self.validation_manager.print_split_summary(split_info)
         
         # Create model instance
-        model = model_factory.create_model(model_name, **model_params)
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        model = self.model_factory.create_model(model_name, **model_params)
         
         # Train model
         print(f"\n🚀 Training {model_name} model...")
@@ -221,7 +234,9 @@ class NewModelTrainer:
         """Train, validate and test all available models"""
         
         results = {}
-        available_models = model_factory.get_available_models()
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        available_models = self.model_factory.get_available_models()
         
         print(f"🚀 Training {len(available_models)} models with validation...")
         
@@ -337,11 +352,15 @@ class NewModelTrainer:
     
     def get_model_info(self, model_name: str) -> Dict[str, Any]:
         """Get information about a specific model"""
-        return model_factory.get_model_info(model_name)
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        return self.model_factory.get_model_info(model_name)
     
     def list_available_models(self) -> list:
         """List all available models"""
-        return model_factory.get_available_models()
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        return self.model_factory.get_available_models()
     
     def suggest_models_for_task(
         self, 
@@ -349,4 +368,6 @@ class NewModelTrainer:
         data_type: str = None
     ) -> list:
         """Suggest models for specific task and data type"""
-        return model_factory.suggest_models(task_type, data_type)
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        return self.model_factory.suggest_models(task_type, data_type)

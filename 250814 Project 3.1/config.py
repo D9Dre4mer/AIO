@@ -10,7 +10,7 @@ CACHE_DIR = "./cache"
 CATEGORIES_TO_SELECT = ['astro-ph', 'cond-mat', 'cs', 'math', 'physics']
 
 # Number of samples to load
-MAX_SAMPLES = 100000
+MAX_SAMPLES = 2000
 
 # Test split ratio
 TEST_SIZE = 0.2

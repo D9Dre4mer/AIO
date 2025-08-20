@@ -2,6 +2,7 @@
 Streamlit Web Interface for Topic Modeling Project
 Provides user-friendly interface for dataset input, auto classifier selection, 
 and result visualization
+Uses new modular architecture exclusively
 """
 
 import streamlit as st
@@ -16,8 +17,7 @@ warnings.filterwarnings("ignore")
 try:
     from data_loader import DataLoader
     from text_encoders import TextVectorizer
-    from models.new_model_trainer import NewModelTrainer
-    from models.utils.validation_manager import validation_manager
+    from models import NewModelTrainer
     from config import MAX_SAMPLES, TEST_SIZE, RANDOM_STATE
 except ImportError as e:
     st.error(f"Error importing project modules: {e}")
@@ -96,10 +96,15 @@ class StreamlitTopicModeling:
         try:
             self.data_loader = DataLoader()
             self.text_vectorizer = TextVectorizer()
+            # Import global instances
+            from models import model_factory, validation_manager
+            
             self.model_trainer = NewModelTrainer(
                 cv_folds=5, 
                 validation_size=0.2,
-                test_size=0.2
+                test_size=0.2,
+                model_factory=model_factory,
+                validation_manager=validation_manager
             )
             return True
         except Exception as e:
@@ -936,165 +941,189 @@ class StreamlitTopicModeling:
             
             # K-Means (terminal only)
             print("🤖 Training K-Means models...")
-            km_bow_labels, km_bow_accuracy, km_bow_report = (
-                self.model_trainer.train_and_test_kmeans(
-                    X_train_bow, y_train, X_test_bow, y_test
+            km_bow_labels, _, _, _, km_bow_accuracy, km_bow_report = (
+                self.model_trainer.train_validate_test_model(
+                    'kmeans', X_train_bow, y_train, None, None, X_test_bow, y_test
                 )
             )
             results['kmeans_bow'] = {
                 'accuracy': km_bow_accuracy,
                 'predictions': km_bow_labels,
                 'report': km_bow_report,
-                'vectorizer': 'BoW'
+                'vectorizer': 'BoW',
+                'embedding_name': 'bow',
+                'model_name': 'kmeans'
             }
             print(f"  ✅ K-Means + BoW: {km_bow_accuracy:.3f}")
             
-            km_tfidf_labels, km_tfidf_accuracy, km_tfidf_report = (
-                self.model_trainer.train_and_test_kmeans(
-                    X_train_tfidf, y_train, X_test_tfidf, y_test
+            km_tfidf_labels, _, _, _, km_tfidf_accuracy, km_tfidf_report = (
+                self.model_trainer.train_validate_test_model(
+                    'kmeans', X_train_tfidf, y_train, None, None, X_test_tfidf, y_test
                 )
             )
             results['kmeans_tfidf'] = {
                 'accuracy': km_tfidf_accuracy,
                 'predictions': km_tfidf_labels,
                 'report': km_tfidf_report,
-                'vectorizer': 'TF-IDF'
+                'vectorizer': 'TF-IDF',
+                'embedding_name': 'tfidf',
+                'model_name': 'kmeans'
             }
             print(f"  ✅ K-Means + TF-IDF: {km_tfidf_accuracy:.3f}")
             
-            km_emb_labels, km_emb_accuracy, km_emb_report = (
-                self.model_trainer.train_and_test_kmeans(
-                    X_train_embeddings, y_train, X_test_embeddings, y_test
+            km_emb_labels, _, _, _, km_emb_accuracy, km_emb_report = (
+                self.model_trainer.train_validate_test_model(
+                    'kmeans', X_train_embeddings, y_train, None, None, X_test_embeddings, y_test
                 )
             )
             results['kmeans_embeddings'] = {
                 'accuracy': km_emb_accuracy,
                 'predictions': km_emb_labels,
                 'report': km_emb_report,
-                'vectorizer': 'Embeddings'
+                'vectorizer': 'Embeddings',
+                'embedding_name': 'embeddings',
+                'model_name': 'kmeans'
             }
             print(f"  ✅ K-Means + Embeddings: {km_emb_accuracy:.3f}")
             
             # KNN (terminal only)
             print("🤖 Training KNN models...")
-            knn_bow_labels, knn_bow_accuracy, knn_bow_report = (
-                self.model_trainer.train_and_test_knn(
-                    X_train_bow, y_train, X_test_bow, y_test
+            knn_bow_labels, _, _, _, knn_bow_accuracy, knn_bow_report = (
+                self.model_trainer.train_validate_test_model(
+                    'knn', X_train_bow, y_train, None, None, X_test_bow, y_test
                 )
             )
             results['knn_bow'] = {
                 'accuracy': knn_bow_accuracy,
                 'predictions': knn_bow_labels,
                 'report': knn_bow_report,
-                'vectorizer': 'BoW'
+                'vectorizer': 'BoW',
+                'embedding_name': 'bow',
+                'model_name': 'knn'
             }
             print(f"  ✅ KNN + BoW: {knn_bow_accuracy:.3f}")
             
-            knn_tfidf_labels, knn_tfidf_accuracy, knn_tfidf_report = (
-                self.model_trainer.train_and_test_knn(
-                    X_train_tfidf, y_train, X_test_tfidf, y_test
+            knn_tfidf_labels, _, _, _, knn_tfidf_accuracy, knn_tfidf_report = (
+                self.model_trainer.train_validate_test_model(
+                    'knn', X_train_tfidf, y_train, None, None, X_test_tfidf, y_test
                 )
             )
             results['knn_tfidf'] = {
                 'accuracy': knn_tfidf_accuracy,
                 'predictions': knn_tfidf_labels,
                 'report': knn_tfidf_report,
-                'vectorizer': 'TF-IDF'
+                'vectorizer': 'TF-IDF',
+                'embedding_name': 'tfidf',
+                'model_name': 'knn'
             }
             print(f"  ✅ KNN + TF-IDF: {knn_tfidf_accuracy:.3f}")
             
-            knn_emb_labels, knn_emb_accuracy, knn_emb_report = (
-                self.model_trainer.train_and_test_knn(
-                    X_train_embeddings, y_train, X_test_embeddings, y_test
+            knn_emb_labels, _, _, _, knn_emb_accuracy, knn_emb_report = (
+                self.model_trainer.train_validate_test_model(
+                    'knn', X_train_embeddings, y_train, None, None, X_test_embeddings, y_test
                 )
             )
             results['knn_embeddings'] = {
                 'accuracy': knn_emb_accuracy,
                 'predictions': knn_emb_labels,
                 'report': knn_emb_report,
-                'vectorizer': 'Embeddings'
+                'vectorizer': 'Embeddings',
+                'embedding_name': 'embeddings',
+                'model_name': 'knn'
             }
             print(f"  ✅ KNN + Embeddings: {knn_emb_accuracy:.3f}")
             
             # Decision Tree (terminal only)
             print("🤖 Training Decision Tree models...")
-            dt_bow_labels, dt_bow_accuracy, dt_bow_report = (
-                self.model_trainer.train_and_test_decision_tree(
-                    X_train_bow, y_train, X_test_bow, y_test
+            dt_bow_labels, _, _, _, dt_bow_accuracy, dt_bow_report = (
+                self.model_trainer.train_validate_test_model(
+                    'decision_tree', X_train_bow, y_train, None, None, X_test_bow, y_test
                 )
             )
             results['decision_tree_bow'] = {
                 'accuracy': dt_bow_accuracy,
                 'predictions': dt_bow_labels,
                 'report': dt_bow_report,
-                'vectorizer': 'BoW'
+                'vectorizer': 'BoW',
+                'embedding_name': 'bow',
+                'model_name': 'decision_tree'
             }
             print(f"  ✅ Decision Tree + BoW: {dt_bow_accuracy:.3f}")
             
-            dt_tfidf_labels, dt_tfidf_accuracy, dt_tfidf_report = (
-                self.model_trainer.train_and_test_decision_tree(
-                    X_train_tfidf, y_train, X_test_tfidf, y_test
+            dt_tfidf_labels, _, _, _, dt_tfidf_accuracy, dt_tfidf_report = (
+                self.model_trainer.train_validate_test_model(
+                    'decision_tree', X_train_tfidf, y_train, None, None, X_test_tfidf, y_test
                 )
             )
             results['decision_tree_tfidf'] = {
                 'accuracy': dt_tfidf_accuracy,
                 'predictions': dt_tfidf_labels,
                 'report': dt_tfidf_report,
-                'vectorizer': 'TF-IDF'
+                'vectorizer': 'TF-IDF',
+                'embedding_name': 'tfidf',
+                'model_name': 'decision_tree'
             }
             print(f"  ✅ Decision Tree + TF-IDF: {dt_tfidf_accuracy:.3f}")
             
-            dt_emb_labels, dt_emb_accuracy, dt_emb_report = (
-                self.model_trainer.train_and_test_decision_tree(
-                    X_train_embeddings, y_train, X_test_embeddings, y_test
+            dt_emb_labels, _, _, _, dt_emb_accuracy, dt_emb_report = (
+                self.model_trainer.train_validate_test_model(
+                    'decision_tree', X_train_embeddings, y_train, None, None, X_test_embeddings, y_test
                 )
             )
             results['decision_tree_embeddings'] = {
                 'accuracy': dt_emb_accuracy,
                 'predictions': dt_emb_labels,
                 'report': dt_emb_report,
-                'vectorizer': 'Embeddings'
+                'vectorizer': 'Embeddings',
+                'embedding_name': 'embeddings',
+                'model_name': 'decision_tree'
             }
             print(f"  ✅ Decision Tree + Embeddings: {dt_emb_accuracy:.3f}")
             
             # Naive Bayes (terminal only)
             print("🤖 Training Naive Bayes models...")
-            nb_bow_labels, nb_bow_accuracy, nb_bow_report = (
-                self.model_trainer.train_and_test_naive_bayes(
-                    X_train_bow, y_train, X_test_bow, y_test
+            nb_bow_labels, _, _, _, nb_bow_accuracy, nb_bow_report = (
+                self.model_trainer.train_validate_test_model(
+                    'naive_bayes', X_train_bow, y_train, None, None, X_test_bow, y_test
                 )
             )
             results['naive_bayes_bow'] = {
                 'accuracy': nb_bow_accuracy,
                 'predictions': nb_bow_labels,
                 'report': nb_bow_report,
-                'vectorizer': 'BoW'
+                'vectorizer': 'BoW',
+                'embedding_name': 'bow',
+                'model_name': 'naive_bayes'
             }
             print(f"  ✅ Naive Bayes + BoW: {nb_bow_accuracy:.3f}")
             
-            nb_tfidf_labels, nb_tfidf_accuracy, nb_tfidf_report = (
-                self.model_trainer.train_and_test_naive_bayes(
-                    X_train_tfidf, y_train, X_test_tfidf, y_test
+            nb_tfidf_labels, _, _, _, nb_tfidf_accuracy, nb_tfidf_report = (
+                self.model_trainer.train_validate_test_model(
+                    'naive_bayes', X_train_tfidf, y_train, None, None, X_test_tfidf, y_test
                 )
             )
             results['nb_tfidf'] = {
                 'accuracy': nb_tfidf_accuracy,
                 'predictions': nb_tfidf_labels,
                 'report': nb_tfidf_report,
-                'vectorizer': 'TF-IDF'
+                'vectorizer': 'TF-IDF',
+                'embedding_name': 'tfidf',
+                'model_name': 'naive_bayes'
             }
             print(f"  ✅ Naive Bayes + TF-IDF: {nb_tfidf_accuracy:.3f}")
             
-            nb_emb_labels, nb_emb_accuracy, nb_emb_report = (
-                self.model_trainer.train_and_test_naive_bayes(
-                    X_train_embeddings, y_train, X_test_embeddings, y_test
+            nb_emb_labels, _, _, _, nb_emb_accuracy, nb_emb_report = (
+                self.model_trainer.train_validate_test_model(
+                    'naive_bayes', X_train_embeddings, y_train, None, None, X_test_embeddings, y_test
                 )
             )
             results['naive_bayes_embeddings'] = {
                 'accuracy': nb_emb_accuracy,
                 'predictions': nb_emb_labels,
                 'report': nb_emb_report,
-                'vectorizer': 'Embeddings'
+                'vectorizer': 'Embeddings',
+                'embedding_name': 'embeddings',
+                'model_name': 'naive_bayes'
             }
             print(f"  ✅ Naive Bayes + Embeddings: {nb_emb_accuracy:.3f}")
             
@@ -1105,6 +1134,56 @@ class StreamlitTopicModeling:
         except Exception as e:
             st.error(f"Error in auto classification: {e}")
             return None, None, None
+    
+    def _analyze_comprehensive_results(self, results):
+        """Analyze comprehensive evaluation results and find best combinations"""
+        print(f"\n🔍 Analyzing Comprehensive Results...")
+        print("=" * 50)
+        
+        # Filter successful results
+        successful_results = {k: v for k, v in results.items() if 'error' not in v}
+        
+        if not successful_results:
+            print("❌ No successful combinations to analyze!")
+            return
+        
+        # 1. Best overall performance
+        best_overall = max(successful_results.items(), key=lambda x: x[1]['accuracy'])
+        print(f"🏆 Best Overall: {best_overall[0]}")
+        print(f"   • Test Accuracy: {best_overall[1]['accuracy']:.3f}")
+        print(f"   • Validation Accuracy: {best_overall[1]['validation_accuracy']:.3f}")
+        if 'cv_stability_score' in best_overall[1]:
+            print(f"   • CV Stability: {best_overall[1]['cv_stability_score']:.3f}")
+        
+        # 2. Best for each embedding
+        print(f"\n📊 Best Model for Each Embedding:")
+        for embedding in ['bow', 'tfidf', 'embeddings']:
+            embedding_results = {k: v for k, v in successful_results.items() 
+                               if v['embedding_name'] == embedding}
+            if embedding_results:
+                best_embedding = max(embedding_results.items(), key=lambda x: x[1]['accuracy'])
+                print(f"   • {embedding.upper()}: {best_embedding[1]['model_name']} (Test: {best_embedding[1]['accuracy']:.3f})")
+        
+        # 3. Best for each model
+        print(f"\n🤖 Best Embedding for Each Model:")
+        for model in ['kmeans', 'knn', 'decision_tree', 'naive_bayes', 'svm']:
+            model_results = {k: v for k, v in successful_results.items() 
+                           if v['model_name'] == model}
+            if model_results:
+                best_model = max(model_results.items(), key=lambda x: x[1]['accuracy'])
+                print(f"   • {model.upper()}: {best_model[1]['embedding_name']} (Test: {best_model[1]['accuracy']:.3f})")
+        
+        # 4. Overfitting analysis
+        print(f"\n⚖️ Overfitting Analysis:")
+        overfitting_counts = {}
+        for result in successful_results.values():
+            if 'overfitting_status' in result:
+                status = result['overfitting_status']
+                overfitting_counts[status] = overfitting_counts.get(status, 0) + 1
+        
+        for status, count in overfitting_counts.items():
+            percentage = (count / len(successful_results)) * 100
+            print(f"   • {status.title()}: {count} combinations ({percentage:.1f}%)")
     
     def find_best_classifier(self, results):
         """Find the best performing classifier"""
@@ -1200,6 +1279,217 @@ class StreamlitTopicModeling:
         )
         
         return fig
+    
+    def create_embedding_comparison(self, results):
+        """Create embedding method comparison chart"""
+        embedding_data = {}
+        
+        for result in results.values():
+            if 'error' not in result:
+                embedding = result['embedding_name']
+                if embedding not in embedding_data:
+                    embedding_data[embedding] = []
+                embedding_data[embedding].append(result['accuracy'])
+        
+        # Calculate average accuracy for each embedding
+        embedding_avg = {emb: np.mean(accs) for emb, accs in embedding_data.items()}
+        
+        fig = px.bar(
+            x=list(embedding_avg.keys()),
+            y=list(embedding_avg.values()),
+            title="Embedding Method Performance Comparison",
+            labels={'x': 'Embedding Method', 'y': 'Average Accuracy'},
+            color=list(embedding_avg.keys()),
+            color_discrete_map={'bow': '#1f77b4', 'tfidf': '#ff7f0e', 'embeddings': '#2ca02c'}
+        )
+        
+        fig.update_layout(
+            yaxis_range=[0, 1],
+            width=600,
+            height=400
+        )
+        
+        return fig
+    
+    def create_stability_comparison(self, results):
+        """Create cross-validation stability comparison chart"""
+        stable_data = []
+        
+        for model_name, result in results.items():
+            if 'error' not in result and 'cv_stability_score' in result:
+                stable_data.append({
+                    'Model': model_name.replace('_', ' ').title(),
+                    'Stability Score': result['cv_stability_score'],
+                    'CV Mean Accuracy': result.get('cv_mean_accuracy', 0),
+                    'CV Std Accuracy': result.get('cv_std_accuracy', 0)
+                })
+        
+        if not stable_data:
+            # Create empty chart if no stability data
+            fig = px.bar(
+                x=['No Data'], 
+                y=[0], 
+                title="No Stability Data Available"
+            )
+            fig.update_layout(
+                xaxis_title="Model",
+                yaxis_title="Stability Score",
+                width=400,
+                height=300
+            )
+            return fig
+        
+        df_stable = pd.DataFrame(stable_data)
+        
+        fig = px.scatter(
+            df_stable,
+            x='CV Mean Accuracy',
+            y='Stability Score',
+            size='CV Std Accuracy',
+            color='Model',
+            title="Cross-Validation Stability Analysis",
+            labels={'CV Mean Accuracy': 'CV Mean Accuracy', 'Stability Score': 'Stability Score'},
+            hover_data=['CV Std Accuracy']
+        )
+        
+        fig.update_layout(
+            xaxis_range=[0, 1],
+            yaxis_range=[0, 1],
+            width=700,
+            height=500
+        )
+        
+        return fig
+    
+    def create_overfitting_analysis(self, results):
+        """Create overfitting analysis chart"""
+        overfitting_data = []
+        
+        for model_name, result in results.items():
+            if 'error' not in result and 'overfitting_score' in result:
+                overfitting_data.append({
+                    'Model': model_name.replace('_', ' ').title(),
+                    'Overfitting Score': result['overfitting_score'],
+                    'Validation Accuracy': result.get('validation_accuracy', 0),
+                    'Test Accuracy': result.get('accuracy', 0),
+                    'Status': result.get('overfitting_status', 'unknown')
+                })
+        
+        if not overfitting_data:
+            # Create empty chart if no overfitting data
+            fig = px.bar(
+                x=['No Data'], 
+                y=[0], 
+                title="No Overfitting Data Available"
+            )
+            fig.update_layout(
+                xaxis_title="Model",
+                yaxis_title="Overfitting Score",
+                width=400,
+                height=300
+            )
+            return fig
+        
+        df_overfitting = pd.DataFrame(overfitting_data)
+        
+        # Color coding for overfitting status
+        color_map = {'overfitting': '#ff7f0e', 'well_fitted': '#2ca02c', 'unknown': '#7f7f7f'}
+        df_overfitting['Color'] = df_overfitting['Status'].map(color_map)
+        
+        fig = px.scatter(
+            df_overfitting,
+            x='Validation Accuracy',
+            y='Test Accuracy',
+            color='Status',
+            size='Overfitting Score',
+            title="Overfitting Analysis (Validation vs Test Accuracy)",
+            labels={'Validation Accuracy': 'Validation Accuracy', 'Test Accuracy': 'Test Accuracy'},
+            hover_data=['Model', 'Overfitting Score']
+        )
+        
+        # Add diagonal line for perfect fit
+        fig.add_trace(go.Scatter(
+            x=[0, 1], y=[0, 1],
+            mode='lines',
+            name='Perfect Fit',
+            line=dict(dash='dash', color='red')
+        ))
+        
+        fig.update_layout(
+            xaxis_range=[0, 1],
+            yaxis_range=[0, 1],
+            width=700,
+            height=500
+        )
+        
+        return fig
+    
+    def create_results_dataframe(self, results):
+        """Create detailed results dataframe"""
+        data = []
+        
+        for model_name, result in results.items():
+            if 'error' not in result:
+                row = {
+                    'Model': model_name.replace('_', ' ').title(),
+                    'Embedding': result.get('embedding_name', '').title(),
+                    'Test Accuracy': f"{result.get('accuracy', 0):.3f}",
+                    'Validation Accuracy': f"{result.get('validation_accuracy', 0):.3f}",
+                    'CV Mean': f"{result.get('cv_mean_accuracy', 0):.3f}",
+                    'CV Std': f"{result.get('cv_std_accuracy', 0):.3f}",
+                    'Stability': f"{result.get('cv_stability_score', 0):.3f}",
+                    'Overfitting Score': f"{result.get('overfitting_score', 0):.3f}",
+                    'Status': result.get('overfitting_status', 'unknown').title()
+                }
+                data.append(row)
+            else:
+                row = {
+                    'Model': model_name.replace('_', ' ').title(),
+                    'Embedding': result.get('embedding_name', '').title(),
+                    'Test Accuracy': 'ERROR',
+                    'Validation Accuracy': 'ERROR',
+                    'CV Mean': 'ERROR',
+                    'CV Std': 'ERROR',
+                    'Stability': 'ERROR',
+                    'Overfitting Score': 'ERROR',
+                    'Status': 'ERROR'
+                }
+                data.append(row)
+        
+        df = pd.DataFrame(data)
+        return df
+    
+
+    
+    def display_best_combinations(self, results):
+        """Display best combinations summary"""
+        successful_results = {k: v for k, v in results.items() if 'error' not in v}
+        
+        if not successful_results:
+            st.warning("No successful combinations to display")
+            return
+        
+        # Best overall
+        best_overall = max(successful_results.items(), key=lambda x: x[1]['accuracy'])
+        st.success(f"🏆 **Best Overall**: {best_overall[0].replace('_', ' ').title()} - Accuracy: {best_overall[1]['accuracy']:.3f}")
+        
+        # Best by embedding
+        st.write("**🔤 Best by Embedding Method:**")
+        for embedding in ['bow', 'tfidf', 'embeddings']:
+            embedding_results = {k: v for k, v in successful_results.items() 
+                               if v['embedding_name'] == embedding}
+            if embedding_results:
+                best_embedding = max(embedding_results.items(), key=lambda x: x[1]['accuracy'])
+                st.write(f"   • **{embedding.upper()}**: {best_embedding[1]['model_name'].title()} - Accuracy: {best_embedding[1]['accuracy']:.3f}")
+        
+        # Best by model
+        st.write("**🤖 Best by Model Type:**")
+        for model in ['kmeans', 'knn', 'decision_tree', 'naive_bayes', 'svm']:
+            model_results = {k: v for k, v in successful_results.items() 
+                           if v['model_name'] == model}
+            if model_results:
+                best_model = max(model_results.items(), key=lambda x: x[1]['accuracy'])
+                st.write(f"   • **{model.replace('_', ' ').title()}**: {best_model[1]['embedding_name'].title()} - Accuracy: {best_model[1]['accuracy']:.3f}")
 
 
 def main():
@@ -1381,20 +1671,53 @@ def main():
                                     # Find best classifier
                                     best_model, best_accuracy = app.find_best_classifier(results)
                                     
-                                    # Display results in collapsible section
-                                    st.toast("🎉 Classification completed successfully!", icon="🎉")
+                                    # Display comprehensive results
+                                    st.toast("🎉 Comprehensive Classification completed successfully!", icon="🎉")
                                     
-                                    with st.expander("🏆 Classification Results", expanded=True):
-                                        col1, col2 = st.columns(2)
+                                    with st.expander("🏆 Comprehensive Classification Results", expanded=True):
+                                        # Summary metrics
+                                        col1, col2, col3 = st.columns(3)
                                         with col1:
                                             st.metric("Best Model", best_model.replace('_', ' ').title())
                                         with col2:
                                             st.metric("Best Accuracy", f"{best_accuracy:.3f}")
+                                        with col3:
+                                            # Count successful combinations
+                                            successful_count = sum(1 for r in results.values() if 'error' not in r)
+                                            total_count = len(results)
+                                            st.metric("Success Rate", f"{successful_count}/{total_count}")
                                         
-                                        # Performance comparison
-                                        st.subheader("📈 Performance Comparison")
+                                        # Comprehensive Analysis
+                                        st.subheader("🔍 Comprehensive Analysis")
+                                        
+                                        # 1. Performance comparison chart
+                                        st.write("**📈 Model Performance Comparison**")
                                         comparison_fig = app.create_performance_comparison(results)
                                         st.plotly_chart(comparison_fig, use_container_width=True)
+                                        
+                                        # 2. Embedding comparison
+                                        st.write("**🔤 Embedding Method Comparison**")
+                                        embedding_fig = app.create_embedding_comparison(results)
+                                        st.plotly_chart(embedding_fig, use_container_width=True)
+                                        
+                                        # 3. Cross-validation stability
+                                        st.write("**🔄 Cross-Validation Stability**")
+                                        stability_fig = app.create_stability_comparison(results)
+                                        st.plotly_chart(stability_fig, use_container_width=True)
+                                        
+                                        # 4. Overfitting analysis
+                                        st.write("**⚖️ Overfitting Analysis**")
+                                        overfitting_fig = app.create_overfitting_analysis(results)
+                                        st.plotly_chart(overfitting_fig, use_container_width=True)
+                                        
+                                        # 5. Detailed results table
+                                        st.write("**📊 Detailed Results Table**")
+                                        results_df = app.create_results_dataframe(results)
+                                        st.dataframe(results_df, use_container_width=True)
+                                        
+                                        # 6. Best combinations summary
+                                        st.write("**🏆 Best Combinations Summary**")
+                                        app.display_best_combinations(results)
                                 else:
                                     st.error("❌ Classification failed!")
                             else:
