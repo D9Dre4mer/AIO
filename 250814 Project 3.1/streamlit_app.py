@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore")
 try:
     from data_loader import DataLoader
     from text_encoders import TextVectorizer
-    from models import ModelTrainer
+    from models.new_model_trainer import NewModelTrainer
     from config import MAX_SAMPLES, TEST_SIZE, RANDOM_STATE
 except ImportError as e:
     st.error(f"Error importing project modules: {e}")
@@ -95,7 +95,7 @@ class StreamlitTopicModeling:
         try:
             self.data_loader = DataLoader()
             self.text_vectorizer = TextVectorizer()
-            self.model_trainer = ModelTrainer()
+            self.model_trainer = NewModelTrainer(cv_folds=5, validation_size=0.2)
             return True
         except Exception as e:
             st.error(f"Failed to initialize components: {e}")

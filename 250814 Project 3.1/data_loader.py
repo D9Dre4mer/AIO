@@ -389,9 +389,12 @@ class DataLoader:
             
         return sorted_categories
         
-    def select_samples(self) -> None:
+    def select_samples(self, max_samples: int = None) -> None:
         """Select samples with single labels from specific categories"""
         self.samples = []
+        
+        # Use provided max_samples or fall back to config default
+        max_samples = max_samples or MAX_SAMPLES
         
         for s in self.dataset['train']:
             if len(s['categories'].split(' ')) != 1:
@@ -403,7 +406,7 @@ class DataLoader:
                 
             self.samples.append(s)
             
-            if len(self.samples) >= MAX_SAMPLES:
+            if len(self.samples) >= max_samples:
                 break
                 
         print(f"Number of samples: {len(self.samples)}")

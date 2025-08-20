@@ -8,7 +8,7 @@ warnings.filterwarnings("ignore")
 
 from data_loader import DataLoader
 from text_encoders import TextVectorizer
-from models import ModelTrainer
+from models.new_model_trainer import NewModelTrainer
 from visualization import (
     plot_confusion_matrix, 
     create_output_directories,
@@ -25,7 +25,7 @@ def main():
     # Initialize components
     data_loader = DataLoader()
     text_vectorizer = TextVectorizer()
-    model_trainer = ModelTrainer()
+    model_trainer = NewModelTrainer(cv_folds=5, validation_size=0.2)
     
     # Step 1: Load and explore dataset
     print("\n📊 Step 1: Loading Dataset")
