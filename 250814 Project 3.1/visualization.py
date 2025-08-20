@@ -89,7 +89,8 @@ def plot_model_comparison(results_dict, save_path=None):
         results_dict (dict): Dictionary containing results for different models
         save_path (str, optional): Path to save the figure
     """
-    models = list(results_dict.keys())
+    # Define specific models to plot
+    models = ['kmeans', 'knn', 'decision_tree', 'naive_bayes']
     vectorization_methods = ['bow', 'tfidf', 'embeddings']
     
     # Extract accuracies

@@ -17,6 +17,7 @@ try:
     from data_loader import DataLoader
     from text_encoders import TextVectorizer
     from models.new_model_trainer import NewModelTrainer
+    from models.utils.validation_manager import validation_manager
     from config import MAX_SAMPLES, TEST_SIZE, RANDOM_STATE
 except ImportError as e:
     st.error(f"Error importing project modules: {e}")
@@ -95,7 +96,11 @@ class StreamlitTopicModeling:
         try:
             self.data_loader = DataLoader()
             self.text_vectorizer = TextVectorizer()
-            self.model_trainer = NewModelTrainer(cv_folds=5, validation_size=0.2)
+            self.model_trainer = NewModelTrainer(
+                cv_folds=5, 
+                validation_size=0.2,
+                test_size=0.2
+            )
             return True
         except Exception as e:
             st.error(f"Failed to initialize components: {e}")
@@ -111,7 +116,9 @@ class StreamlitTopicModeling:
             elif uploaded_file.name.endswith('.xlsx'):
                 df = pd.read_excel(uploaded_file)
             else:
-                st.error("Unsupported file format. Please upload CSV, JSON, or Excel file.")
+                st.error(
+                    "Unsupported file format. Please upload CSV, JSON, or Excel file."
+                )
                 return None
             
             return df
@@ -122,7 +129,6 @@ class StreamlitTopicModeling:
     def load_dataset_from_path(self, file_path: str):
         """Load dataset from local file path"""
         try:
-            import os
             from pathlib import Path
             
             # Validate file path
@@ -138,7 +144,10 @@ class StreamlitTopicModeling:
             # Check file size (warn if too large)
             file_size_mb = path.stat().st_size / (1024 * 1024)
             if file_size_mb > 100:  # 100MB limit
-                st.warning(f"⚠️ Large file detected: {file_size_mb:.1f} MB. Loading may take time...")
+                st.warning(
+                    f"⚠️ Large file detected: {file_size_mb:.1f} MB. "
+                    "Loading may take time..."
+                )
             
             # Load based on file extension
             file_ext = path.suffix.lower()
@@ -158,7 +167,10 @@ class StreamlitTopicModeling:
                 df = pd.read_pickle(path)
             else:
                 st.error(f"❌ Unsupported file format: {file_ext}")
-                st.info("Supported formats: CSV, JSON, Excel (.xlsx/.xls), Parquet, Pickle")
+                st.info(
+                    "Supported formats: CSV, JSON, Excel (.xlsx/.xls), "
+                    "Parquet, Pickle"
+                )
                 return None
             
             # Debug DataFrame info
@@ -171,7 +183,8 @@ class StreamlitTopicModeling:
             
             # Basic data cleaning
             df = df.dropna(how='all')  # Remove completely empty rows
-            df = df.loc[:, df.columns.notnull()]  # Remove columns with null names
+            # Remove columns with null names
+            df = df.loc[:, df.columns.notnull()]
             
             st.write(f"🔍 Debug: After cleaning - DataFrame shape: {df.shape}")
             st.write(f"🔍 Debug: After cleaning - DataFrame columns: {list(df.columns)}")

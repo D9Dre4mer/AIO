@@ -4,17 +4,20 @@ Orchestrates the entire pipeline from data loading to model evaluation
 """
 
 import warnings
-warnings.filterwarnings("ignore")
+import numpy as np
 
 from data_loader import DataLoader
 from text_encoders import TextVectorizer
 from models.new_model_trainer import NewModelTrainer
+from models.utils.validation_manager import validation_manager
 from visualization import (
     plot_confusion_matrix, 
     create_output_directories,
     plot_model_comparison,
     print_model_results
 )
+
+warnings.filterwarnings("ignore")
 
 
 def main():
@@ -25,7 +28,11 @@ def main():
     # Initialize components
     data_loader = DataLoader()
     text_vectorizer = TextVectorizer()
-    model_trainer = NewModelTrainer(cv_folds=5, validation_size=0.2)
+    model_trainer = NewModelTrainer(
+        cv_folds=5, 
+        validation_size=0.2,
+        test_size=0.2
+    )
     
     # Step 1: Load and explore dataset
     print("\n📊 Step 1: Loading Dataset")
@@ -39,12 +46,27 @@ def main():
     all_categories = data_loader.get_all_categories(1000)
     print(f"Sample categories: {all_categories}")
     
-    primary_categories = data_loader.get_primary_categories()
+    # Get primary categories for reference (not used in current pipeline)
+    _ = data_loader.get_primary_categories()
     
     # Step 3: Select and preprocess samples
     print("\n🔍 Step 3: Selecting and Preprocessing Samples")
     print("-" * 30)
-    data_loader.select_samples()
+    
+    # Get user input for number of samples
+    try:
+        user_samples = input("📊 Enter number of samples to process (default: 100000): ").strip()
+        if user_samples:
+            num_samples = int(user_samples)
+            print(f"✅ Using {num_samples:,} samples as requested")
+        else:
+            num_samples = 100000
+            print(f"✅ Using default: {num_samples:,} samples")
+    except ValueError:
+        num_samples = 100000
+        print(f"⚠️ Invalid input, using default: {num_samples:,} samples")
+    
+    data_loader.select_samples(max_samples=num_samples)
     data_loader.preprocess_samples()
     
     # Step 4: Create label mappings
@@ -58,18 +80,37 @@ def main():
     X_train, X_test, y_train, y_test = data_loader.prepare_train_test_data()
     sorted_labels = data_loader.get_sorted_labels()
     
+    # Create 3-way split using validation manager
+    print("\n🔄 Step 5.1: Creating Train/Validation/Test Split")
+    print("-" * 30)
+    X_train_full, X_val, X_test, y_train_full, y_val, y_test = \
+        validation_manager.split_data(
+            np.concatenate([X_train, X_test]), 
+            np.concatenate([y_train, y_test])
+        )
+    
+    print("✅ Data split created:")
+    print(f"   • Training: {len(X_train_full)} samples")
+    print(f"   • Validation: {len(X_val)} samples")
+    print(f"   • Test: {len(X_test)} samples")
+    
+    # Store original test size for visualization
+    original_test_size = len(X_test)
+    
     # Step 6: Text vectorization
     print("\n🔤 Step 6: Text Vectorization")
     print("-" * 30)
     
     # Bag of Words
     print("Processing Bag of Words...")
-    X_train_bow = text_vectorizer.fit_transform_bow(X_train)
+    X_train_bow = text_vectorizer.fit_transform_bow(X_train_full)
+    X_val_bow = text_vectorizer.transform_bow(X_val)
     X_test_bow = text_vectorizer.transform_bow(X_test)
     
     # TF-IDF
     print("Processing TF-IDF...")
-    X_train_tfidf = text_vectorizer.fit_transform_tfidf(X_train)
+    X_train_tfidf = text_vectorizer.fit_transform_tfidf(X_train_full)
+    X_val_tfidf = text_vectorizer.transform_tfidf(X_val)
     X_test_tfidf = text_vectorizer.transform_tfidf(X_test)
     
     # Word Embeddings
@@ -77,7 +118,10 @@ def main():
     print("📊 Using sentence-transformers for semantic embeddings")
     
     print("🔄 Processing training set embeddings...")
-    X_train_embeddings = text_vectorizer.transform_embeddings(X_train)
+    X_train_embeddings = text_vectorizer.transform_embeddings(X_train_full)
+    
+    print("🔄 Processing validation set embeddings...")
+    X_val_embeddings = text_vectorizer.transform_embeddings(X_val)
     
     print("🔄 Processing test set embeddings...")
     X_test_embeddings = text_vectorizer.transform_embeddings(X_test)
@@ -100,16 +144,16 @@ def main():
     # Store results
     results = {}
     
-    # K-Means
+    # K-Means - Using train_validate_test_model for consistent data splits
     print("\n--- K-Means Clustering ---")
-    km_bow_labels, km_bow_accuracy, km_bow_report = model_trainer.train_and_test_kmeans(
-        X_train_bow, y_train, X_test_bow, y_test
+    km_bow_labels, _, _, _, km_bow_accuracy, km_bow_report = model_trainer.train_validate_test_model(
+        'kmeans', X_train_bow, y_train_full, X_val_bow, y_val, X_test_bow, y_test
     )
-    km_tfidf_labels, km_tfidf_accuracy, km_tfidf_report = model_trainer.train_and_test_kmeans(
-        X_train_tfidf, y_train, X_test_tfidf, y_test
+    km_tfidf_labels, _, _, _, km_tfidf_accuracy, km_tfidf_report = model_trainer.train_validate_test_model(
+        'kmeans', X_train_tfidf, y_train_full, X_val_tfidf, y_val, X_test_tfidf, y_test
     )
-    km_embeddings_labels, km_embeddings_accuracy, km_embeddings_report = model_trainer.train_and_test_kmeans(
-        X_train_embeddings, y_train, X_test_embeddings, y_test
+    km_embeddings_labels, _, _, _, km_embeddings_accuracy, km_embeddings_report = model_trainer.train_validate_test_model(
+        'kmeans', X_train_embeddings, y_train_full, X_val_embeddings, y_val, X_test_embeddings, y_test
     )
     
     results.update({
@@ -125,14 +169,14 @@ def main():
     
     # KNN
     print("\n--- K-Nearest Neighbors ---")
-    knn_bow_labels, knn_bow_accuracy, knn_bow_report = model_trainer.train_and_test_knn(
-        X_train_bow, y_train, X_test_bow, y_test
+    knn_bow_labels, _, _, _, knn_bow_accuracy, knn_bow_report = model_trainer.train_validate_test_model(
+        'knn', X_train_bow, y_train_full, X_val_bow, y_val, X_test_bow, y_test
     )
-    knn_tfidf_labels, knn_tfidf_accuracy, knn_tfidf_report = model_trainer.train_and_test_knn(
-        X_train_tfidf, y_train, X_test_tfidf, y_test
+    knn_tfidf_labels, _, _, _, knn_tfidf_accuracy, knn_tfidf_report = model_trainer.train_validate_test_model(
+        'knn', X_train_tfidf, y_train_full, X_val_tfidf, y_val, X_test_tfidf, y_test
     )
-    knn_embeddings_labels, knn_embeddings_accuracy, knn_embeddings_report = model_trainer.train_and_test_knn(
-        X_train_embeddings, y_train, X_test_embeddings, y_test
+    knn_embeddings_labels, _, _, _, knn_embeddings_accuracy, knn_embeddings_report = model_trainer.train_validate_test_model(
+        'knn', X_train_embeddings, y_train_full, X_val_embeddings, y_val, X_test_embeddings, y_test
     )
     
     results.update({
@@ -148,14 +192,14 @@ def main():
     
     # Decision Tree
     print("\n--- Decision Tree ---")
-    dt_bow_labels, dt_bow_accuracy, dt_bow_report = model_trainer.train_and_test_decision_tree(
-        X_train_bow, y_train, X_test_bow, y_test
+    dt_bow_labels, _, _, _, dt_bow_accuracy, dt_bow_report = model_trainer.train_validate_test_model(
+        'decision_tree', X_train_bow, y_train_full, X_val_bow, y_val, X_test_bow, y_test
     )
-    dt_tfidf_labels, dt_tfidf_accuracy, dt_tfidf_report = model_trainer.train_and_test_decision_tree(
-        X_train_tfidf, y_train, X_test_tfidf, y_test
+    dt_tfidf_labels, _, _, _, dt_tfidf_accuracy, dt_tfidf_report = model_trainer.train_validate_test_model(
+        'decision_tree', X_train_tfidf, y_train_full, X_val_tfidf, y_val, X_test_tfidf, y_test
     )
-    dt_embeddings_labels, dt_embeddings_accuracy, dt_embeddings_report = model_trainer.train_and_test_decision_tree(
-        X_train_embeddings, y_train, X_test_embeddings, y_test
+    dt_embeddings_labels, _, _, _, dt_embeddings_accuracy, dt_embeddings_report = model_trainer.train_validate_test_model(
+        'decision_tree', X_train_embeddings, y_train_full, X_val_embeddings, y_val, X_test_embeddings, y_test
     )
     
     results.update({
@@ -171,14 +215,14 @@ def main():
     
     # Naive Bayes
     print("\n--- Naive Bayes ---")
-    nb_bow_labels, nb_bow_accuracy, nb_bow_report = model_trainer.train_and_test_naive_bayes(
-        X_train_bow, y_train, X_test_bow, y_test
+    nb_bow_labels, _, _, _, nb_bow_accuracy, nb_bow_report = model_trainer.train_validate_test_model(
+        'naive_bayes', X_train_bow, y_train_full, X_val_bow, y_val, X_test_bow, y_test
     )
-    nb_tfidf_labels, nb_tfidf_accuracy, nb_tfidf_report = model_trainer.train_and_test_naive_bayes(
-        X_train_tfidf, y_train, X_test_tfidf, y_test
+    nb_tfidf_labels, _, _, _, nb_tfidf_accuracy, nb_tfidf_report = model_trainer.train_validate_test_model(
+        'naive_bayes', X_train_tfidf, y_train_full, X_val_tfidf, y_val, X_test_tfidf, y_test
     )
-    nb_embeddings_labels, nb_embeddings_accuracy, nb_embeddings_report = model_trainer.train_and_test_naive_bayes(
-        X_train_embeddings, y_train, X_test_embeddings, y_test
+    nb_embeddings_labels, _, _, _, nb_embeddings_accuracy, nb_embeddings_report = model_trainer.train_validate_test_model(
+        'naive_bayes', X_train_embeddings, y_train_full, X_val_embeddings, y_val, X_test_embeddings, y_test
     )
     
     results.update({
@@ -196,7 +240,7 @@ def main():
     print("\n📊 Step 8: Generating Visualizations")
     print("-" * 30)
     
-    # Plot confusion matrices
+    # Plot confusion matrices - use y_test from validation manager (200 samples)
     plot_confusion_matrix(
         y_test, km_bow_labels, sorted_labels, 
         "KMeans Confusion Matrix (Bag of Words)", 
