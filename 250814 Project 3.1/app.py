@@ -334,7 +334,61 @@ def render_step1_wireframe():
                     st.error(f"❌ Error loading file: {str(e)}")
         
     elif "Sample Dataset" in dataset_source:
-        st.info("🎲 Sample dataset will be available in future versions")
+        import glob
+
+        # Định nghĩa thư mục cache (giả sử là ./cache hoặc bạn có thể sửa lại đường dẫn)
+        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        allowed_exts = ['.csv', '.xlsx', '.xls', '.json', '.txt']
+
+        # Lấy danh sách file hợp lệ trong thư mục cache
+        if os.path.exists(cache_dir):
+            files = []
+            for ext in allowed_exts:
+                files.extend(glob.glob(os.path.join(cache_dir, f"*{ext}")))
+            files = sorted(files)
+        else:
+            files = []
+
+        if not files:
+            st.warning("⚠️ Không tìm thấy sample dataset trong thư mục cache.")
+        else:
+            # Hiển thị danh sách file sample
+            file_names = [os.path.basename(f) for f in files]
+            selected_file = st.selectbox(
+                "Chọn sample dataset từ cache:",
+                file_names,
+                help="Chọn một file mẫu từ thư mục cache của dự án"
+            )
+
+            if selected_file:
+                file_path = os.path.join(cache_dir, selected_file)
+                file_extension = selected_file.split('.')[-1].lower()
+                try:
+                    if file_extension == 'csv':
+                        df = pd.read_csv(file_path)
+                    elif file_extension in ['xlsx', 'xls']:
+                        df = pd.read_excel(file_path)
+                    elif file_extension == 'json':
+                        df = pd.read_json(file_path)
+                    elif file_extension == 'txt':
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            lines = f.readlines()[:100]
+                        df = pd.DataFrame({'text': lines})
+                    else:
+                        st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
+                        return
+
+                    st.toast(f"✅ Sample dataset '{selected_file}' loaded from cache.")
+
+                    # Store in session
+                    session_manager = SessionManager()
+                    session_manager.update_step_data(1, 'dataframe', df)
+                    session_manager.update_step_data(1, 'file_path', file_path)
+
+                    # Show file preview
+                    show_file_preview(df, file_extension)
+                except Exception as e:
+                    st.toast(f"❌ Error loading sample dataset: {str(e)}")
     
     # Custom File Upload Section
     if "Upload Custom File" in dataset_source:
@@ -392,28 +446,10 @@ def process_uploaded_file(uploaded_file):
 def show_file_preview(df, file_extension):
     """Show file preview and info for both uploaded and path-based files"""
     
-    # Dataset Preview Section
-    st.markdown("""
-    <div class="section-box">
-        <h3>📊 Dataset Preview (if available):</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    
     # Data preview box
-    st.markdown("""
-    <div class="preview-box">
-        <h4>Data Preview - First 5 rows</h4>
-    </div>
-    """, unsafe_allow_html=True)
+    st.subheader("📊 Data Preview (First 5 rows)")
     
     st.dataframe(df.head(5), use_container_width=True)
-    
-    # Dataset Info Section
-    st.markdown("""
-    <div class="section-box">
-        <h3>📈 Dataset Info:</h3>
-    </div>
-    """, unsafe_allow_html=True)
     
     # Metrics in boxes
     col1, col2, col3 = st.columns(3)
