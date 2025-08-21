@@ -8,7 +8,11 @@ import warnings
 import numpy as np
 import pandas as pd
 import time
+import os
+import json
+import pickle
 from typing import Dict, List, Tuple, Any
+from datetime import datetime
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
@@ -55,6 +59,12 @@ class StreamlitTrainingPipeline:
         self.total_models = 0
         self.start_time = None
         self.elapsed_time = 0
+        
+        # Initialize cache system
+        self.cache_dir = "cache/training_results"
+        self._ensure_cache_directory()
+        self.cache_metadata_file = os.path.join(self.cache_dir, "cache_metadata.json")
+        self.cache_metadata = self._load_cache_metadata()
         
     def initialize_pipeline(self, df: pd.DataFrame, step1_data: Dict, 
                           step2_data: Dict, step3_data: Dict) -> Dict:
@@ -104,9 +114,146 @@ class StreamlitTrainingPipeline:
         except Exception as e:
             return {
                 'status': 'error',
-                'message': f'Failed to initialize pipeline: {str(e)}',
+                'message': f'Pipeline initialization failed: {str(e)}',
                 'error': str(e)
             }
+    
+    def _ensure_cache_directory(self):
+        """Ensure cache directory exists"""
+        os.makedirs(self.cache_dir, exist_ok=True)
+    
+    def _load_cache_metadata(self) -> Dict:
+        """Load cache metadata from file"""
+        try:
+            if os.path.exists(self.cache_metadata_file):
+                with open(self.cache_metadata_file, 'r') as f:
+                    return json.load(f)
+            return {}
+        except Exception as e:
+            print(f"Warning: Could not load cache metadata: {e}")
+            return {}
+    
+    def _save_cache_metadata(self):
+        """Save cache metadata to file"""
+        try:
+            with open(self.cache_metadata_file, 'w') as f:
+                json.dump(self.cache_metadata, f, indent=2)
+        except Exception as e:
+            print(f"Warning: Could not save cache metadata: {e}")
+    
+    def _generate_cache_key(self, step1_data: Dict, step2_data: Dict, step3_data: Dict) -> str:
+        """Generate unique cache key based on configuration"""
+        config_hash = {
+            'sampling': step1_data.get('sampling_config', {}),
+            'preprocessing': {
+                'text_column': step2_data.get('text_column'),
+                'label_column': step2_data.get('label_column'),
+                'text_cleaning': step2_data.get('text_cleaning', True),
+                'category_mapping': step2_data.get('category_mapping', True),
+                'data_validation': step2_data.get('data_validation', True),
+                'memory_optimization': step2_data.get('memory_optimization', True)
+            },
+            'model': step3_data.get('data_split', {}),
+            'vectorization': step3_data.get('selected_vectorization', []),
+            'cv': step3_data.get('cross_validation', {})
+        }
+        
+        # Create hash from config
+        import hashlib
+        config_str = json.dumps(config_hash, sort_keys=True)
+        return hashlib.md5(config_str.encode()).hexdigest()
+    
+    def _check_cache(self, cache_key: str) -> Dict:
+        """Check if results exist in cache"""
+        if cache_key in self.cache_metadata:
+            cache_info = self.cache_metadata[cache_key]
+            cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+            
+            # Check if cache file exists and is not expired
+            if os.path.exists(cache_file):
+                cache_age = time.time() - cache_info['timestamp']
+                max_age = 24 * 60 * 60  # 24 hours
+                
+                if cache_age < max_age:
+                    try:
+                        with open(cache_file, 'rb') as f:
+                            cached_results = pickle.load(f)
+                        print(f"✅ Using cached results (age: {cache_age/3600:.1f}h)")
+                        return cached_results
+                    except Exception as e:
+                        print(f"Warning: Could not load cached results: {e}")
+        
+        return None
+    
+    def _save_to_cache(self, cache_key: str, results: Dict):
+        """Save results to cache"""
+        try:
+            cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+            
+            # Save results
+            with open(cache_file, 'wb') as f:
+                pickle.dump(results, f)
+            
+            # Update metadata
+            self.cache_metadata[cache_key] = {
+                'timestamp': time.time(),
+                'file_path': cache_file,
+                'config_hash': cache_key,
+                'results_summary': {
+                    'successful_combinations': results.get('successful_combinations', 0),
+                    'total_combinations': results.get('total_combinations', 0),
+                    'evaluation_time': results.get('evaluation_time', 0)
+                }
+            }
+            
+            self._save_cache_metadata()
+            print(f"✅ Results cached successfully: {cache_file}")
+            
+        except Exception as e:
+            print(f"Warning: Could not save to cache: {e}")
+    
+    def get_cached_results(self, step1_data: Dict, step2_data: Dict, step3_data: Dict) -> Dict:
+        """Get cached results if available"""
+        cache_key = self._generate_cache_key(step1_data, step2_data, step3_data)
+        return self._check_cache(cache_key)
+    
+    def clear_cache(self, cache_key: str = None):
+        """Clear specific cache or all cache"""
+        try:
+            if cache_key:
+                # Clear specific cache
+                if cache_key in self.cache_metadata:
+                    cache_file = self.cache_metadata[cache_key]['file_path']
+                    if os.path.exists(cache_file):
+                        os.remove(cache_file)
+                    del self.cache_metadata[cache_key]
+                    print(f"✅ Cleared cache: {cache_key}")
+            else:
+                # Clear all cache
+                for key in list(self.cache_metadata.keys()):
+                    cache_file = self.cache_metadata[key]['file_path']
+                    if os.path.exists(cache_file):
+                        os.remove(cache_file)
+                self.cache_metadata = {}
+                print("✅ Cleared all cache")
+            
+            self._save_cache_metadata()
+            
+        except Exception as e:
+            print(f"Warning: Could not clear cache: {e}")
+    
+    def list_cached_results(self) -> List[Dict]:
+        """List all cached results with metadata"""
+        cached_results = []
+        for cache_key, metadata in self.cache_metadata.items():
+            cached_results.append({
+                'cache_key': cache_key,
+                'timestamp': metadata['timestamp'],
+                'age_hours': (time.time() - metadata['timestamp']) / 3600,
+                'results_summary': metadata.get('results_summary', {}),
+                'file_path': metadata['file_path']
+            })
+        return cached_results
     
     def execute_training(self, df: pd.DataFrame, step1_data: Dict,
                          step2_data: Dict, step3_data: Dict,
@@ -117,6 +264,39 @@ class StreamlitTrainingPipeline:
             self.start_time = time.time()
             self.training_status = "training"
             self.models_completed = 0
+
+            # Check cache first
+            self.current_phase = "cache_check"
+            if progress_callback:
+                progress_callback(self.current_phase, "Checking cache for existing results...", 0.02)
+            
+            cache_key = self._generate_cache_key(step1_data, step2_data, step3_data)
+            cached_results = self._check_cache(cache_key)
+            
+            if cached_results:
+                print(f"✅ Using cached results for configuration: {cache_key[:8]}...")
+                self.training_status = "completed"
+                self.current_phase = "completed"
+                if progress_callback:
+                    progress_callback(self.current_phase, "Using cached results!", 1.0)
+                
+                return {
+                    'status': 'success',
+                    'message': 'Using cached results',
+                    'results': cached_results,
+                    'comprehensive_results': cached_results.get('all_results', []),
+                    'successful_combinations': cached_results.get('successful_combinations', 0),
+                    'total_combinations': cached_results.get('total_combinations', 0),
+                    'best_combinations': cached_results.get('best_combinations', {}),
+                    'total_models': cached_results.get('total_models', 0),
+                    'models_completed': cached_results.get('models_completed', 0),
+                    'elapsed_time': 0,  # No training time for cached results
+                    'evaluation_time': cached_results.get('evaluation_time', 0),
+                    'data_info': cached_results.get('data_info', {}),
+                    'embedding_info': cached_results.get('embedding_info', {}),
+                    'from_cache': True,
+                    'cache_key': cache_key
+                }
 
             # Initialize pipeline
             self.current_phase = "initialization"
@@ -148,7 +328,6 @@ class StreamlitTrainingPipeline:
 
             # Save processed data to temporary CSV for DataLoader
             import tempfile
-            import os
             
             temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
             df.to_csv(temp_file.name, index=False)
@@ -189,10 +368,16 @@ class StreamlitTrainingPipeline:
                 # Get max samples from step 1 configuration
                 max_samples = step1_data.get('sampling_config', {}).get('num_samples', None)
                 
-                # Run comprehensive evaluation with skip_csv_prompt=True for Streamlit usage
+                # Get selected models and vectorization methods from step 3
+                selected_models = step3_data.get('selected_models', [])
+                selected_vectorization = step3_data.get('selected_vectorization', [])
+                
+                # Run comprehensive evaluation with selected models and embeddings
                 evaluation_results = evaluator.run_comprehensive_evaluation(
                     max_samples=max_samples, 
-                    skip_csv_prompt=True
+                    skip_csv_prompt=True,
+                    selected_models=selected_models,
+                    selected_embeddings=selected_vectorization
                 )
                 
                 # Update progress based on evaluation progress
@@ -225,27 +410,44 @@ class StreamlitTrainingPipeline:
                 if original_file_path:
                     evaluator.data_loader.file_path = original_file_path
 
+                # Save results to cache
+                self.current_phase = "caching_results"
+                if progress_callback:
+                    progress_callback(self.current_phase, "Saving results to cache...", 0.95)
+                
+                try:
+                    # Prepare results for caching
+                    cache_results = {
+                        'status': 'success',
+                        'message': 'Comprehensive evaluation completed successfully',
+                        'results': evaluation_results,
+                        'comprehensive_results': comprehensive_results,
+                        'successful_combinations': evaluation_results.get('successful_combinations', 0),
+                        'total_combinations': evaluation_results.get('total_combinations', 0),
+                        'best_combinations': evaluator.best_combinations if hasattr(evaluator, 'best_combinations') else {},
+                        'total_models': self.total_models,
+                        'models_completed': self.models_completed,
+                        'elapsed_time': time.time() - self.start_time,
+                        'evaluation_time': evaluation_results.get('evaluation_time', 0),
+                        'data_info': evaluation_results.get('data_info', {}),
+                        'embedding_info': evaluation_results.get('embedding_info', {}),
+                        'from_cache': False,
+                        'cache_key': cache_key
+                    }
+                    
+                    # Save to cache
+                    self._save_to_cache(cache_key, cache_results)
+                    
+                except Exception as e:
+                    print(f"Warning: Could not save results to cache: {e}")
+
                 # Finalize results
                 self.current_phase = "completed"
                 self.training_status = "completed"
                 if progress_callback:
                     progress_callback(self.current_phase, "Comprehensive evaluation completed!", 1.0)
 
-                return {
-                    'status': 'success',
-                    'message': 'Comprehensive evaluation completed successfully',
-                    'results': evaluation_results,
-                    'comprehensive_results': comprehensive_results,
-                    'successful_combinations': evaluation_results.get('successful_combinations', 0),
-                    'total_combinations': evaluation_results.get('total_combinations', 0),
-                    'best_combinations': evaluator.best_combinations if hasattr(evaluator, 'best_combinations') else {},
-                    'total_models': self.total_models,
-                    'models_completed': self.models_completed,
-                    'elapsed_time': time.time() - self.start_time,
-                    'evaluation_time': evaluation_results.get('evaluation_time', 0),
-                    'data_info': evaluation_results.get('data_info', {}),
-                    'embedding_info': evaluation_results.get('embedding_info', {})
-                }
+                return cache_results
 
             except Exception as e:
                 # Clean up temp file on error
@@ -731,8 +933,37 @@ class StreamlitTrainingPipeline:
         """Generate confusion matrices and other visualizations"""
         
         try:
-            # Get unique labels for confusion matrix
-            unique_labels = sorted(list(set(y_test)))
+            # Apply label processing method like main.py (map numeric IDs to text labels)
+            try:
+                # Get unique numeric labels from data
+                unique_numeric_labels = sorted(list(set(y_test)))
+                
+                # Create text labels mapping (same approach as main.py)
+                sorted_labels = []
+                for i in unique_numeric_labels:
+                    if i == 0:
+                        sorted_labels.append("astro-ph")
+                    elif i == 1:
+                        sorted_labels.append("cond-mat") 
+                    elif i == 2:
+                        sorted_labels.append("cs")
+                    elif i == 3:
+                        sorted_labels.append("math")
+                    elif i == 4:
+                        sorted_labels.append("physics")
+                    else:
+                        sorted_labels.append(f"Class_{i}")
+                
+                print(f"✅ Using sorted_labels for visualizations: {sorted_labels}")
+                
+            except Exception as e:
+                print(f"Warning: Label mapping failed: {e}")
+                # Fallback: use numeric labels
+                sorted_labels = [f"Class_{i}" for i in unique_numeric_labels]
+                print(f"⚠️  Using fallback labels: {sorted_labels}")
+            
+            # Use unique_numeric_labels for confusion matrix calculation
+            unique_labels = unique_numeric_labels
             
             for result_key, result_data in training_results.items():
                 if 'labels' not in result_data:
@@ -750,11 +981,19 @@ class StreamlitTrainingPipeline:
                 # Generate confusion matrix
                 try:
                     if hasattr(plot_confusion_matrix, '__call__'):
-                        plot_confusion_matrix(
-                            y_test, result_data['labels'], unique_labels,
-                            f"{model_name} Confusion Matrix ({vec_method})",
-                            f"pdf/Figures/{model_name.lower()}_{vec_method}_confusion_matrix.pdf"
-                        )
+                        # Use sorted_labels if available (same as main.py)
+                        if sorted_labels and len(sorted_labels) > 0:
+                            plot_confusion_matrix(
+                                y_test, result_data['labels'], sorted_labels,
+                                f"{model_name} Confusion Matrix ({vec_method})",
+                                f"pdf/Figures/{model_name.lower()}_{vec_method}_confusion_matrix.pdf"
+                            )
+                        else:
+                            plot_confusion_matrix(
+                                y_test, result_data['labels'], unique_labels,
+                                f"{model_name} Confusion Matrix ({vec_method})",
+                                f"pdf/Figures/{model_name.lower()}_{vec_method}_confusion_matrix.pdf"
+                            )
                     else:
                         # Fallback confusion matrix
                         self._create_fallback_confusion_matrix(
@@ -810,14 +1049,38 @@ class StreamlitTrainingPipeline:
                 print(f"Warning: Empty arrays for confusion matrix - {model_name} with {vec_method}")
                 return
             
-            # Ensure labels is a list and not empty
-            if not isinstance(labels, (list, np.ndarray)) or len(labels) == 0:
-                # Create labels from unique values in y_true and y_pred
-                all_labels = np.concatenate([y_true, y_pred])
-                labels = sorted(list(set(all_labels)))
-                if len(labels) == 0:
-                    print(f"Warning: No valid labels found for confusion matrix - {model_name} with {vec_method}")
-                    return
+            # Apply label processing method like main.py (map numeric IDs to text labels)
+            try:
+                # Get unique numeric labels from data
+                unique_numeric_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
+                
+                # Create text labels mapping (same approach as main.py)
+                # Since we don't have data_loader here, we'll create meaningful text labels
+                class_names = []
+                for i in unique_numeric_labels:
+                    if i == 0:
+                        class_names.append("astro-ph")
+                    elif i == 1:
+                        class_names.append("cond-mat") 
+                    elif i == 2:
+                        class_names.append("cs")
+                    elif i == 3:
+                        class_names.append("math")
+                    elif i == 4:
+                        class_names.append("physics")
+                    else:
+                        class_names.append(f"Class_{i}")
+                
+                print(f"✅ Mapped numeric labels {unique_numeric_labels} to text labels: {class_names}")
+                
+            except Exception as e:
+                print(f"Warning: Label mapping failed: {e}")
+                # Fallback: use numeric labels
+                class_names = [f"Class_{i}" for i in unique_numeric_labels]
+                print(f"⚠️  Using fallback labels: {class_names}")
+            
+            # Use unique_numeric_labels for confusion matrix calculation
+            labels = unique_numeric_labels
             
             # Create confusion matrix
             try:
@@ -829,21 +1092,35 @@ class StreamlitTrainingPipeline:
                 # Update labels based on actual values
                 labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
             
-            # Create plot
-            plt.figure(figsize=(8, 6))
-            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
-                       xticklabels=labels, yticklabels=labels)
+            # Create plot with proper labels (same as main.py approach)
+            plt.figure(figsize=(10, 8))
+            
+            # Create annotations with raw values
+            annotations = np.empty_like(cm).astype(str)
+            for i in range(cm.shape[0]):
+                for j in range(cm.shape[1]):
+                    annotations[i, j] = str(cm[i, j])
+            
+            # Plot heatmap with text labels (same as main.py approach)
+            sns.heatmap(cm, annot=annotations, fmt="", cmap="Blues",
+                       xticklabels=class_names, yticklabels=class_names,
+                       cbar=True, linewidths=1, linecolor='black')
+            
             plt.title(f'{model_name} Confusion Matrix ({vec_method})')
             plt.ylabel('True Label')
             plt.xlabel('Predicted Label')
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=0)
             
             # Save plot
             import os
             os.makedirs('pdf/Figures', exist_ok=True)
-            plt.savefig(f'pdf/Figures/{model_name.lower()}_{vec_method}_confusion_matrix.pdf')
+            plt.savefig(f'pdf/Figures/{model_name.lower()}_{vec_method}_confusion_matrix.pdf', 
+                       bbox_inches='tight', dpi=300)
             plt.close()
             
             print(f"✅ Confusion matrix created for {model_name} with {vec_method}")
+            print(f"   Labels used: {class_names}")
             
         except Exception as e:
             print(f"Warning: Fallback confusion matrix failed for {model_name} with {vec_method}: {e}")
@@ -891,6 +1168,121 @@ class StreamlitTrainingPipeline:
             
         except Exception as e:
             print(f"Warning: Fallback model comparison failed: {e}")
+    
+    def plot_confusion_matrices_from_cache(self, cached_results: Dict) -> bool:
+        """
+        Vẽ confusion matrices từ cached results
+        Sử dụng dữ liệu đã được lưu trong cache
+        """
+        try:
+            print("🎨 Vẽ confusion matrices từ cache...")
+            
+            if 'comprehensive_results' not in cached_results:
+                print("❌ Không có comprehensive_results trong cache")
+                return False
+            
+            comprehensive_results = cached_results['comprehensive_results']
+            successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
+            
+            if not successful_results:
+                print("❌ Không có kết quả thành công trong cache")
+                return False
+            
+            print(f"✅ Tìm thấy {len(successful_results)} kết quả thành công")
+            
+            # Vẽ confusion matrix cho từng combination
+            for result in successful_results:
+                model_name = result.get('model_name', 'Unknown')
+                embedding_name = result.get('embedding_name', 'Unknown')
+                
+                print(f"   🎯 Vẽ confusion matrix cho {model_name} + {embedding_name}")
+                
+                # Kiểm tra dữ liệu cần thiết
+                if 'predictions' in result and 'true_labels' in result:
+                    predictions = result['predictions']
+                    true_labels = result['true_labels']
+                    label_mapping = result.get('label_mapping', {})
+                    
+                    # Vẽ confusion matrix
+                    self._create_confusion_matrix_from_cache(
+                        true_labels, predictions, label_mapping,
+                        model_name, embedding_name
+                    )
+                else:
+                    print(f"      ⚠️  Thiếu dữ liệu cho {model_name} + {embedding_name}")
+                    print(f"         Có: {list(result.keys())}")
+            
+            print("✅ Hoàn thành vẽ confusion matrices từ cache!")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Lỗi khi vẽ confusion matrices từ cache: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _create_confusion_matrix_from_cache(self, y_true, y_pred, label_mapping: Dict,
+                                          model_name: str, embedding_name: str):
+        """
+        Tạo confusion matrix từ dữ liệu cache với label mapping
+        """
+        try:
+            import matplotlib.pyplot as plt
+            from sklearn.metrics import confusion_matrix
+            import seaborn as sns
+            
+            # Đảm bảo y_true và y_pred là numpy arrays
+            y_true = np.array(y_true)
+            y_pred = np.array(y_pred)
+            
+            # Xử lý labels
+            unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
+            
+            # Sử dụng label mapping từ cache nếu có
+            if label_mapping:
+                class_names = [label_mapping.get(label_id, f"Class_{label_id}") 
+                              for label_id in unique_labels]
+                print(f"      ✅ Sử dụng label mapping: {class_names}")
+            else:
+                # Fallback: tạo labels đơn giản
+                class_names = [f"Class_{label_id}" for label_id in unique_labels]
+                print(f"      ⚠️  Sử dụng fallback labels: {class_names}")
+            
+            # Tính confusion matrix
+            cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
+            
+            # Tạo plot
+            plt.figure(figsize=(10, 8))
+            
+            # Tạo annotations
+            annotations = np.empty_like(cm).astype(str)
+            for i in range(cm.shape[0]):
+                for j in range(cm.shape[1]):
+                    annotations[i, j] = str(cm[i, j])
+            
+            # Vẽ heatmap với text labels
+            sns.heatmap(cm, annot=annotations, fmt="", cmap="Blues",
+                       xticklabels=class_names, yticklabels=class_names,
+                       cbar=True, linewidths=1, linecolor='black')
+            
+            plt.title(f'{model_name} Confusion Matrix ({embedding_name}) - From Cache')
+            plt.ylabel('True Label')
+            plt.xlabel('Predicted Label')
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=0)
+            
+            # Tạo thư mục nếu chưa có
+            os.makedirs('pdf/Figures', exist_ok=True)
+            
+            # Lưu plot
+            filename = f'pdf/Figures/{model_name.lower()}_{embedding_name}_confusion_matrix_cache.pdf'
+            plt.savefig(filename, bbox_inches='tight', dpi=300)
+            plt.close()
+            
+            print(f"      ✅ Confusion matrix đã lưu: {filename}")
+            
+        except Exception as e:
+            print(f"      ❌ Lỗi khi tạo confusion matrix: {e}")
     
     def get_training_status(self) -> Dict:
         """Get current training status"""

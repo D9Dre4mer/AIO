@@ -17,6 +17,40 @@ import time
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from wizard_ui.session_manager import SessionManager
+from training_pipeline import StreamlitTrainingPipeline
+
+
+def get_cache_info():
+    """Get cache information for display"""
+    try:
+        pipeline = StreamlitTrainingPipeline()
+        cached_results = pipeline.list_cached_results()
+        return cached_results
+    except Exception as e:
+        st.error(f"Error accessing cache: {e}")
+        return []
+
+
+def clear_cache_action(cache_key: str = None):
+    """Clear specific cache or all cache"""
+    try:
+        pipeline = StreamlitTrainingPipeline()
+        pipeline.clear_cache(cache_key)
+        st.success("Cache cleared successfully!")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Error clearing cache: {e}")
+
+
+def format_cache_age(age_hours: float) -> str:
+    """Format cache age for display"""
+    if age_hours < 1:
+        return f"{age_hours * 60:.0f} minutes"
+    elif age_hours < 24:
+        return f"{age_hours:.1f} hours"
+    else:
+        days = age_hours / 24
+        return f"{days:.1f} days"
 
 # Page configuration
 st.set_page_config(
@@ -1434,6 +1468,24 @@ def render_step4_wireframe():
     
     df = step1_data['dataframe']
     
+    # Initialize result variable to prevent UnboundLocalError
+    result = {
+        'status': 'not_started',
+        'message': 'Training not started',
+        'results': {},
+        'comprehensive_results': [],
+        'successful_combinations': 0,
+        'total_combinations': 0,
+        'best_combinations': {},
+        'total_models': 0,
+        'models_completed': 0,
+        'elapsed_time': 0,
+        'evaluation_time': 0,
+        'data_info': {},
+        'embedding_info': {},
+        'from_cache': False
+    }
+    
     # Training Control Section
     st.markdown("**🎮 Training Control:**")
     col1, col2, col3, col4 = st.columns(4)
@@ -1479,6 +1531,54 @@ def render_step4_wireframe():
     with col3:
         best_accuracy = st.metric("Best Accuracy", "0.00%")
     
+            # Cache Management Section
+    with st.expander("💾 Cache Management", expanded=False):
+        st.markdown("**Cache Information:**")
+        
+        # Get cache info
+        cached_results = get_cache_info()
+        
+        if cached_results:
+            st.toast(f"✅ Found {len(cached_results)} cached training results")
+            
+            # Display cache table
+            cache_data = []
+            for cache in cached_results:
+                cache_data.append({
+                    'Cache Key': cache['cache_key'][:12] + '...',
+                    'Age': format_cache_age(cache['age_hours']),
+                    'Success Rate': f"{cache['results_summary'].get('successful_combinations', 0)}/{cache['results_summary'].get('total_combinations', 0)}",
+                    'Training Time': f"{cache['results_summary'].get('evaluation_time', 0):.1f}s"
+                })
+            
+            cache_df = pd.DataFrame(cache_data)
+            st.dataframe(cache_df, use_container_width=True)
+            
+            # Cache actions
+            if st.button("🗑️ Clear All Cache", type="secondary", key="clear_cache_confusion_matrix"):
+                clear_cache_action()
+        else:
+            st.info("ℹ️ No cached results found")
+        
+        # Confusion Matrix from Cache Section
+        if result.get('from_cache', False):
+            with st.expander("🎨 Plot Confusion Matrices from Cache", expanded=False):
+                st.markdown("**Generate Confusion Matrices from Cached Results:**")
+                st.info("💡 Use cached results to create confusion matrices without retraining")
+                
+                if st.button("🎯 Plot All Confusion Matrices from Cache", type="primary"):
+                    try:
+                        pipeline = StreamlitTrainingPipeline()
+                        success = pipeline.plot_confusion_matrices_from_cache(result)
+                        
+                        if success:
+                            st.success("✅ Confusion matrices generated successfully from cache!")
+                            st.info("📁 Check the 'pdf/Figures' folder for generated plots")
+                        else:
+                            st.error("❌ Failed to generate confusion matrices from cache")
+                    except Exception as e:
+                        st.error(f"❌ Error generating confusion matrices: {e}")
+  
     # Training Log Section
     with st.expander("📝 Training Log", expanded=True):
         training_log = st.empty()
@@ -1534,12 +1634,36 @@ def render_step4_wireframe():
                 current_accuracy.metric("Current Accuracy", "Training...")
                 best_accuracy.metric("Best Accuracy", "Training...")
             
-            # Execute training
-            with st.spinner("🚀 Training in progress..."):
-                result = execute_streamlit_training(
-                    df, step1_data, step2_data, step3_data,
-                    progress_callback=update_progress
-                )
+            # Check cache first
+            pipeline = StreamlitTrainingPipeline()
+            cached_results = pipeline.get_cached_results(step1_data, step2_data, step3_data)
+            
+            if cached_results:
+                st.toast("🎯 Using cached results! No need to retrain.")
+                result = {
+                    'status': 'success',
+                    'message': 'Using cached results',
+                    'results': cached_results,
+                    'comprehensive_results': cached_results.get('all_results', []),
+                    'successful_combinations': cached_results.get('successful_combinations', 0),
+                    'total_combinations': cached_results.get('total_combinations', 0),
+                    'best_combinations': cached_results.get('best_combinations', {}),
+                    'total_models': cached_results.get('total_models', 0),
+                    'models_completed': cached_results.get('models_completed', 0),
+                    'elapsed_time': 0,
+                    'evaluation_time': cached_results.get('evaluation_time', 0),
+                    'data_info': cached_results.get('data_info', {}),
+                    'embedding_info': cached_results.get('embedding_info', {}),
+                    'from_cache': True
+                }
+                st.session_state.training_log.append("✅ Using cached results (no training needed)")
+            else:
+                # Execute training
+                with st.spinner("🚀 Training in progress..."):
+                    result = execute_streamlit_training(
+                        df, step1_data, step2_data, step3_data,
+                        progress_callback=update_progress
+                    )
             
             if result['status'] == 'success':
                 st.session_state.training_results = result
@@ -1565,37 +1689,23 @@ def render_step4_wireframe():
                         st.session_state.training_log.append(f"🏆 Best: {best_overall.get('combination_key', 'N/A')}")
                 
                 # Show completion message
-                st.toast("🎉 Comprehensive evaluation completed successfully!")
-                st.info(f"Evaluated {total_combinations} model-embedding combinations in {result['elapsed_time']:.2f} seconds")
+                if result.get('from_cache', False):
+                    st.toast("🎯 Using cached results!")
+                    st.info(f"📋 Retrieved {total_combinations} model-embedding combinations from cache (no training needed)")
+                else:
+                    st.toast("🎉 Comprehensive evaluation completed successfully!")
+                    st.info(f"Evaluated {total_combinations} model-embedding combinations in {result['elapsed_time']:.2f} seconds")
                 
                 # ===== COMPREHENSIVE RESULTS DISPLAY =====
                 st.markdown("---")
                 st.markdown("""
-                <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🏆 Comprehensive Evaluation Results</h3>
+                <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🥇 Best Overall Model</h3>
                 """, unsafe_allow_html=True)
-                
-                # Results Summary Cards
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Total Combinations", total_combinations)
-                
-                with col2:
-                    st.metric("Successful", successful_combinations)
-                
-                with col3:
-                    st.metric("Success Rate", f"{(successful_combinations/total_combinations)*100:.1f}%")
-                
-                with col4:
-                    st.metric("Total Time", f"{result['elapsed_time']:.1f}s")
                 
                 # Best Model Performance
                 if 'best_combinations' in result and result['best_combinations']:
                     best_overall = result['best_combinations'].get('best_overall', {})
                     if best_overall:
-                        st.markdown("""
-                        <h4 style="color: var(--text-color); margin: 1rem 0 0.5rem 0;">🥇 Best Overall Model</h4>
-                        """, unsafe_allow_html=True)
                         
                         best_col1, best_col2, best_col3 = st.columns(3)
                         
@@ -1641,57 +1751,6 @@ def render_step4_wireframe():
                             mime="text/csv"
                         )
                 
-                # Performance Analysis
-                if 'comprehensive_results' in result and result['comprehensive_results']:
-                    st.markdown("""
-                    <h4 style="color: var(--text-color); margin: 1rem 0 0.5rem 0;">📈 Performance Analysis</h4>
-                    """, unsafe_allow_html=True)
-                    
-                    # Overfitting analysis
-                    overfitting_counts = {}
-                    for res in result['comprehensive_results']:
-                        if res['status'] == 'success':
-                            status = res.get('overfitting_status', 'unknown')
-                            overfitting_counts[status] = overfitting_counts.get(status, 0) + 1
-                    
-                    if overfitting_counts:
-                        overfitting_col1, overfitting_col2 = st.columns(2)
-                        
-                        with overfitting_col1:
-                            st.markdown("**Overfitting Analysis:**")
-                            for status, count in overfitting_counts.items():
-                                percentage = (count / successful_combinations) * 100
-                                st.markdown(f"• **{status.replace('_', ' ').title()}**: {count} ({percentage:.1f}%)")
-                        
-                        with overfitting_col2:
-                            st.markdown("**Recommendations:**")
-                            if 'overfitting' in overfitting_counts:
-                                st.markdown("• ⚠️ Some models show overfitting - consider regularization")
-                            if 'underfitting' in overfitting_counts:
-                                st.markdown("• 📉 Some models show underfitting - consider more features")
-                            if 'well_fitted' in overfitting_counts:
-                                st.markdown("• ✅ Some models are well-fitted")
-                
-                # Data Information
-                if 'data_info' in result:
-                    data_info = result['data_info']
-                    st.markdown("""
-                    <h4 style="color: var(--text-color); margin: 1rem 0 0.5rem 0;">📋 Dataset Information</h4>
-                    """, unsafe_allow_html=True)
-                    
-                    data_col1, data_col2, data_col3, data_col4 = st.columns(4)
-                    
-                    with data_col1:
-                        st.metric("Training Samples", data_info.get('n_samples', 0))
-                    
-                    with data_col2:
-                        st.metric("Validation Samples", data_info.get('n_validation', 0))
-                    
-                    with data_col3:
-                        st.metric("Test Samples", data_info.get('n_test', 0))
-                    
-                    with data_col4:
-                        st.metric("Classes", data_info.get('n_classes', 0))
                 
                 # Save step 4 configuration
                 step4_config = {

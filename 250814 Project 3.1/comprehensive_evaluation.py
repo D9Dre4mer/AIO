@@ -52,10 +52,16 @@ class ComprehensiveEvaluator:
         # Initialize components
         self.data_loader = DataLoader()
         self.text_vectorizer = TextVectorizer()
+        
+        # Import model components
+        from models import model_factory, validation_manager as vm
+        
         self.model_trainer = NewModelTrainer(
             cv_folds=cv_folds,
             validation_size=validation_size,
-            test_size=test_size
+            test_size=test_size,
+            model_factory=model_factory,
+            validation_manager=vm
         )
         
         # Results storage
@@ -146,77 +152,103 @@ class ComprehensiveEvaluator:
         
         return data_dict, sorted_labels
     
-    def create_all_embeddings(self, X_train: List[str], X_val: List[str], X_test: List[str]) -> Dict[str, Dict[str, Any]]:
+    def create_all_embeddings(self, X_train: List[str], X_val: List[str], X_test: List[str], 
+                             selected_embeddings: List[str] = None) -> Dict[str, Dict[str, Any]]:
         """
-        Create all embedding representations for the data
+        Create embedding representations for the data
+        
+        Args:
+            X_train: Training text data
+            X_val: Validation text data  
+            X_test: Test text data
+            selected_embeddings: List of embedding methods to create (if None, create all)
         
         Returns:
             Dictionary of embeddings for each method
         """
-        print("\n🔤 Creating All Embedding Representations...")
+        print("\n🔤 Creating Embedding Representations...")
         print("=" * 50)
         
         embeddings = {}
         
-        # 1. Bag of Words (BoW)
-        print("📦 Processing Bag of Words...")
-        start_time = time.time()
-        X_train_bow = self.text_vectorizer.fit_transform_bow(X_train)
-        X_val_bow = self.text_vectorizer.transform_bow(X_val)
-        X_test_bow = self.text_vectorizer.transform_bow(X_test)
-        bow_time = time.time() - start_time
+        # Define which embeddings to create
+        if selected_embeddings is None:
+            embedding_methods = ['bow', 'tfidf', 'embeddings']
+        else:
+            # Map Streamlit names to internal names
+            embedding_mapping = {
+                'BoW': 'bow',
+                'TF-IDF': 'tfidf',
+                'Word Embeddings': 'embeddings'
+            }
+            embedding_methods = [embedding_mapping.get(emb, emb) for emb in selected_embeddings]
+            print(f"🔍 Embedding creation mapping: {selected_embeddings} -> {embedding_methods}")
         
-        embeddings['bow'] = {
-            'X_train': X_train_bow,
-            'X_val': X_val_bow,
-            'X_test': X_test_bow,
-            'processing_time': bow_time,
-            'sparse': hasattr(X_train_bow, 'nnz'),
-            'shape': X_train_bow.shape
-        }
-        print(f"   ✅ BoW: {X_train_bow.shape} | Sparse: {hasattr(X_train_bow, 'nnz')} | Time: {bow_time:.2f}s")
+        print(f"📊 Creating embeddings: {', '.join(embedding_methods)}")
+        
+        # 1. Bag of Words (BoW)
+        if 'bow' in embedding_methods:
+            print("📦 Processing Bag of Words...")
+            start_time = time.time()
+            X_train_bow = self.text_vectorizer.fit_transform_bow(X_train)
+            X_val_bow = self.text_vectorizer.transform_bow(X_val)
+            X_test_bow = self.text_vectorizer.transform_bow(X_test)
+            bow_time = time.time() - start_time
+            
+            embeddings['bow'] = {
+                'X_train': X_train_bow,
+                'X_val': X_val_bow,
+                'X_test': X_test_bow,
+                'processing_time': bow_time,
+                'sparse': hasattr(X_train_bow, 'nnz'),
+                'shape': X_train_bow.shape
+            }
+            print(f"   ✅ BoW: {X_train_bow.shape} | Sparse: {hasattr(X_train_bow, 'nnz')} | Time: {bow_time:.2f}s")
         
         # 2. TF-IDF
-        print("📊 Processing TF-IDF...")
-        start_time = time.time()
-        X_train_tfidf = self.text_vectorizer.fit_transform_tfidf(X_train)
-        X_val_tfidf = self.text_vectorizer.transform_tfidf(X_val)
-        X_test_tfidf = self.text_vectorizer.transform_tfidf(X_test)
-        tfidf_time = time.time() - start_time
-        
-        embeddings['tfidf'] = {
-            'X_train': X_train_tfidf,
-            'X_val': X_val_tfidf,
-            'X_test': X_test_tfidf,
-            'processing_time': tfidf_time,
-            'sparse': hasattr(X_train_tfidf, 'nnz'),
-            'shape': X_train_tfidf.shape
-        }
-        print(f"   ✅ TF-IDF: {X_train_tfidf.shape} | Sparse: {hasattr(X_train_tfidf, 'nnz')} | Time: {tfidf_time:.2f}s")
+        if 'tfidf' in embedding_methods:
+            print("📊 Processing TF-IDF...")
+            start_time = time.time()
+            X_train_tfidf = self.text_vectorizer.fit_transform_tfidf(X_train)
+            X_val_tfidf = self.text_vectorizer.transform_tfidf(X_val)
+            X_test_tfidf = self.text_vectorizer.transform_tfidf(X_test)
+            tfidf_time = time.time() - start_time
+            
+            embeddings['tfidf'] = {
+                'X_train': X_train_tfidf,
+                'X_val': X_val_tfidf,
+                'X_test': X_test_tfidf,
+                'processing_time': tfidf_time,
+                'sparse': hasattr(X_train_tfidf, 'nnz'),
+                'shape': X_train_tfidf.shape
+            }
+            print(f"   ✅ TF-IDF: {X_train_tfidf.shape} | Sparse: {hasattr(X_train_tfidf, 'nnz')} | Time: {tfidf_time:.2f}s")
         
         # 3. Word Embeddings
-        print("🧠 Processing Word Embeddings...")
-        start_time = time.time()
-        X_train_emb = self.text_vectorizer.transform_embeddings(X_train)
-        X_val_emb = self.text_vectorizer.transform_embeddings(X_val)
-        X_test_emb = self.text_vectorizer.transform_embeddings(X_test)
-        emb_time = time.time() - start_time
-        
-        embeddings['embeddings'] = {
-            'X_train': X_train_emb,
-            'X_val': X_val_emb,
-            'X_test': X_test_emb,
-            'processing_time': emb_time,
-            'sparse': hasattr(X_train_emb, 'nnz'),
-            'shape': X_train_emb.shape
-        }
-        print(f"   ✅ Embeddings: {X_train_emb.shape} | Sparse: {hasattr(X_train_emb, 'nnz')} | Time: {emb_time:.2f}s")
+        if 'embeddings' in embedding_methods:
+            print("🧠 Processing Word Embeddings...")
+            start_time = time.time()
+            X_train_emb = self.text_vectorizer.transform_embeddings(X_train)
+            X_val_emb = self.text_vectorizer.transform_embeddings(X_val)
+            X_test_emb = self.text_vectorizer.transform_embeddings(X_test)
+            emb_time = time.time() - start_time
+            
+            embeddings['embeddings'] = {
+                'X_train': X_train_emb,
+                'X_val': X_val_emb,
+                'X_test': X_test_emb,
+                'processing_time': emb_time,
+                'sparse': hasattr(X_train_emb, 'nnz'),
+                'shape': X_train_emb.shape
+            }
+            print(f"   ✅ Embeddings: {X_train_emb.shape} | Sparse: {hasattr(X_train_emb, 'nnz')} | Time: {emb_time:.2f}s")
         
         # Summary
-        total_time = sum(emb['processing_time'] for emb in embeddings.values())
-        print(f"\n📊 Embedding Summary:")
-        print(f"   • Total processing time: {total_time:.2f}s")
-        print(f"   • Memory efficient: {sum(1 for emb in embeddings.values() if emb['sparse'])}/3 methods use sparse matrices")
+        if embeddings:
+            total_time = sum(emb['processing_time'] for emb in embeddings.values())
+            print(f"\n📊 Embedding Summary:")
+            print(f"   • Total processing time: {total_time:.2f}s")
+            print(f"   • Memory efficient: {sum(1 for emb in embeddings.values() if emb['sparse'])}/{len(embeddings)} methods use sparse matrices")
         
         return embeddings
     
@@ -295,6 +327,16 @@ class ComprehensiveEvaluator:
                 'input_shape': X_train.shape,
                 'n_classes': len(np.unique(y_train)),
                 
+                # Confusion Matrix Data - Thêm dữ liệu cần thiết
+                'predictions': y_test_pred,           # ← Predictions trên test set
+                'true_labels': y_test_true,           # ← True labels từ test set
+                'validation_predictions': y_val_pred, # ← Predictions trên validation set
+                'validation_true_labels': y_val,      # ← True labels từ validation set
+                
+                # Label Information - Thêm thông tin labels
+                'unique_labels': sorted(list(set(y_train))),  # ← Unique labels đã được xử lý
+                'label_mapping': self._get_label_mapping(y_train),  # ← Mapping labels
+                
                 # Status
                 'status': 'success',
                 'error_message': None
@@ -318,6 +360,38 @@ class ComprehensiveEvaluator:
             }
             print(f"     ❌ {combination_key}: Error - {e}")
             return error_result
+    
+    def _get_label_mapping(self, y_train: np.ndarray) -> Dict[int, str]:
+        """
+        Tạo mapping từ numeric labels sang text labels theo pipeline
+        Sử dụng cùng logic như main.py để đảm bảo consistency
+        """
+        try:
+            # Lấy unique labels đã được sắp xếp
+            unique_labels = sorted(list(set(y_train)))
+            
+            # Tạo mapping theo logic của main.py
+            label_mapping = {}
+            for i, label_id in enumerate(unique_labels):
+                if label_id == 0:
+                    label_mapping[label_id] = "astro-ph"
+                elif label_id == 1:
+                    label_mapping[label_id] = "cond-mat"
+                elif label_id == 2:
+                    label_mapping[label_id] = "cs"
+                elif label_id == 3:
+                    label_mapping[label_id] = "math"
+                elif label_id == 4:
+                    label_mapping[label_id] = "physics"
+                else:
+                    label_mapping[label_id] = f"Class_{label_id}"
+            
+            return label_mapping
+            
+        except Exception as e:
+            print(f"Warning: Could not create label mapping: {e}")
+            # Fallback: tạo mapping đơn giản
+            return {label_id: f"Class_{label_id}" for label_id in set(y_train)}
     
     def _classify_overfitting(self, overfitting_score: float) -> str:
         """Classify the level of overfitting"""
@@ -351,13 +425,16 @@ class ComprehensiveEvaluator:
         except:
             return 0.0
     
-    def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False) -> Dict[str, Any]:
+    def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False, 
+                                   selected_models: List[str] = None, selected_embeddings: List[str] = None) -> Dict[str, Any]:
         """
-        Run comprehensive evaluation of all model-embedding combinations
+        Run comprehensive evaluation of model-embedding combinations
         
         Args:
             max_samples: Maximum number of samples to use
             skip_csv_prompt: If True, skip CSV backup prompt (for Streamlit usage)
+            selected_models: List of model names to evaluate (if None, evaluate all)
+            selected_embeddings: List of embedding names to evaluate (if None, evaluate all)
         
         Returns:
             Complete evaluation results
@@ -370,42 +447,86 @@ class ComprehensiveEvaluator:
         # 1. Load and prepare data
         data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt)
         
-        # 2. Create all embeddings
+        # 2. Create selected embeddings
         embeddings = self.create_all_embeddings(
             data_dict['X_train'], 
             data_dict['X_val'], 
-            data_dict['X_test']
+            data_dict['X_test'],
+            selected_embeddings
         )
         
-        # 3. Define all models to evaluate
-        models_to_evaluate = [
-            'kmeans', 'knn', 'decision_tree', 'naive_bayes', 'svm'
-        ]
+        # 3. Define models and embeddings to evaluate
+        if selected_models is None:
+            models_to_evaluate = ['kmeans', 'knn', 'decision_tree', 'naive_bayes', 'svm']
+        else:
+            # Map Streamlit model names to internal names
+            model_mapping = {
+                'K-Means Clustering': 'kmeans',
+                'K-Nearest Neighbors': 'knn', 
+                'Decision Tree': 'decision_tree',
+                'Naive Bayes': 'naive_bayes',
+                'Support Vector Machine': 'svm'
+            }
+            models_to_evaluate = [model_mapping.get(model, model) for model in selected_models]
+            print(f"🔍 Model mapping: {selected_models} -> {models_to_evaluate}")
         
-        # 4. Run evaluation for all combinations
-        print(f"\n🤖 Evaluating All Model-Embedding Combinations...")
+        if selected_embeddings is None:
+            embeddings_to_evaluate = list(embeddings.keys())
+        else:
+            # Map Streamlit embedding names to internal names
+            embedding_mapping = {
+                'BoW': 'bow',
+                'TF-IDF': 'tfidf',
+                'Word Embeddings': 'embeddings'
+            }
+            embeddings_to_evaluate = [embedding_mapping.get(emb, emb) for emb in selected_embeddings]
+            print(f"🔍 Embedding mapping: {selected_embeddings} -> {embeddings_to_evaluate}")
+            print(f"🔍 Available embeddings: {list(embeddings.keys())}")
+        
+        # 4. Run evaluation for selected combinations
+        print(f"\n🤖 Evaluating Selected Model-Embedding Combinations...")
         print("=" * 60)
+        print(f"📊 Models: {', '.join(selected_models or ['All'])}")
+        print(f"🔤 Embeddings: {', '.join(selected_embeddings or ['All'])}")
         
         all_results = []
         successful_combinations = 0
-        total_combinations = len(models_to_evaluate) * len(embeddings)
+        total_combinations = len(models_to_evaluate) * len(embeddings_to_evaluate)
         
         for model_name in models_to_evaluate:
-            for embedding_name, embedding_data in embeddings.items():
-                result = self.evaluate_single_combination(
-                    model_name=model_name,
-                    embedding_name=embedding_name,
-                    X_train=embedding_data['X_train'],
-                    X_val=embedding_data['X_val'],
-                    X_test=embedding_data['X_test'],
-                    y_train=data_dict['y_train'],
-                    y_val=data_dict['y_val'],
-                    y_test=data_dict['y_test']
-                )
-                
-                all_results.append(result)
-                if result['status'] == 'success':
-                    successful_combinations += 1
+            for embedding_name in embeddings_to_evaluate:
+                if embedding_name in embeddings:
+                    embedding_data = embeddings[embedding_name]
+                    
+                    result = self.evaluate_single_combination(
+                        model_name=model_name,
+                        embedding_name=embedding_name,
+                        X_train=embedding_data['X_train'],
+                        X_val=embedding_data['X_val'],
+                        X_test=embedding_data['X_test'],
+                        y_train=data_dict['y_train'],
+                        y_val=data_dict['y_val'],
+                        y_test=data_dict['y_test']
+                    )
+                    
+                    all_results.append(result)
+                    if result['status'] == 'success':
+                        successful_combinations += 1
+                else:
+                    print(f"⚠️  Warning: {embedding_name} not found in created embeddings. Skipping {model_name}_{embedding_name}")
+                    # Add error result
+                    error_result = {
+                        'model_name': model_name,
+                        'embedding_name': embedding_name,
+                        'combination_key': f"{model_name}_{embedding_name}",
+                        'status': 'error',
+                        'error_message': f'Embedding {embedding_name} not created',
+                        'validation_accuracy': 0.0,
+                        'test_accuracy': 0.0,
+                        'overfitting_score': 0.0,
+                        'overfitting_status': 'error'
+                    }
+                    all_results.append(error_result)
         
         # 5. Analyze results
         print(f"\n📊 Evaluation Complete!")
@@ -459,7 +580,9 @@ class ComprehensiveEvaluator:
         
         # 2. Best for each embedding
         print(f"\n📊 Best Model for Each Embedding:")
-        for embedding in ['bow', 'tfidf', 'embeddings']:
+        # Get unique embeddings from successful results
+        unique_embeddings = list(set(r['embedding_name'] for r in successful_results))
+        for embedding in unique_embeddings:
             embedding_results = [r for r in successful_results if r['embedding_name'] == embedding]
             if embedding_results:
                 best_embedding = max(embedding_results, key=lambda x: x['test_accuracy'])
@@ -467,7 +590,9 @@ class ComprehensiveEvaluator:
         
         # 3. Best for each model
         print(f"\n🤖 Best Embedding for Each Model:")
-        for model in ['kmeans', 'knn', 'decision_tree', 'naive_bayes', 'svm']:
+        # Get unique models from successful results
+        unique_models = list(set(r['model_name'] for r in successful_results))
+        for model in unique_models:
             model_results = [r for r in successful_results if r['model_name'] == model]
             if model_results:
                 best_model = max(model_results, key=lambda x: x['test_accuracy'])
@@ -499,12 +624,12 @@ class ComprehensiveEvaluator:
             'best_by_embedding': {
                 emb: max([r for r in successful_results if r['embedding_name'] == emb], 
                         key=lambda x: x['test_accuracy']) 
-                for emb in ['bow', 'tfidf', 'embeddings']
+                for emb in unique_embeddings
             },
             'best_by_model': {
                 model: max([r for r in successful_results if r['model_name'] == model], 
                           key=lambda x: x['test_accuracy'])
-                for model in ['kmeans', 'knn', 'decision_tree', 'naive_bayes', 'svm']
+                for model in unique_models
             }
         }
     

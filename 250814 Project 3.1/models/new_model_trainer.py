@@ -214,9 +214,9 @@ class NewModelTrainer:
         
         # Validate model
         print(f"🔍 Validating {model_name} model...")
-        val_metrics = model.validate(X_val, y_val)
-        val_accuracy = val_metrics['accuracy']
         y_val_pred = model.predict(X_val)
+        val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)
+        val_accuracy = val_metrics['accuracy']
         
         # Test model
         print(f"🧪 Testing {model_name} model...")
