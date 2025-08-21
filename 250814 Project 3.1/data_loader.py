@@ -26,7 +26,7 @@ class DataLoader:
         self.label_to_id = {}
         self.id_to_label = {}
         
-    def load_dataset(self) -> None:
+    def load_dataset(self, skip_csv_prompt: bool = False) -> None:
         """Load the ArXiv abstracts dataset from HuggingFace and create CSV backup"""
         dataset_cache_path = (Path(self.cache_dir) / 
                              "UniverseTBD___arxiv-abstracts-large")
@@ -46,14 +46,25 @@ class DataLoader:
         print(f"🎉 Dataset loaded successfully!")
         print(f"📊 Dataset info: {self.dataset}")
         
-        # CSV Backup Options
-        print("\n💾 CSV Backup Options:")
-        print(f"📊 Dataset size: {len(self.dataset['train']):,} samples")
-        print("1. 🚀 Quick Sample (1,000 samples) - 30 seconds")
-        print("2. 📋 Full Export (2.3M+ samples) - ~45 minutes, ~1.7GB")
-        print("3. ⏭️  Skip CSV backup (fastest)")
-        
-        choice = input("Choose option (1/2/3) [default: 1]: ").strip()
+        # Skip CSV backup prompt if requested (for Streamlit usage)
+        if skip_csv_prompt:
+            print("🚀 Streamlit mode: Skipping CSV backup prompt...")
+            choice = "3"  # Skip CSV backup for Streamlit
+        else:
+            # CSV Backup Options
+            print("\n💾 CSV Backup Options:")
+            print(f"📊 Dataset size: {len(self.dataset['train']):,} samples")
+            print("1. 🚀 Quick Sample (1,000 samples) - 30 seconds")
+            print("2. 📋 Full Export (2.3M+ samples) - ~45 minutes, ~1.7GB")
+            print("3. ⏭️  Skip CSV backup (fastest)")
+            
+            # Check if we're running in interactive mode
+            try:
+                choice = input("Choose option (1/2/3) [default: 1]: ").strip()
+            except (EOFError, NameError):
+                # Running in non-interactive mode, use default
+                print("🚀 Non-interactive mode detected, using default: Quick Sample (1,000 samples)")
+                choice = "1"
         
         if choice == "2":
             print("\n📋 Creating Full CSV Backup (this will take ~45 minutes):")

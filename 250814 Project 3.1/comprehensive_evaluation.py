@@ -74,9 +74,13 @@ class ComprehensiveEvaluator:
         print(f"   • Random State: {random_state}")
         print(f"   • Note: Using reduced samples (1000) for faster testing")
     
-    def load_and_prepare_data(self, max_samples: int = None) -> Tuple[Dict[str, Any], List[str]]:
+    def load_and_prepare_data(self, max_samples: int = None, skip_csv_prompt: bool = False) -> Tuple[Dict[str, Any], List[str]]:
         """
         Load and prepare all data formats for evaluation
+        
+        Args:
+            max_samples: Maximum number of samples to use
+            skip_csv_prompt: If True, skip CSV backup prompt (for Streamlit usage)
         
         Returns:
             Tuple of (data_dict, sorted_labels)
@@ -85,8 +89,14 @@ class ComprehensiveEvaluator:
         print("=" * 50)
         
         # Load dataset
-        self.data_loader.load_dataset()
+        self.data_loader.load_dataset(skip_csv_prompt=skip_csv_prompt)
+        
+        # Select samples
+        if skip_csv_prompt:
+            print("🚀 Streamlit mode: Using existing data configuration...")
+        
         self.data_loader.select_samples(max_samples)
+        
         self.data_loader.preprocess_samples()
         self.data_loader.create_label_mappings()
         
@@ -341,9 +351,13 @@ class ComprehensiveEvaluator:
         except:
             return 0.0
     
-    def run_comprehensive_evaluation(self, max_samples: int = None) -> Dict[str, Any]:
+    def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False) -> Dict[str, Any]:
         """
         Run comprehensive evaluation of all model-embedding combinations
+        
+        Args:
+            max_samples: Maximum number of samples to use
+            skip_csv_prompt: If True, skip CSV backup prompt (for Streamlit usage)
         
         Returns:
             Complete evaluation results
@@ -354,7 +368,7 @@ class ComprehensiveEvaluator:
         start_time = time.time()
         
         # 1. Load and prepare data
-        data_dict, sorted_labels = self.load_and_prepare_data(max_samples)
+        data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt)
         
         # 2. Create all embeddings
         embeddings = self.create_all_embeddings(

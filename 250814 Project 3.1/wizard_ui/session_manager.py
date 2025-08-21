@@ -124,6 +124,46 @@ class SessionManager:
         step_data[key] = value
         self.set_step_data(step_number, step_data)
     
+    def set_step_config(self, step_name: str, config: Dict[str, Any]) -> None:
+        """
+        Set complete configuration for a step
+        
+        Args:
+            step_name: Step name (e.g., 'step1', 'step2')
+            config: Complete configuration dictionary
+        """
+        # Convert step name to step number
+        if step_name.startswith('step'):
+            try:
+                step_number = int(step_name[4:])
+                self.set_step_data(step_number, config)
+                logger.debug(f"Step {step_number} configuration set")
+            except ValueError:
+                logger.error(f"Invalid step name: {step_name}")
+        else:
+            logger.error(f"Invalid step name format: {step_name}")
+    
+    def get_step_config(self, step_name: str) -> Dict[str, Any]:
+        """
+        Get complete configuration for a step
+        
+        Args:
+            step_name: Step name (e.g., 'step1', 'step2')
+            
+        Returns:
+            Step configuration dictionary
+        """
+        if step_name.startswith('step'):
+            try:
+                step_number = int(step_name[4:])
+                return self.get_step_data(step_number)
+            except ValueError:
+                logger.error(f"Invalid step name: {step_name}")
+                return {}
+        else:
+            logger.error(f"Invalid step name format: {step_name}")
+            return {}
+    
     def get_wizard_data(self, key: str, default: Any = None) -> Any:
         """
         Get data from wizard_data session state
@@ -387,3 +427,22 @@ class SessionManager:
                 'step7_inference': len(st.session_state.step7_inference)
             }
         }
+
+    def set_current_step(self, step_number: int) -> None:
+        """
+        Set current step number
+        
+        Args:
+            step_number: Step number to set as current
+        """
+        st.session_state.wizard_step = step_number
+        logger.debug(f"Current step set to: {step_number}")
+    
+    def get_current_step(self) -> int:
+        """
+        Get current step number
+        
+        Returns:
+            Current step number
+        """
+        return st.session_state.wizard_step
