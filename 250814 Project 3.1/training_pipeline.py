@@ -11,6 +11,7 @@ import time
 import os
 import json
 import pickle
+import threading
 from typing import Dict, List, Tuple, Any
 from datetime import datetime
 
@@ -60,11 +61,33 @@ class StreamlitTrainingPipeline:
         self.start_time = None
         self.elapsed_time = 0
         
+        # Initialize stop mechanism
+        self._stop_event = threading.Event()
+        self._training_lock = threading.Lock()
+        
         # Initialize cache system
         self.cache_dir = "cache/training_results"
         self._ensure_cache_directory()
         self.cache_metadata_file = os.path.join(self.cache_dir, "cache_metadata.json")
         self.cache_metadata = self._load_cache_metadata()
+    
+    def stop_training(self):
+        """Stop the current training process"""
+        with self._training_lock:
+            self._stop_event.set()
+            self.training_status = "stopped"
+            print("🛑 Training stop requested")
+    
+    def is_training_stopped(self) -> bool:
+        """Check if training should stop"""
+        return self._stop_event.is_set()
+    
+    def reset_stop_flag(self):
+        """Reset the stop flag for new training"""
+        with self._training_lock:
+            self._stop_event.clear()
+            if self.training_status == "stopped":
+                self.training_status = "idle"
         
     def initialize_pipeline(self, df: pd.DataFrame, step1_data: Dict, 
                           step2_data: Dict, step3_data: Dict) -> Dict:
@@ -261,9 +284,22 @@ class StreamlitTrainingPipeline:
         """Execute comprehensive training evaluation like main.py"""
 
         try:
+            # Reset stop flag for new training
+            self.reset_stop_flag()
+            
             self.start_time = time.time()
             self.training_status = "training"
             self.models_completed = 0
+
+            # Check if training was stopped before starting
+            if self.is_training_stopped():
+                return {
+                    'status': 'stopped',
+                    'message': 'Training was stopped before starting',
+                    'results': {},
+                    'models_completed': 0,
+                    'elapsed_time': 0
+                }
 
             # Check cache first
             self.current_phase = "cache_check"
@@ -310,9 +346,10 @@ class StreamlitTrainingPipeline:
             cv_folds = cv_config.get('cv_folds', 5)
             data_split = step3_data.get('data_split', {})
             
-            # Calculate validation and test sizes from step 3 configuration
+            # Calculate test size from step 3 configuration
             test_size = data_split.get('test', 20) / 100.0
-            validation_size = data_split.get('validation', 10) / 100.0
+            # No separate validation size - CV will handle it
+            validation_size = 0.0
 
             # Prepare data for comprehensive evaluation
             self.current_phase = "data_preparation"
@@ -320,8 +357,26 @@ class StreamlitTrainingPipeline:
                 progress_callback(self.current_phase, "Preparing data for evaluation...", 0.1)
 
             # Apply sampling if configured
-            if step1_data.get('sampling_config'):
-                df = self._apply_sampling(df, step1_data['sampling_config'])
+            print(f"\n🔍 [PIPELINE] Checking sampling configuration...")
+            print(f"📊 [PIPELINE] Step1 data keys: {list(step1_data.keys())}")
+            print(f"📊 [PIPELINE] Original dataset size: {len(df):,}")
+            
+            sampling_config = step1_data.get('sampling_config', {})
+            print(f"💾 [PIPELINE] Raw sampling config: {sampling_config}")
+            print(f"🔍 [PIPELINE] Sampling config type: {type(sampling_config)}")
+            print(f"🔍 [PIPELINE] Sampling config truthy: {bool(sampling_config)}")
+            print(f"🔍 [PIPELINE] Has num_samples: {sampling_config.get('num_samples') if sampling_config else 'N/A'}")
+            print(f"🔍 [PIPELINE] Condition check: {sampling_config and sampling_config.get('num_samples')}")
+            
+            if sampling_config and sampling_config.get('num_samples'):
+                print(f"✅ [PIPELINE] Sampling will be applied: {sampling_config}")
+                original_size = len(df)
+                df = self._apply_sampling(df, sampling_config, label_column)
+                sampled_size = len(df)
+                print(f"✅ [PIPELINE] Sampling result: {original_size:,} → {sampled_size:,} samples")
+            else:
+                print(f"❌ [PIPELINE] No sampling applied, using full dataset ({len(df):,} samples)")
+                print(f"   Reason: sampling_config={sampling_config}, num_samples={sampling_config.get('num_samples') if sampling_config else 'N/A'}")
 
             # Apply preprocessing
             df = self._apply_preprocessing(df, step2_data)
@@ -365,19 +420,29 @@ class StreamlitTrainingPipeline:
                 if progress_callback:
                     progress_callback(self.current_phase, "Running comprehensive evaluation...", 0.3)
 
-                # Get max samples from step 1 configuration
-                max_samples = step1_data.get('sampling_config', {}).get('num_samples', None)
-                
+                # Check if training should stop before starting evaluation
+                if self.is_training_stopped():
+                    return {
+                        'status': 'stopped',
+                        'message': 'Training stopped during setup',
+                        'results': {},
+                        'models_completed': 0,
+                        'elapsed_time': time.time() - self.start_time
+                    }
+
                 # Get selected models and vectorization methods from step 3
                 selected_models = step3_data.get('selected_models', [])
                 selected_vectorization = step3_data.get('selected_vectorization', [])
                 
                 # Run comprehensive evaluation with selected models and embeddings
+                # Pass sampling config to respect user choice and stop callback
                 evaluation_results = evaluator.run_comprehensive_evaluation(
-                    max_samples=max_samples, 
+                    max_samples=None,  # Sampling already handled in pipeline
                     skip_csv_prompt=True,
+                    sampling_config=sampling_config,  # Pass sampling config
                     selected_models=selected_models,
-                    selected_embeddings=selected_vectorization
+                    selected_embeddings=selected_vectorization,
+                    stop_callback=self.is_training_stopped  # Pass stop callback
                 )
                 
                 # Update progress based on evaluation progress
@@ -465,31 +530,46 @@ class StreamlitTrainingPipeline:
                 'error': str(e)
             }
     
-    def _apply_sampling(self, df: pd.DataFrame, sampling_config: Dict) -> pd.DataFrame:
+    def _apply_sampling(self, df: pd.DataFrame, sampling_config: Dict, label_column: str = None) -> pd.DataFrame:
         """Apply sampling configuration to dataset"""
         try:
             num_samples = sampling_config.get('num_samples', len(df))
             strategy = sampling_config.get('sampling_strategy', 'Random')
             
+            print(f"📊 Dataset size: {len(df):,}, Requested samples: {num_samples:,}, Strategy: {strategy}")
+            
             if num_samples >= len(df):
+                print(f"ℹ️ Requested samples >= dataset size, using full dataset")
                 return df
             
-            if 'Stratified' in strategy and 'label_column' in sampling_config:
+            if 'Stratified' in strategy and label_column and label_column in df.columns:
                 # Stratified sampling
+                print(f"🎯 Applying stratified sampling with label column: {label_column}")
                 from sklearn.model_selection import train_test_split
-                df_sample, _ = train_test_split(
-                    df, 
-                    train_size=num_samples, 
-                    stratify=df[sampling_config['label_column']],
-                    random_state=42
-                )
-                return df_sample
-            else:
-                # Random sampling
-                return df.sample(n=num_samples, random_state=42)
+                try:
+                    df_sample, _ = train_test_split(
+                        df, 
+                        train_size=num_samples, 
+                        stratify=df[label_column],
+                        random_state=42
+                    )
+                    print(f"✅ Stratified sampling successful: {len(df):,} → {len(df_sample):,}")
+                    return df_sample
+                except Exception as e:
+                    print(f"⚠️ Stratified sampling failed ({e}), falling back to random sampling")
+                    strategy = 'Random'
+            
+            if 'Stratified' in strategy:
+                print(f"⚠️ Stratified sampling requested but label column '{label_column}' not available, using random sampling")
+            
+            # Random sampling
+            print(f"🎲 Applying random sampling")
+            df_sample = df.sample(n=num_samples, random_state=42)
+            print(f"✅ Random sampling successful: {len(df):,} → {len(df_sample):,}")
+            return df_sample
                 
         except Exception as e:
-            print(f"Warning: Sampling failed, using full dataset: {e}")
+            print(f"❌ Sampling failed: {e}, using full dataset")
             return df
     
     def _apply_preprocessing(self, df: pd.DataFrame, step2_data: Dict) -> pd.DataFrame:
@@ -526,33 +606,25 @@ class StreamlitTrainingPipeline:
     
     def _create_data_splits(self, X: np.ndarray, y: np.ndarray, 
                            data_split: Dict) -> Tuple:
-        """Create train/validation/test splits"""
+        """Create train/test splits (validation handled by CV)"""
         try:
             # Use validation manager if available
             if hasattr(validation_manager, 'split_data'):
                 return validation_manager.split_data(X, y)
             else:
-                # Fallback to sklearn
+                # Fallback to sklearn - only split into train and test
                 from sklearn.model_selection import train_test_split
                 
-                # First split: separate test set
+                # Split: separate test set only
                 test_size = data_split.get('test', 0.2)
-                X_temp, X_test, y_temp, y_test = train_test_split(
+                X_train, X_test, y_train, y_test = train_test_split(
                     X, y, test_size=test_size, random_state=42, stratify=y
                 )
                 
-                # Second split: separate validation set
-                val_size = data_split.get('validation', 0.1)
-                if val_size > 0:
-                    val_ratio = val_size / (1 - test_size)
-                    X_train_full, X_val, y_train_full, y_val = train_test_split(
-                        X_temp, y_temp, test_size=val_ratio, random_state=42, stratify=y_temp
-                    )
-                else:
-                    X_train_full, y_train_full = X_temp, y_temp
-                    X_val, y_val = np.array([]), np.array([])
+                # No separate validation set - CV will handle it
+                X_val, y_val = np.array([]), np.array([])
                 
-                return X_train_full, X_val, X_test, y_train_full, y_val, y_test
+                return X_train, X_val, X_test, y_train, y_val, y_test
                 
         except Exception as e:
             print(f"Warning: Data splitting failed, using simple split: {e}")
@@ -812,7 +884,7 @@ class StreamlitTrainingPipeline:
                             try:
                                 model_trainer = NewModelTrainer(
                                     cv_folds=cv_folds,
-                                    validation_size=0.2,
+                                    validation_size=0.0,  # No separate validation set
                                     test_size=0.2
                                 )
                             except Exception as e2:
@@ -1316,11 +1388,29 @@ class StreamlitTrainingPipeline:
 # Global pipeline instance for Streamlit
 training_pipeline = StreamlitTrainingPipeline()
 
+def global_stop_check():
+    """Global function to check if training should stop"""
+    return training_pipeline.is_training_stopped()
+
 
 def execute_streamlit_training(df: pd.DataFrame, step1_data: Dict, 
                              step2_data: Dict, step3_data: Dict,
                              progress_callback=None) -> Dict:
     """Main function to execute training from Streamlit"""
+    
+    print(f"\n🚀 [TRAINING] Starting execute_streamlit_training...")
+    print(f"📊 [TRAINING] Input dataset size: {len(df):,}")
+    print(f"📊 [TRAINING] Step1 data keys: {list(step1_data.keys())}")
+    print(f"📊 [TRAINING] Step2 data keys: {list(step2_data.keys())}")
+    print(f"📊 [TRAINING] Step3 data keys: {list(step3_data.keys())}")
+    
+    # Check sampling config specifically
+    if 'sampling_config' in step1_data:
+        sampling_config = step1_data['sampling_config']
+        print(f"💾 [TRAINING] Sampling config received: {sampling_config}")
+        print(f"📊 [TRAINING] Requested samples: {sampling_config.get('num_samples', 'N/A')}")
+    else:
+        print(f"❌ [TRAINING] No sampling config in step1_data!")
     
     global training_pipeline
     

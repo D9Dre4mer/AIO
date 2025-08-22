@@ -405,7 +405,16 @@ class DataLoader:
         self.samples = []
         
         # Use provided max_samples or fall back to config default
-        max_samples = max_samples or MAX_SAMPLES
+        if max_samples is None:
+            if MAX_SAMPLES is None:
+                # If no max_samples specified, use entire dataset
+                max_samples = len(self.dataset['train'])
+                print(f"📊 No sample limit specified, using entire dataset: {max_samples:,} samples")
+            else:
+                max_samples = MAX_SAMPLES
+                print(f"📊 Using config default: {max_samples:,} samples")
+        else:
+            print(f"📊 Using specified samples: {max_samples:,} samples")
         
         for s in self.dataset['train']:
             if len(s['categories'].split(' ')) != 1:
@@ -420,7 +429,7 @@ class DataLoader:
             if len(self.samples) >= max_samples:
                 break
                 
-        print(f"Number of samples: {len(self.samples)}")
+        print(f"✅ Selected samples: {len(self.samples):,}")
         
         # Print first 3 samples
         for sample in self.samples[:3]:

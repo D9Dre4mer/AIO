@@ -35,12 +35,48 @@ class NewModelTrainer:
         if self.validation_manager:
             self.validation_manager.set_cv_parameters(cv_folds, cv_stratified)
     
+    def cross_validate_with_precomputed_embeddings(
+        self,
+        model_name: str,
+        cv_embeddings: Dict[str, Any],
+        metrics: List[str] = None,
+        **model_params
+    ) -> Dict[str, Any]:
+        """Perform cross-validation using pre-computed embeddings for fair comparison"""
+        
+        # Create model instance
+        if not self.model_factory:
+            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        model = self.model_factory.create_model(model_name, **model_params)
+        
+        # Perform cross-validation
+        if not self.validation_manager:
+            raise ValueError("Validation manager not set. Please provide validation_manager in constructor.")
+        cv_results = self.validation_manager.cross_validate_with_precomputed_embeddings(
+            model, cv_embeddings, metrics
+        )
+        
+        # Print summary
+        self.validation_manager.print_cv_summary(cv_results)
+        
+        # Get recommendations
+        recommendations = self.validation_manager.get_cv_recommendations(cv_results)
+        if recommendations:
+            print("\n💡 Recommendations:")
+            for rec in recommendations:
+                print(f"  {rec}")
+        
+        return cv_results
+
     def cross_validate_model(
         self,
         model_name: str,
         X: Union[np.ndarray, sparse.csr_matrix],
         y: np.ndarray,
         metrics: List[str] = None,
+        is_embeddings: bool = False,
+        texts: List[str] = None,
+        vectorizer = None,
         **model_params
     ) -> Dict[str, Any]:
         """Perform cross-validation on a specific model"""
@@ -53,7 +89,9 @@ class NewModelTrainer:
         # Perform cross-validation
         if not self.validation_manager:
             raise ValueError("Validation manager not set. Please provide validation_manager in constructor.")
-        cv_results = self.validation_manager.cross_validate_model(model, X, y, metrics)
+        cv_results = self.validation_manager.cross_validate_model(
+            model, X, y, metrics, is_embeddings, texts, vectorizer
+        )
         
         # Print summary
         self.validation_manager.print_cv_summary(cv_results)
@@ -192,16 +230,19 @@ class NewModelTrainer:
             print(f"📊 Using provided data split:")
             print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Val: {X_val.shape[0] if hasattr(X_val, 'shape') else len(X_val)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
         else:
-            # Split data into train/validation/test
+            # Split data into train/test only (validation handled by CV)
             if not self.validation_manager:
                 raise ValueError("Validation manager not set. Please provide validation_manager in constructor.")
-            X_train, X_val, X_test, y_train, y_val, y_test = self.validation_manager.split_data(
-                X, y, stratify=y
+            X_train, X_test, y_train, y_test = self.validation_manager.split_data_train_test(
+                X, y, test_size=self.test_size, stratify=y
             )
+            # Create empty validation set (CV will handle it)
+            X_val, y_val = np.array([]), np.array([])
             
             # Print split summary
-            split_info = self.validation_manager.get_split_info(X, y)
-            self.validation_manager.print_split_summary(split_info)
+            print(f"📊 Created 2-way data split (validation handled by CV):")
+            print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
+            print(f"   • Validation: Empty (CV folds will handle validation)")
         
         # Create model instance
         if not self.model_factory:
@@ -212,11 +253,17 @@ class NewModelTrainer:
         print(f"\n🚀 Training {model_name} model...")
         model.fit(X_train, y_train)
         
-        # Validate model
-        print(f"🔍 Validating {model_name} model...")
-        y_val_pred = model.predict(X_val)
-        val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)
-        val_accuracy = val_metrics['accuracy']
+        # Validate model (only if validation set exists)
+        if len(X_val) > 0 and len(y_val) > 0:
+            print(f"🔍 Validating {model_name} model...")
+            y_val_pred = model.predict(X_val)
+            val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)
+            val_accuracy = val_metrics['accuracy']
+        else:
+            print(f"🔍 Skipping validation (no validation set - CV handles it)")
+            y_val_pred = np.array([])
+            val_metrics = None
+            val_accuracy = 0.0
         
         # Test model
         print(f"🧪 Testing {model_name} model...")

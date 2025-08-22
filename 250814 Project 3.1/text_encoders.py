@@ -32,6 +32,7 @@ class EmbeddingVectorizer:
         
         # Initialize model with GPU support
         self.model = SentenceTransformer(model_name, device=self.device)
+        self.model_name = model_name  # Store model name for later access
         self.normalize = normalize
         
         # Print device info for confirmation
@@ -47,12 +48,33 @@ class EmbeddingVectorizer:
             raise ValueError("Mode must be either 'query' or 'passage'")
         return [f"{mode}: {text.strip()}" for text in texts]
 
+    def fit(self, texts: List[str]) -> 'EmbeddingVectorizer':
+        """Fit the embedding model on training data (for consistency with sklearn API)"""
+        # Note: SentenceTransformer doesn't need fitting, but we mark it as fitted
+        # and store training data statistics for validation
+        self.is_fitted = True
+        self.training_stats = {
+            'n_samples': len(texts),
+            'n_features': self.model.get_sentence_embedding_dimension(),
+            'model_name': self.model_name if hasattr(self, 'model_name') else 'unknown'
+        }
+        # Remove duplicate log - parent method already logs
+        return self
+    
+    def fit_transform(self, texts: List[str]) -> np.ndarray:
+        """Fit on training data and transform to embeddings"""
+        self.fit(texts)
+        return self.transform(texts)
+    
     def transform(
         self,
         texts: List[str],
         mode: Literal['query', 'passage'] = 'query'
-    ) -> List[List[float]]:
-        """Transform texts to embeddings"""
+    ) -> np.ndarray:
+        """Transform texts to embeddings (must be fitted first)"""
+        if not self.is_fitted:
+            raise ValueError("EmbeddingVectorizer must be fitted before transform")
+        
         if mode == 'raw':
             inputs = texts
         else:
@@ -60,9 +82,10 @@ class EmbeddingVectorizer:
 
         embeddings = self.model.encode(
             inputs, 
-            normalize_embeddings=self.normalize
+            normalize_embeddings=self.normalize,
+            show_progress_bar=False  # Disable built-in progress bar
         )
-        return embeddings.tolist()
+        return embeddings
 
     def transform_numpy(
         self,
@@ -70,13 +93,14 @@ class EmbeddingVectorizer:
         mode: Literal['query', 'passage'] = 'query'
     ) -> np.ndarray:
         """Transform texts to numpy array of embeddings with progress tracking"""
-        return np.array(self.transform_with_progress(texts, mode=mode))
+        return np.array(self.transform_with_progress(texts, mode=mode, stop_callback=None))
     
     def transform_with_progress(
         self,
         texts: List[str],
         mode: Literal['query', 'passage'] = 'query',
-        batch_size: int = 100
+        batch_size: int = 100,
+        stop_callback=None
     ) -> List[List[float]]:
         """Transform texts to embeddings with progress bar"""
         total_texts = len(texts)
@@ -91,31 +115,39 @@ class EmbeddingVectorizer:
         
         # Process in batches to show progress
         for i in range(0, total_texts, batch_size):
+            # Check if processing should stop
+            if stop_callback and stop_callback():
+                print(f"\n🛑 Embedding stopped by user request at {i:,}/{total_texts:,}")
+                return all_embeddings  # Return partial results
+                
             batch_end = min(i + batch_size, total_texts)
             batch_inputs = inputs[i:batch_end]
             
             # Generate embeddings for current batch
             batch_embeddings = self.model.encode(
                 batch_inputs,
-                normalize_embeddings=self.normalize
+                normalize_embeddings=self.normalize,
+                show_progress_bar=False  # Disable built-in progress bar
             )
             all_embeddings.extend(batch_embeddings.tolist())
             
-            # Show progress
+            # Show custom progress bar
             progress_percent = (batch_end / total_texts) * 100
-            progress_bar = self._create_progress_bar(progress_percent, 50)
+            progress_bar = self._create_progress_bar(progress_percent, 40)
             progress_text = (f"\r🔄 Embedding Progress: {progress_bar} "
-                           f"{progress_percent:.1f}% "
+                           f"{progress_percent:5.1f}% "
                            f"({batch_end:,}/{total_texts:,})")
             print(progress_text, end="", flush=True)
         
         print()  # New line after progress bar
-        print(f"✅ Embedding completed! Generated {len(all_embeddings):,} embeddings")
+        print(f"✅ Embedding completed! "
+              f"Generated {len(all_embeddings):,} embeddings")
         return all_embeddings
     
-    def _create_progress_bar(self, percentage: float, width: int = 50) -> str:
-        """Create a progress bar string"""
+    def _create_progress_bar(self, percentage: float, width: int = 40) -> str:
+        """Create a custom progress bar string"""
         filled_width = int(width * percentage / 100)
+        # Use beautiful Unicode characters for progress bar
         bar = '█' * filled_width + '░' * (width - filled_width)
         return bar
 
@@ -161,9 +193,26 @@ class TextVectorizer:
         vectors = self.tfidf_vectorizer.transform(texts)
         return vectors  # Keep sparse for memory efficiency
         
-    def transform_embeddings(self, texts: List[str]) -> np.ndarray:
-        """Transform texts using word embeddings"""
-        return self.embedding_vectorizer.transform_numpy(texts)
+    def fit_transform_embeddings(self, texts: List[str], stop_callback=None) -> np.ndarray:
+        """Fit embedding model on training data and transform to embeddings"""
+        print(f"🔧 Fitting embedding model on {len(texts):,} training samples...")
+        self.embedding_vectorizer.fit(texts)
+        return np.array(self.embedding_vectorizer.transform_with_progress(texts, stop_callback=stop_callback))
+        
+    def fit_embeddings_only(self, texts: List[str]) -> 'EmbeddingVectorizer':
+        """Fit embedding model on training data without transforming (for CV)"""
+        print(f"🔧 Creating new embedding vectorizer for CV fold ({len(texts):,} samples)...")
+        # Create a NEW instance to prevent data leakage
+        new_embedding_vectorizer = EmbeddingVectorizer(
+            model_name=self.embedding_vectorizer.model_name,
+            normalize=self.embedding_vectorizer.normalize,
+            device=self.embedding_vectorizer.device
+        )
+        return new_embedding_vectorizer.fit(texts)
+        
+    def transform_embeddings(self, texts: List[str], stop_callback=None) -> np.ndarray:
+        """Transform texts using fitted embedding model"""
+        return np.array(self.embedding_vectorizer.transform_with_progress(texts, stop_callback=stop_callback))
         
     def get_feature_names_bow(self) -> List[str]:
         """Get feature names from BoW vectorizer"""

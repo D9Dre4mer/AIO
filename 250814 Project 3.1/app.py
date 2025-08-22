@@ -385,10 +385,16 @@ def render_step1_wireframe():
                         else:
                             default_samples = min(100000, dataset_size)
                         
-                        session_manager.update_step_data(1, 'sampling_config', {
+                        default_sampling_config = {
                             'num_samples': default_samples,
                             'sampling_strategy': 'Stratified (Recommended)'
-                        })
+                        }
+                        
+                        session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
+                        print(f"💾 Saved default sampling config from path: {default_sampling_config}")
+                        
+                        # Also store dataset size for reference
+                        session_manager.update_step_data(1, 'dataset_size', dataset_size)
                         
                         # Show file preview
                         show_file_preview(df, file_extension)
@@ -460,10 +466,16 @@ def render_step1_wireframe():
                     else:
                         default_samples = min(100000, dataset_size)
                     
-                    session_manager.update_step_data(1, 'sampling_config', {
+                    default_sampling_config = {
                         'num_samples': default_samples,
                         'sampling_strategy': 'Stratified (Recommended)'
-                    })
+                    }
+                    
+                    session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
+                    print(f"💾 Saved default sampling config from sample: {default_sampling_config}")
+                    
+                    # Also store dataset size for reference
+                    session_manager.update_step_data(1, 'dataset_size', dataset_size)
 
                     # Show file preview
                     show_file_preview(df, file_extension)
@@ -494,11 +506,14 @@ def render_step1_wireframe():
         
         with col1:
             # Number of samples slider
-            if 'df' in locals():
+            session_manager = SessionManager()
+            step1_data = session_manager.get_step_data(1)
+            
+            if step1_data and 'dataframe' in step1_data:
+                df = step1_data['dataframe']
                 dataset_size = len(df)
                 
                 # Get existing sampling config from session
-                session_manager = SessionManager()
                 existing_config = session_manager.get_step_data(1).get('sampling_config', {})
                 default_samples = existing_config.get('num_samples', min(100000, dataset_size))
                 
@@ -549,25 +564,36 @@ def render_step1_wireframe():
                 elif dataset_size == 1000:
                     st.info(f"ℹ️ Dataset size: {dataset_size:,} rows. "
                            f"You can sample from 100 to 1000 rows.")
+            else:
+                st.warning("⚠️ Please load a dataset first to configure sampling.")
         
         with col2:
             # Sampling strategy
-            existing_strategy = existing_config.get('sampling_strategy', 'Stratified (Recommended)')
-            strategy_index = 1 if existing_strategy == "Stratified (Recommended)" else 0
-            
-            sampling_strategy = st.radio(
-                "🎯 Sampling Strategy:",
-                ["Random", "Stratified (Recommended)"],
-                index=strategy_index,
-                help="Random: Simple random sampling. Stratified: Maintains class distribution."
-            )
+            if step1_data and 'dataframe' in step1_data:
+                existing_strategy = existing_config.get('sampling_strategy', 'Stratified (Recommended)')
+                strategy_index = 1 if existing_strategy == "Stratified (Recommended)" else 0
+                
+                sampling_strategy = st.radio(
+                    "🎯 Sampling Strategy:",
+                    ["Random", "Stratified (Recommended)"],
+                    index=strategy_index,
+                    help="Random: Simple random sampling. Stratified: Maintains class distribution."
+                )
+            else:
+                st.warning("⚠️ Please load a dataset first to configure sampling.")
         
         # Save sampling configuration to session
-        if 'df' in locals():
-            session_manager.update_step_data(1, 'sampling_config', {
+        if step1_data and 'dataframe' in step1_data:
+            # Always save sampling config, even if user hasn't changed it
+            current_sampling_config = {
                 'num_samples': num_samples,
                 'sampling_strategy': sampling_strategy
-            })
+            }
+            session_manager.update_step_data(1, 'sampling_config', current_sampling_config)
+            print(f"💾 [STEP1] Saved sampling config to session: {current_sampling_config}")
+            print(f"📊 [STEP1] Dataset size: {len(step1_data['dataframe']):,}, Requested samples: {num_samples:,}")
+        else:
+            print(f"⚠️ [STEP1] Cannot save sampling config - no dataframe in step 1")
     
     # Navigation buttons
     render_navigation_buttons()
@@ -614,10 +640,16 @@ def process_uploaded_file(uploaded_file):
         else:
             default_samples = min(100000, dataset_size)
         
-        session_manager.update_step_data(1, 'sampling_config', {
+        default_sampling_config = {
             'num_samples': default_samples,
             'sampling_strategy': 'Stratified (Recommended)'
-        })
+        }
+        
+        session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
+        print(f"💾 Saved default sampling config: {default_sampling_config}")
+        
+        # Also store dataset size for reference
+        session_manager.update_step_data(1, 'dataset_size', dataset_size)
         
     except Exception as e:
         st.error(f"❌ Error processing file: {str(e)}")
@@ -631,6 +663,21 @@ def show_file_preview(df, file_extension):
     
     st.dataframe(df.head(5), use_container_width=True)
     
+    # Get sampling configuration for display
+    session_manager = SessionManager()
+    step1_data = session_manager.get_step_data(1)
+    sampling_config = step1_data.get('sampling_config', {}) if step1_data else {}
+    
+    # Calculate display values
+    if sampling_config and sampling_config.get('num_samples'):
+        num_samples = sampling_config['num_samples']
+        if num_samples < df.shape[0]:
+            rows_display = f"{num_samples:,} samples (from {df.shape[0]:,} total)"
+        else:
+            rows_display = f"{df.shape[0]:,} samples"
+    else:
+        rows_display = f"{df.shape[0]:,} samples"
+    
     # Metrics in boxes
     col1, col2, col3 = st.columns(3)
     
@@ -638,7 +685,7 @@ def show_file_preview(df, file_extension):
         st.markdown(f"""
         <div class="metric-box">
             <h4>Shape</h4>
-            <p><strong>{df.shape[0]} rows, {df.shape[1]} columns</strong></p>
+            <p><strong>{rows_display}, {df.shape[1]} columns</strong></p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -684,6 +731,19 @@ def render_navigation_buttons():
             if current_step == 1:
                 step_data = session_manager.get_step_data(1)
                 if 'dataframe' in step_data and step_data['dataframe'] is not None:
+                    # Log current step 1 data before moving to step 2
+                    print(f"\n🔄 [NAVIGATION] Moving from Step 1 to Step 2...")
+                    print(f"📊 [NAVIGATION] Step 1 data keys: {list(step_data.keys())}")
+                    
+                    if 'sampling_config' in step_data:
+                        sampling_config = step_data['sampling_config']
+                        print(f"💾 [NAVIGATION] Sampling config found: {sampling_config}")
+                        if 'dataframe' in step_data:
+                            df_size = len(step_data['dataframe'])
+                            print(f"📊 [NAVIGATION] Dataset size: {df_size:,}, Requested samples: {sampling_config.get('num_samples', 'N/A')}")
+                    else:
+                        print(f"❌ [NAVIGATION] No sampling config found in step 1 data!")
+                    
                     # Move to step 2 (Column Selection & Preprocessing)
                     session_manager.set_current_step(2)
                     st.success("✅ Step 1 completed! Moving to Step 2...")
@@ -936,7 +996,16 @@ def render_step2_wireframe():
         # Text Column Analysis      
         # Calculate text column statistics
         text_data = df[selected_text_column].dropna()
-        text_samples = len(text_data)
+        original_text_samples = len(text_data)
+        
+        # Get sampling configuration to show actual samples
+        step1_data = session_manager.get_step_data(1)
+        sampling_config = step1_data.get('sampling_config', {}) if step1_data else {}
+        
+        if sampling_config and sampling_config.get('num_samples'):
+            actual_text_samples = min(sampling_config['num_samples'], original_text_samples)
+        else:
+            actual_text_samples = original_text_samples
         
         # Calculate average length
         if text_data.dtype == 'object' or text_data.dtype == 'string':
@@ -954,7 +1023,7 @@ def render_step2_wireframe():
             unique_words = 0
         
         st.markdown(f"""
-        <p>• Samples: <strong>{text_samples:,}</strong></p>
+        <p>• Samples: <strong>{actual_text_samples:,}</strong></p>
         <p>• Avg Length: <strong>{avg_length:.0f} chars</strong></p>
         <p>• Unique Words: <strong>{unique_words:,}</strong></p>
         </div>
@@ -964,11 +1033,32 @@ def render_step2_wireframe():
         # Label Column Analysis        
         # Calculate label column statistics
         label_data = df[selected_label_column].dropna()
-        unique_classes = label_data.nunique()
+        original_label_samples = len(label_data)
         
-        # Check class distribution
-        class_counts = label_data.value_counts()
-        total_samples = len(label_data)
+        # Get sampling configuration to show actual samples
+        step1_data = session_manager.get_step_data(1)
+        sampling_config = step1_data.get('sampling_config', {}) if step1_data else {}
+        
+        if sampling_config and sampling_config.get('num_samples'):
+            actual_label_samples = min(sampling_config['num_samples'], original_label_samples)
+            # Apply sampling to label data for accurate statistics
+            if actual_label_samples < original_label_samples:
+                # Sample the label data to get accurate class distribution
+                sampled_indices = df[selected_label_column].dropna().sample(
+                    n=actual_label_samples, 
+                    random_state=42
+                ).index
+                sampled_label_data = df.loc[sampled_indices, selected_label_column]
+                unique_classes = sampled_label_data.nunique()
+                class_counts = sampled_label_data.value_counts()
+            else:
+                unique_classes = label_data.nunique()
+                class_counts = label_data.value_counts()
+        else:
+            actual_label_samples = original_label_samples
+            unique_classes = label_data.nunique()
+            class_counts = label_data.value_counts()
+        
         max_class_count = class_counts.max()
         min_class_count = class_counts.min()
         
@@ -989,6 +1079,7 @@ def render_step2_wireframe():
             sample_labels += f", ... (+{len(class_counts) - 5} more)"
         
         st.markdown(f"""
+        <p>• Samples: <strong>{actual_label_samples:,}</strong></p>
         <p>• Unique Classes: <strong>{unique_classes}</strong></p>
         <p>• Distribution: <strong>{distribution}</strong></p>
         <p>• Sample Labels: <strong>{sample_labels}</strong></p>
@@ -1001,10 +1092,10 @@ def render_step2_wireframe():
     validation_warnings = []
     
     # Check if text column has sufficient data
-    if text_samples < 10:
+    if actual_text_samples < 10:
         msg = "Text column has insufficient data (less than 10 samples)"
         print(f"ERROR: {msg}", file=sys.stderr)
-    elif text_samples < 100:
+    elif actual_text_samples < 100:
         msg = "Text column has limited data (less than 100 samples)"
         print(f"WARNING: {msg}", file=sys.stderr)
 
@@ -1084,7 +1175,7 @@ def render_step2_wireframe():
         step2_config = {
             'text_column': selected_text_column,
             'label_column': selected_label_column,
-            'text_samples': text_samples,
+            'text_samples': actual_text_samples,
             'unique_classes': unique_classes,
             'distribution': distribution,
             'avg_length': avg_length,
@@ -1103,18 +1194,30 @@ def render_step2_wireframe():
         
         st.toast("Column configuration and preprocessing options saved! Ready for Step 3.")
         
+        # Use the actual_text_samples already calculated above
+        # Get sampling configuration to show actual samples that will be used
+        step1_data = session_manager.get_step_data(1)
+        sampling_config = step1_data.get('sampling_config', {}) if step1_data else {}
+        
+        # Use actual_text_samples that was calculated in text column analysis
+        text_display = f"{actual_text_samples:,} samples"
+        label_display = f"{unique_classes} classes"
+        
         # Show configuration summary in terminal
         print(f"""
         **Configuration Summary:**
-        - **Text Column**: {selected_text_column} ({text_samples:,} samples)
-        - **Label Column**: {selected_label_column} ({unique_classes} classes)
+        - **Text Column**: {selected_text_column} ({text_display})
+        - **Label Column**: {selected_label_column} ({label_display})
         - **Distribution**: {distribution}
         - **Text Length**: {avg_length_words:.1f} words average
+        - **Sampling**: {sampling_config.get('num_samples', 'None')} samples via {sampling_config.get('sampling_strategy', 'None')}
         - **Text Cleaning**: {'Enabled' if text_cleaning else 'Disabled'}
         - **Category Mapping**: {'Enabled' if category_mapping else 'Disabled'}
         - **Data Validation**: {'Enabled' if data_validation else 'Disabled'}
         - **Memory Optimization**: {'Enabled' if memory_optimization else 'Disabled'}
         """)
+        
+        print(f"📊 [STEP2] Dataset info - Original: {original_text_samples:,}, Will use: {actual_text_samples:,} samples")
         
         # Show completion message
         st.toast("Step 2 completed successfully!")
@@ -1157,12 +1260,27 @@ def render_step3_wireframe():
     
     df = step1_data['dataframe']
     
-    # Display dataset info from previous steps
-    st.info(f"📊 **Dataset**: {df.shape[0]:,} rows × {df.shape[1]} columns | "
+    # Display dataset info from previous steps with sampling information
+    sampling_config = step1_data.get('sampling_config', {})
+    if sampling_config and sampling_config.get('num_samples'):
+        num_samples = sampling_config['num_samples']
+        strategy = sampling_config.get('sampling_strategy', 'Unknown')
+        # Chỉ hiển thị số samples đã chọn
+        if num_samples < df.shape[0]:
+            dataset_display = f"{num_samples:,} samples"
+        else:
+            dataset_display = f"{df.shape[0]:,} samples"
+    else:
+        dataset_display = f"{df.shape[0]:,} samples"
+    
+    st.info(f"📊 **Dataset**: {dataset_display} × {df.shape[1]} columns | "
             f"**Text Column**: {step2_data.get('text_column', 'N/A')} | "
             f"**Label Column**: {step2_data.get('label_column', 'N/A')}")
     
-    # Data Split Configuration
+    # Log sampling info
+    print(f"📊 [STEP3] Dataset display - Original: {df.shape[0]:,}, Will use: {dataset_display}")
+    
+    # Data Split Configuration (Simplified: Only Test + Training)
     st.markdown("**📊 Data Split:**")
     col1, col2 = st.columns(2)
     
@@ -1177,26 +1295,18 @@ def render_step3_wireframe():
         )
     
     with col2:
-        # Training + Validation combined (remaining percentage)
-        training_validation_split = 100 - test_split
-          
-        # Sub-division of training + validation
-        training_ratio = st.slider(
-            f"Training + Validation: {training_validation_split}%*",
-            min_value=70,
-            max_value=95,
-            value=80,
-            step=5,
-            help="Percentage of training+validation data used for training (70-95%). Rest goes to validation."
-        )
+        # Training set (remaining percentage)
+        training_split = 100 - test_split
+        
+        st.info(f"📊 **Training Set**: {training_split}% (for Cross-Validation)")
     
     # Calculate actual percentages
     final_test = test_split
-    final_training = int((training_validation_split * training_ratio) / 100)
-    final_validation = training_validation_split - final_training
+    final_training = training_split
     
     # Display final split information
-    st.info(f"📊 **Final Data Split**: Training: {final_training}% | Validation: {final_validation}% | Test: {final_test}%")
+    st.info(f"📊 **Final Data Split**: Training: {final_training}% | Test: {final_test}%")
+    st.info(f"💡 **Note**: Validation is handled automatically by Cross-Validation folds")
     
     # Cross-Validation Configuration
     st.markdown("**🔄 Cross-Validation:**")
@@ -1209,12 +1319,14 @@ def render_step3_wireframe():
             max_value=10,
             value=5,
             step=1,
-            help="Number of cross-validation folds (3-10). Each fold uses ~{final_training//5}% of data."
+            help="Number of cross-validation folds (3-10). Each fold uses ~{final_training//cv_folds}% of training data."
         )
         
         # Show cross-validation explanation
         if final_training > 0 and cv_folds > 0:
             fold_percentage = final_training / cv_folds
+            st.info(f"📊 **Each CV Fold**: ~{fold_percentage:.1f}% of training data")
+            st.info(f"💡 **Validation**: Each fold automatically splits its data into train/validation")
    
     with col2:
         random_state = st.number_input(
@@ -1341,7 +1453,7 @@ def render_step3_wireframe():
         print("WARNING: More than 2 vectorization methods selected - memory usage will be higher")
 
     # Check if data split is valid
-    total_final = final_training + final_validation + final_test
+    total_final = final_training + final_test
     if total_final != 100:
         print(f"ERROR: Data split percentages must equal 100%. Current total: {total_final}%")
 
@@ -1355,21 +1467,13 @@ def render_step3_wireframe():
     if final_training < 50:
         print("WARNING: Training set is small (< 50%). Cross-validation may have limited data per fold.")
 
-    # Check if validation set is reasonable
-    if final_validation < 5:
-        print("WARNING: Validation set is very small (< 5%). Consider increasing training ratio.")
-    elif final_validation > 20:
-        print("WARNING: Validation set is large (> 20%). Consider increasing training ratio.")
-
     # Check cross-validation configuration
     if cv_folds > final_training / 10:
         print(f"WARNING: Many CV folds ({cv_folds}) with small training set ({final_training}%). Each fold may have insufficient data.")
-
-    # Check training ratio
-    if training_ratio < 70:
-        print("WARNING: Training ratio is low (< 70%). Consider increasing to allocate more data for training.")
-    elif training_ratio > 95:
-        print("WARNING: Training ratio is very high (> 95%). Consider reducing to have some validation data.")
+    
+    # Check if CV folds are reasonable for training set size
+    if cv_folds > final_training / 5:
+        print(f"WARNING: Too many CV folds ({cv_folds}) for training set ({final_training}%). Each fold may have very little data.")
     
     if not validation_errors and selected_models and selected_vectorization:
         st.toast("✅ **Configuration is valid!** Ready to proceed to training.")
@@ -1390,9 +1494,7 @@ def render_step3_wireframe():
         step3_config = {
             'data_split': {
                 'training': final_training,
-                'validation': final_validation,
-                'test': final_test,
-                'training_ratio': training_ratio
+                'test': final_test
             },
             'cross_validation': {
                 'cv_folds': cv_folds,
@@ -1412,10 +1514,10 @@ def render_step3_wireframe():
         # Show configuration summary in terminal
         print(f"""
         **Model Configuration Summary:**
-        - **Data Split**: Training={final_training}%, Validation={final_validation}%, Test={final_test}%
-        - **Training Ratio**: {training_ratio}% of non-test data used for training
+        - **Data Split**: Training={final_training}%, Test={final_test}%
         - **Cross-Validation**: {cv_folds} folds, Random State={random_state}
         - **CV Strategy**: Training set ({final_training}%) divided into {cv_folds} folds (~{final_training/cv_folds:.1f}% per fold)
+        - **Validation**: Handled automatically by CV folds (no separate validation set)
         - **Selected Models**: {', '.join(selected_models)}
         - **Vectorization Methods**: {', '.join(selected_vectorization)}
         - **Total Combinations**: {len(selected_models) * len(selected_vectorization)} model-vectorization pairs
@@ -1605,7 +1707,15 @@ def render_step4_wireframe():
             st.session_state.training_started = False
             st.session_state.training_results = None
             st.session_state.training_log = []
-            st.warning("⏹️ Training stopped")
+            
+            # Stop the training pipeline
+            try:
+                from training_pipeline import training_pipeline
+                training_pipeline.stop_training()
+                st.toast("⏹️ Training stopped - Current process will finish gracefully")
+            except Exception as e:
+                st.error(f"Error stopping training: {e}")
+                st.toast("⏹️ Training stopped (UI only)")
         
         elif reset_button:
             st.session_state.training_started = False
@@ -1713,7 +1823,7 @@ def render_step4_wireframe():
                             st.metric("Model", best_overall.get('combination_key', 'N/A'))
                         
                         with best_col2:
-                            st.metric("Test Accuracy", f"{best_overall.get('test_accuracy', 0):.3f}")
+                            st.metric("F1 Score", f"{best_overall.get('f1_score', 0):.3f}")
                         
                         with best_col3:
                             st.metric("Validation Accuracy", f"{best_overall.get('validation_accuracy', 0):.3f}")
@@ -1731,9 +1841,12 @@ def render_step4_wireframe():
                             results_data.append({
                                 'Model': res['model_name'].replace('_', ' ').title(),
                                 'Embedding': res['embedding_name'].replace('_', ' ').title(),
-                                'Val Accuracy': f"{res['validation_accuracy']:.3f}",
-                                'Test Accuracy': f"{res['test_accuracy']:.3f}",
                                 'CV Accuracy': f"{res.get('cv_mean_accuracy', 0):.3f}±{res.get('cv_std_accuracy', 0):.3f}",
+                                'Test Accuracy': f"{res.get('test_accuracy', 0):.3f}",
+                                'Precision': f"{res.get('test_metrics', {}).get('precision', 0):.3f}",
+                                'Recall': f"{res.get('test_metrics', {}).get('recall', 0):.3f}",
+                                'F1 Score': f"{res.get('f1_score', 0):.3f}",
+                                'F1 Balance': f"{res.get('f1_balance_score', 0):.3f}±{res.get('f1_variation_score', 0):.3f}",
                                 'Overfitting': res.get('overfitting_status', 'N/A').replace('_', ' ').title(),
                                 'Training Time': f"{res.get('training_time', 0):.2f}s"
                             })

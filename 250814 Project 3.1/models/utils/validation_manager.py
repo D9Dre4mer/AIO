@@ -78,6 +78,35 @@ class ValidationManager:
         
         return X_train, X_val, X_test, y_train, y_val, y_test
     
+    def split_data_train_test(
+        self, 
+        X: Union[np.ndarray, sparse.csr_matrix], 
+        y: np.ndarray,
+        test_size: float = None,
+        stratify: np.ndarray = None
+    ) -> Tuple[Union[np.ndarray, sparse.csr_matrix], 
+               Union[np.ndarray, sparse.csr_matrix], 
+               np.ndarray, np.ndarray]:
+        """Split data into train/test sets only (validation handled by CV)
+        
+        Returns:
+            X_train, X_test, y_train, y_test
+        """
+        
+        # Use provided test_size or default
+        if test_size is None:
+            test_size = self.test_size
+        
+        # Split data into train/test only
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, 
+            test_size=test_size, 
+            random_state=self.random_state,
+            stratify=stratify
+        )
+        
+        return X_train, X_test, y_train, y_test
+    
     def get_split_info(
         self, 
         X: Union[np.ndarray, sparse.csr_matrix], 
@@ -119,12 +148,122 @@ class ValidationManager:
     
     # ==================== CROSS-VALIDATION METHODS ====================
     
+    def cross_validate_with_precomputed_embeddings(
+        self,
+        model,
+        cv_embeddings: Dict[str, Any],
+        metrics: List[str] = None
+    ) -> Dict[str, Any]:
+        """Perform cross-validation using pre-computed embeddings for fair comparison
+        
+        Args:
+            model: Model instance to evaluate
+            cv_embeddings: Pre-computed embeddings for each fold
+            metrics: List of metrics to compute
+            
+        Returns:
+            Dictionary containing CV results
+        """
+        if metrics is None:
+            metrics = ['accuracy', 'precision', 'recall', 'f1']
+        
+        print(f"🔍 Cross-validating {model.__class__.__name__} with pre-computed embeddings...")
+        
+        # Initialize results storage
+        fold_scores = {metric: [] for metric in metrics}
+        all_predictions = []
+        all_true_labels = []
+        
+        # Perform cross-validation using pre-computed embeddings
+        for fold in range(1, self.cv_folds + 1):
+            print(f"  📊 Fold {fold}/{self.cv_folds}")
+            
+            fold_data = cv_embeddings[f'fold_{fold}']
+            X_train = fold_data['X_train']
+            X_val = fold_data['X_val']
+            y_train = fold_data['y_train']
+            y_val = fold_data['y_val']
+            
+            # Train model
+            model.fit(X_train, y_train)
+            
+            # Make predictions
+            y_pred = model.predict(X_val)
+            
+            # Store predictions and true labels
+            all_predictions.extend(y_pred)
+            all_true_labels.extend(y_val)
+            
+            # Calculate metrics for this fold
+            for metric in metrics:
+                if metric == 'accuracy':
+                    score = accuracy_score(y_val, y_pred)
+                elif metric == 'precision':
+                    score = precision_score(y_val, y_pred, average='weighted', zero_division=0)
+                elif metric == 'recall':
+                    score = recall_score(y_val, y_pred, average='weighted', zero_division=0)
+                elif metric == 'f1':
+                    score = f1_score(y_val, y_pred, average='weighted', zero_division=0)
+                else:
+                    print(f"⚠️ Unknown metric: {metric}")
+                    continue
+                
+                fold_scores[metric].append(score)
+        
+        # Calculate overall statistics
+        cv_results = {}
+        for metric in metrics:
+            if fold_scores[metric]:  # Only process if we have scores
+                scores = np.array(fold_scores[metric])
+                cv_results[f'{metric}_scores'] = scores
+                cv_results[f'{metric}_mean'] = np.mean(scores)
+                cv_results[f'{metric}_std'] = np.std(scores)
+        
+        # Add additional info
+        cv_results['cv_folds'] = self.cv_folds
+        cv_results['all_predictions'] = all_predictions
+        cv_results['all_true_labels'] = all_true_labels
+        
+        # Add cv_config for compatibility with print_cv_summary
+        cv_results['cv_config'] = {
+            'n_folds': self.cv_folds,
+            'stratified': self.cv_stratified,
+            'shuffle': True
+        }
+        
+        # Add fold_results for compatibility with print_cv_summary
+        cv_results['fold_results'] = []
+        for fold in range(1, self.cv_folds + 1):
+            fold_data = cv_embeddings[f'fold_{fold}']
+            fold_result = {
+                'fold': fold,
+                'accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0,
+                'n_train': len(fold_data['y_train']),
+                'n_val': len(fold_data['y_val'])
+            }
+            cv_results['fold_results'].append(fold_result)
+        
+        # Add overall_results for compatibility with print_cv_summary
+        cv_results['overall_results'] = {}
+        for metric in metrics:
+            if fold_scores[metric]:
+                scores = np.array(fold_scores[metric])
+                cv_results['overall_results'][f'{metric}_mean'] = np.mean(scores)
+                cv_results['overall_results'][f'{metric}_std'] = np.std(scores)
+                cv_results['overall_results'][f'{metric}_min'] = np.min(scores)
+                cv_results['overall_results'][f'{metric}_max'] = np.max(scores)
+        
+        return cv_results
+
     def cross_validate_model(
         self,
         model,
         X: Union[np.ndarray, sparse.csr_matrix],
         y: np.ndarray,
-        metrics: List[str] = None
+        metrics: List[str] = None,
+        is_embeddings: bool = False,
+        texts: List[str] = None,
+        vectorizer = None
     ) -> Dict[str, Any]:
         """Perform K-Fold Cross-Validation on a model
         
@@ -147,13 +286,53 @@ class ValidationManager:
         
         print(f"🔄 Performing {self.cv_folds}-Fold Cross-Validation...")
         
+        # Ensure X and y are properly formatted for CV
+        # Handle sparse matrices and ensure proper dimensions
+        if hasattr(X, 'shape'):
+            X_array = X
+        else:
+            X_array = np.asarray(X)
+            
+        if hasattr(y, 'shape'):
+            y_array = y
+        else:
+            y_array = np.asarray(y)
+        
+        print(f"🔍 Data shapes: X={X_array.shape}, y={y_array.shape}")
+        print(f"🔍 Data types: X={type(X_array)}, y={type(y_array)}")
+        
         # Perform cross-validation
-        for fold, (train_idx, val_idx) in enumerate(self.kf.split(X, y), 1):
+        for fold, (train_idx, val_idx) in enumerate(self.kf.split(X_array, y_array), 1):
             print(f"  📊 Fold {fold}/{self.cv_folds}")
             
-            # Split data for this fold
-            X_train, X_val = X[train_idx], X[val_idx]
-            y_train, y_val = y[train_idx], y[val_idx]
+            # Handle embeddings differently to prevent data leakage
+            if is_embeddings and texts is not None and vectorizer is not None:
+                # For embeddings: create new vectorizer instance for each fold
+                # to prevent data leakage between folds
+                fold_texts_train = [texts[i] for i in train_idx]
+                fold_texts_val = [texts[i] for i in val_idx]
+                
+                # Create new embedding vectorizer for this fold
+                fold_vectorizer = vectorizer.fit_embeddings_only(fold_texts_train)
+                
+                # Transform texts to embeddings using fold-specific vectorizer
+                X_train = np.array(fold_vectorizer.transform_with_progress(fold_texts_train, stop_callback=None))
+                X_val = np.array(fold_vectorizer.transform_with_progress(fold_texts_val, stop_callback=None))
+                
+                y_train = y_array[train_idx]
+                y_val = y_array[val_idx]
+            else:
+                # Standard processing for BoW/TF-IDF or pre-computed features
+                # Split data for this fold - handle sparse matrices properly
+                if hasattr(X_array, 'toarray'):  # Sparse matrix
+                    X_train = X_array[train_idx]
+                    X_val = X_array[val_idx]
+                else:  # Dense array
+                    X_train = X_array[train_idx]
+                    X_val = X_array[val_idx]
+                    
+                y_train = y_array[train_idx]
+                y_val = y_array[val_idx]
             
             # Train model
             model.fit(X_train, y_train)
