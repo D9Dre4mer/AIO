@@ -28,7 +28,7 @@ KMEANS_SVD_COMPONENTS = 2000  # Reduce to 2K dimensions (was 1K)
 MAX_VOCABULARY_SIZE = 50000   # Maximum vocabulary for BoW/TF-IDF
 
 # Embedding model configuration
-EMBEDDING_MODEL_NAME = 'intfloat/multilingual-e5-base'
+EMBEDDING_MODEL_NAME = 'sentence-transformers/allenai-specter'  # 768d
 EMBEDDING_NORMALIZE = True
 EMBEDDING_DEVICE = 'auto'
 

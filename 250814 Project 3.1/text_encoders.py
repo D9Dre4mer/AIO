@@ -103,6 +103,8 @@ class EmbeddingVectorizer:
         stop_callback=None
     ) -> List[List[float]]:
         """Transform texts to embeddings with progress bar"""
+        import time
+        
         total_texts = len(texts)
         print(f"🔧 Processing {total_texts:,} texts for embeddings...")
         
@@ -112,6 +114,7 @@ class EmbeddingVectorizer:
             inputs = self._format_inputs(texts, mode)
         
         all_embeddings = []
+        start_time = time.time()
         
         # Process in batches to show progress
         for i in range(0, total_texts, batch_size):
@@ -131,17 +134,31 @@ class EmbeddingVectorizer:
             )
             all_embeddings.extend(batch_embeddings.tolist())
             
-            # Show custom progress bar
+            # Calculate time estimates
+            elapsed_time = time.time() - start_time
             progress_percent = (batch_end / total_texts) * 100
+            
+            if progress_percent > 0:
+                # Estimate total time based on current progress
+                estimated_total_time = elapsed_time / (progress_percent / 100)
+                remaining_time = estimated_total_time - elapsed_time
+                eta_str = self._format_time(remaining_time)
+            else:
+                eta_str = "calculating..."
+            
+            # Show custom progress bar with ETA
             progress_bar = self._create_progress_bar(progress_percent, 40)
             progress_text = (f"\r🔄 Embedding Progress: {progress_bar} "
                            f"{progress_percent:5.1f}% "
-                           f"({batch_end:,}/{total_texts:,})")
+                           f"({batch_end:,}/{total_texts:,}) "
+                           f"⏱️ ETA: {eta_str}")
             print(progress_text, end="", flush=True)
         
         print()  # New line after progress bar
+        total_time = time.time() - start_time
         print(f"✅ Embedding completed! "
-              f"Generated {len(all_embeddings):,} embeddings")
+              f"Generated {len(all_embeddings):,} embeddings "
+              f"in {self._format_time(total_time)}")
         return all_embeddings
     
     def _create_progress_bar(self, percentage: float, width: int = 40) -> str:
@@ -150,6 +167,17 @@ class EmbeddingVectorizer:
         # Use beautiful Unicode characters for progress bar
         bar = '█' * filled_width + '░' * (width - filled_width)
         return bar
+    
+    def _format_time(self, seconds: float) -> str:
+        """Format time in seconds to human-readable string"""
+        if seconds < 60:
+            return f"{seconds:.1f}s"
+        elif seconds < 3600:
+            minutes = seconds / 60
+            return f"{minutes:.1f}m"
+        else:
+            hours = seconds / 3600
+            return f"{hours:.1f}h"
 
 
 class TextVectorizer:

@@ -53,8 +53,8 @@ class KMeansModel(BaseModel):
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
         
-        # Preprocess data
-        X_processed, _ = self._preprocess_data(X)
+        # Preprocess data (not training)
+        X_processed, _ = self._preprocess_data(X, is_training=False)
         
         # Get cluster predictions
         cluster_ids = self.model.predict(X_processed)
@@ -65,35 +65,51 @@ class KMeansModel(BaseModel):
         
         return np.array(y_pred)
     
-    def _preprocess_data(self, X: Union[np.ndarray, sparse.csr_matrix]) -> Tuple[np.ndarray, np.ndarray]:
+    def _preprocess_data(self, X: Union[np.ndarray, sparse.csr_matrix], is_training: bool = True) -> Tuple[np.ndarray, np.ndarray]:
         """Preprocess data with SVD if needed"""
         
         if sparse.issparse(X):
             print(f"💾 K-Means preprocessing: {X.shape[0]:,} samples × {X.shape[1]:,} features")
             
             if X.shape[1] > KMEANS_SVD_THRESHOLD:
-                print(f"📊 High-dimensional data detected ({X.shape[1]:,} > {KMEANS_SVD_THRESHOLD:,} features)")
-                print(f"🔧 Applying Truncated SVD dimensionality reduction...")
-                
-                n_components = min(KMEANS_SVD_COMPONENTS, X.shape[1] - 1, X.shape[0] - 1)
-                self.svd_model = TruncatedSVD(n_components=n_components, random_state=42)
-                
-                from tqdm import tqdm
-                print(f"⚡ Reducing {X.shape[1]:,} → {n_components:,} dimensions...")
-                
-                # Apply SVD
-                print("🔄 Performing SVD transformation...")
-                X_processed = self.svd_model.fit_transform(
-                    tqdm(X, desc="SVD transformation", unit="samples", total=X.shape[0])
-                )
-                
-                explained_variance = self.svd_model.explained_variance_ratio_.sum()
-                print(f"✅ SVD completed: {X.shape[1]:,} dimensions | "
-                      f"Variance preserved: {explained_variance:.1%}")
-                
-                return X_processed, X_processed  # Placeholder for test data
+                if is_training:
+                    # Training: Create new SVD model
+                    print(f"📊 High-dimensional data detected "
+                          f"({X.shape[1]:,} > {KMEANS_SVD_THRESHOLD:,} features)")
+                    print("🔧 Applying Truncated SVD dimensionality reduction...")
+                    
+                    n_components = min(KMEANS_SVD_COMPONENTS, 
+                                     X.shape[1] - 1, X.shape[0] - 1)
+                    self.svd_model = TruncatedSVD(n_components=n_components, 
+                                                random_state=42)
+                    
+                    print(f"⚡ Reducing {X.shape[1]:,} → {n_components:,} dimensions...")
+                    
+                    # Apply SVD
+                    print("🔄 Performing SVD transformation...")
+                    X_processed = self.svd_model.fit_transform(X)
+                    
+                    explained_variance = self.svd_model.explained_variance_ratio_.sum()
+                    print(f"✅ SVD completed: {X.shape[1]:,} dimensions | "
+                          f"Variance preserved: {explained_variance:.1%}")
+                    
+                    return X_processed, X_processed
+                else:
+                    # Prediction: Use existing fitted SVD model
+                    if self.svd_model is None:
+                        raise ValueError("SVD model not fitted. Please train the model first.")
+                    
+                    print(f"🔧 Using fitted SVD model for prediction...")
+                    print(f"⚡ Reducing {X.shape[1]:,} → {self.svd_model.n_components:,} dimensions...")
+                    
+                    # Apply fitted SVD
+                    X_processed = self.svd_model.transform(X)
+                    
+                    print(f"✅ SVD transformation completed for prediction")
+                    return X_processed, X_processed
             else:
-                print(f"✅ Converting to dense matrix ({X.shape[1]:,} features ≤ {KMEANS_SVD_THRESHOLD:,} threshold)")
+                print(f"✅ Converting to dense matrix "
+                      f"({X.shape[1]:,} features ≤ {KMEANS_SVD_THRESHOLD:,} threshold)")
                 return X.toarray(), X.toarray()
         else:
             return X, X
