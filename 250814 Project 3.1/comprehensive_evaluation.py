@@ -150,6 +150,63 @@ class ComprehensiveEvaluator:
         self.cv_embeddings_cache = cv_embeddings  # Cache for reuse
         return cv_embeddings
     
+    def create_cv_folds_for_sparse_embeddings(self, X_train: Union[np.ndarray, sparse.csr_matrix], 
+                                             y_train: np.ndarray, 
+                                             embedding_type: str) -> Dict[str, Any]:
+        """
+        Create CV folds for BoW/TF-IDF (sparse matrices) - REUSES existing logic
+        
+        Args:
+            X_train: Pre-computed sparse matrix (BoW/TF-IDF)
+            y_train: Training labels
+            embedding_type: 'bow' or 'tfidf'
+        
+        Returns:
+            Dictionary with CV folds data compatible with existing structure
+        """
+        print(f"🔄 Creating CV folds for {embedding_type.upper()}...")
+        
+        # Import sklearn for CV splitting
+        from sklearn.model_selection import StratifiedKFold
+        
+        # Create CV splitter
+        kf = StratifiedKFold(
+            n_splits=self.cv_folds, 
+            shuffle=True, 
+            random_state=self.random_state
+        )
+        
+        cv_folds = {}
+        
+        # Create folds using same strategy as precompute_cv_embeddings
+        for fold, (train_idx, val_idx) in enumerate(kf.split(X_train, y_train), 1):
+            print(f"  📊 Creating fold {fold}/{self.cv_folds}")
+            
+            # Split sparse matrix data for this fold
+            if hasattr(X_train, 'toarray'):  # Sparse matrix
+                X_train_fold = X_train[train_idx]
+                X_val_fold = X_train[val_idx]
+            else:  # Dense array
+                X_train_fold = X_train[train_idx]
+                X_val_fold = X_train[val_idx]
+            
+            # Get labels for this fold
+            y_train_fold = np.array([y_train[i] for i in train_idx])
+            y_val_fold = np.array([y_train[i] for i in val_idx])
+            
+            # Store fold data - compatible with existing structure
+            cv_folds[f'fold_{fold}'] = {
+                'X_train': X_train_fold,
+                'X_val': X_val_fold,
+                'y_train': y_train_fold,
+                'y_val': y_val_fold,
+                'train_idx': train_idx,
+                'val_idx': val_idx
+            }
+        
+        print(f"✅ Created CV folds for {embedding_type.upper()}: {self.cv_folds} folds")
+        return cv_folds
+    
     def load_and_prepare_data(self, max_samples: int = None, skip_csv_prompt: bool = False, sampling_config: Dict = None) -> Tuple[Dict[str, Any], List[str]]:
         """
         Load and prepare all data formats for evaluation
@@ -416,12 +473,17 @@ class ComprehensiveEvaluator:
                 overfitting_score = 0.0  # No overfitting analysis without validation set
                 overfitting_status = 'no_validation'
             
-            # Cross-validation - FIXED: Use vectorized data for CV (BoW/TF-IDF) or fitted embeddings
+            # Cross-validation - ENHANCED: Use optimized CV for sparse embeddings (BoW/TF-IDF) or fitted embeddings
             if embedding_name in ['bow', 'tfidf']:
-                # For BoW and TF-IDF, use the vectorized training data for CV
-                print(f"     🔧 CV using vectorized {embedding_name} data for {model_name} (no data leakage)")
-                cv_results = self.model_trainer.cross_validate_model(
-                    model_name, X_train, y_train, ['accuracy', 'precision', 'recall', 'f1']
+                # For BoW and TF-IDF, use optimized CV with sparse matrix handling
+                print(f"     🔧 CV using optimized sparse {embedding_name} data for {model_name} (no data leakage)")
+                
+                # Create CV folds specifically for sparse embeddings
+                cv_folds = self.create_cv_folds_for_sparse_embeddings(X_train, y_train, embedding_name)
+                
+                # Use CV folds for evaluation
+                cv_results = self.model_trainer.cross_validate_with_precomputed_embeddings(
+                    model_name, cv_folds, ['accuracy', 'precision', 'recall', 'f1']
                 )
             else:
                 # For embeddings, use pre-computed CV embeddings for fair comparison
