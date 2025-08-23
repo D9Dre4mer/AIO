@@ -425,7 +425,8 @@ class ComprehensiveEvaluator:
                                   X_test: Union[np.ndarray, sparse.csr_matrix],
                                   y_train: np.ndarray,
                                   y_val: np.ndarray,
-                                  y_test: np.ndarray) -> Dict[str, Any]:
+                                  y_test: np.ndarray,
+                                  step3_data: Dict = None) -> Dict[str, Any]:
         """
         Evaluate a single model-embedding combination
         
@@ -436,12 +437,23 @@ class ComprehensiveEvaluator:
         print(f"   🔍 Evaluating {combination_key}...")
         
         try:
+            # Log KNN configuration if available
+            if model_name == 'knn' and step3_data and 'knn_config' in step3_data:
+                knn_config = step3_data['knn_config']
+                print(f"     🎯 [KNN EVALUATION] Configuration from Step 3:")
+                print(f"        • Optimization Method: {knn_config.get('optimization_method', 'N/A')}")
+                print(f"        • K Value: {knn_config.get('k_value', 'N/A')}")
+                print(f"        • Weights: {knn_config.get('weights', 'N/A')}")
+                print(f"        • Metric: {knn_config.get('metric', 'N/A')}")
+                if knn_config.get('best_score'):
+                    print(f"        • Best Score: {knn_config.get('best_score', 'N/A'):.4f}")
+            
             # Training
             start_time = time.time()
             y_test_pred, y_val_pred, y_test, val_acc, test_acc, test_metrics = \
                 self.model_trainer.train_validate_test_model(
                     model_name, X_train, y_train, 
-                    X_val, y_val, X_test, y_test
+                    X_val, y_val, X_test, y_test, step3_data
                 )
             training_time = time.time() - start_time
             
@@ -655,7 +667,7 @@ class ComprehensiveEvaluator:
             return 0.0
     
     def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False, 
-                                   sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None) -> Dict[str, Any]:
+                                   sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None, step3_data: Dict = None) -> Dict[str, Any]:
         """
         Run comprehensive evaluation of model-embedding combinations
         
@@ -840,7 +852,8 @@ class ComprehensiveEvaluator:
                         X_test=embedding_data['X_test'],
                         y_train=data_dict['y_train'],
                         y_val=data_dict['y_val'],
-                        y_test=data_dict['y_test']
+                        y_test=data_dict['y_test'],
+                        step3_data=step3_data
                     )
                     
                     all_results.append(result)

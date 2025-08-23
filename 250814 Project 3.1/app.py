@@ -9,6 +9,7 @@ Created: 2025-01-27
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 import sys
 import os
 import time
@@ -1385,6 +1386,295 @@ def render_step3_wireframe():
             help="SVM classifier with kernel methods"
         )
     
+    # KNN Advanced Configuration Section (only show if KNN is selected)
+    if knn_model:
+        with st.expander("🎯 KNN Advanced Configuration", expanded=False):
+            st.markdown("**🔍 KNN Parameter Optimization:**")
+            
+            # Optimization Type Selection with Manual Option
+            st.markdown("### 🎯 **Chọn phương pháp tối ưu KNN:**")
+            
+            knn_optimization_type = st.selectbox(
+                "🔍 **Optimization Strategy:**",
+                options=["Manual K Input", "Optimal K (Cosine Metric)", "Grid Search (All Parameters)"],
+                index=0,
+                help="Chọn cách thiết lập tham số KNN"
+            )
+            
+            st.markdown("---")
+            
+            # Show different UI based on optimization type
+            if knn_optimization_type == "Manual K Input":
+
+                # Manual Configuration
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    manual_k = st.number_input(
+                        "🎯 **K Value:**",
+                        min_value=1,
+                        max_value=50,
+                        value=5,
+                        step=1,
+                        help="Số neighbors gần nhất"
+                    )
+                    
+                with col2:
+                    manual_weights = st.selectbox(
+                        "⚖️ **Weights:**",
+                        options=["uniform", "distance"],
+                        index=0,
+                        help="Cách tính trọng số cho neighbors"
+                    )
+                    
+                with col3:
+                    manual_metric = st.selectbox(
+                        "📏 **Distance Metric:**",
+                        options=["cosine", "euclidean", "manhattan"],
+                        index=0,
+                        help="Phương pháp tính khoảng cách"
+                    )
+                
+                # Manual Save Button
+                if st.button("💾 Save Manual Configuration", type="secondary", 
+                            help="Lưu cấu hình thủ công vào session"):
+                    st.session_state.knn_config = {
+                        'optimization_method': 'Manual Input',
+                        'k_value': manual_k,
+                        'weights': manual_weights,
+                        'metric': manual_metric,
+                        'best_score': None,
+                        'cv_folds': None,
+                        'scoring': None
+                    }
+                    st.toast(f"✅ Đã lưu cấu hình: K={manual_k}, Weights={manual_weights}, Metric={manual_metric}")
+                
+            elif knn_optimization_type == "Optimal K (Cosine Metric)":                
+                # CV Configuration for Optimal K
+                col1, col2 = st.columns(2)
+                with col1:
+                    knn_cv_folds = st.slider(
+                        "🔄 **Cross-Validation Folds:**",
+                        min_value=3,
+                        max_value=10,
+                        value=3,
+                        step=1,
+                        help="Số folds cho cross-validation"
+                    )
+                    
+                with col2:
+                    knn_scoring = st.selectbox(
+                        "📈 **Scoring Metric:**",
+                        options=["f1_macro", "accuracy", "precision_macro", "recall_macro"],
+                        index=0,
+                        help="Metric đánh giá model"
+                    )
+            
+            else:  # Grid Search               
+                # CV Configuration for Grid Search  
+                col1, col2 = st.columns(2)
+                with col1:
+                    knn_cv_folds = st.slider(
+                        "🔄 **Cross-Validation Folds:**",
+                        min_value=3,
+                        max_value=10,
+                        value=3,
+                        step=1,
+                        help="Số folds cho cross-validation"
+                    )
+                    
+                with col2:
+                    knn_scoring = st.selectbox(
+                        "📈 **Scoring Metric:**",
+                        options=["f1_macro", "accuracy", "precision_macro", "recall_macro"],
+                        index=0,
+                        help="Metric đánh giá model"
+                    )
+            
+            # Show current KNN config if exists
+
+            if 'knn_config' in st.session_state:
+                current_config = st.session_state.knn_config
+                if current_config.get('optimization_method') == 'Manual Input':
+                    st.toast(f"✅ **Manual Config**: K={current_config.get('k_value', 'Not set')}, "
+                              f"Weights={current_config.get('weights', 'Not set')}, "
+                              f"Metric={current_config.get('metric', 'Not set')}")
+                else:
+                    score_display = f"{current_config.get('best_score', 0):.4f}" if current_config.get('best_score') is not None else "N/A"
+                    st.success(f"✅ **Optimized Config**: K={current_config.get('k_value', 'Not set')}, "
+                              f"Weights={current_config.get('weights', 'Not set')}, "
+                              f"Metric={current_config.get('metric', 'Not set')}, "
+                              f"Score={score_display}")
+            else:
+                st.warning("⚠️ **Current Config**: No configuration set")
+            
+            # Run Optimization Button - Only show for optimization modes
+            if knn_optimization_type != "Manual K Input":
+                st.markdown("---")
+                st.markdown("**🚀 Run KNN Optimization:**")
+                
+                # Optimization buttons for Optimal K and Grid Search
+                if knn_optimization_type == "Optimal K (Cosine Metric)":
+                    button_text = "🎯 Run Optimal K Search (Cosine Metric)"
+                    button_help = "Tìm K tối ưu với cosine metric (nhanh, phù hợp text data)"
+                else:
+                    button_text = "🔍 Run Full Grid Search (All Parameters)"
+                    button_help = "Tìm combination tối ưu cho tất cả tham số (chậm hơn, toàn diện)"
+                
+                if st.button(button_text, type="primary", help=button_help):
+                    # Check if Step 2 is completed
+                    step2_config = session_manager.get_step_data(2)
+                    if not step2_config or not step2_config.get('completed', False):
+                        st.error("❌ **Step 2 not completed!** Please complete Step 2 (Data Processing) first.")
+                        st.stop()
+                    
+                    # Get column configuration
+                    text_column = step2_config.get('text_column')
+                    label_column = step2_config.get('label_column')
+                    
+                    if not text_column or not label_column:
+                        st.error("❌ **Column configuration missing!** Please complete Step 2 first.")
+                        st.stop()
+                    
+                    try:
+                        # Use sample size from Step 1 configuration
+                        step1_data = session_manager.get_step_data(1)
+                        sampling_config = step1_data.get('sampling_config', {})
+                        configured_sample_size = sampling_config.get('num_samples', len(df))
+                        
+                        # Use the configured sample size from Step 1
+                        sample_size = min(configured_sample_size, len(df))
+                        
+                        # Create sample data
+                        df_sample = df.sample(n=sample_size, random_state=42)
+                        X_texts = df_sample[text_column].astype(str).tolist()
+                        y_labels = df_sample[label_column].tolist()
+                        
+                        # Use Sentence Embeddings for KNN optimization (same as Project3_1_A-Son.ipynb)
+                        from text_encoders import EmbeddingVectorizer
+                        from sklearn.preprocessing import LabelEncoder
+                                   
+                        # Create sentence embeddings (use raw mode for direct text input)
+                        embedding_vectorizer = EmbeddingVectorizer()
+                        embedding_vectorizer.fit(X_texts)
+                        X_train = embedding_vectorizer.transform(X_texts, mode='raw')
+                        
+                        label_encoder = LabelEncoder()
+                        y_train = label_encoder.fit_transform(y_labels)
+                        
+                        # Calculate adaptive K range based on sample size (for embeddings)
+                        n_samples = X_train.shape[0]  
+                        n_classes = len(np.unique(y_train))
+                        k_sqrt = int(np.sqrt(n_samples))
+                        k_min = max(3, k_sqrt // 2)
+                        k_max = min(31, 2 * k_sqrt)
+                        
+                        # Ensure odd numbers for better performance
+                        if k_min % 2 == 0:
+                            k_min += 1
+                        if k_max % 2 == 0:
+                            k_max -= 1
+                        
+                        # Create K range for embeddings (same as notebook)
+                        k_range = list(range(k_min, k_max + 1, 2))
+                        # Run optimization using KNNModel methods
+                        with st.spinner("🔄 Running KNN optimization with embeddings..."):
+                            from models.classification.knn_model import KNNModel
+                            knn_model = KNNModel()
+                            st.info(f"📊 K range: {k_range} (based on √{n_samples} samples)")
+                            
+                            if knn_optimization_type == "Optimal K (Cosine Metric)":
+                                st.info("🎯 **Using determine_optimal_k** from KNNModel (cosine metric only)")
+                                results = knn_model.determine_optimal_k(
+                                    X_train, y_train, 
+                                    cv_folds=knn_cv_folds, 
+                                    scoring=knn_scoring,
+                                    k_range=k_range,
+                                    plot_results=False
+                                )
+                                
+                                best_params = results['best_params']
+                                best_score = results['best_score']
+                                
+                                st.session_state.knn_config = {
+                                    'optimization_method': 'Optimal K (Cosine Metric)',
+                                    'k_value': best_params['n_neighbors'],
+                                    'weights': best_params['weights'],
+                                    'metric': 'cosine',
+                                    'cv_folds': knn_cv_folds,
+                                    'scoring_metric': knn_scoring,
+                                    'best_score': best_score
+                                }
+                                
+                                st.success(f"✅ **Optimal K Found**: {best_params['n_neighbors']}")
+                                st.success(f"🏆 **Best Score**: {best_score:.4f}")
+                                
+                            else:  # Grid Search
+                                st.info("🔍 **Using tune_hyperparameters** from KNNModel (all metrics)")
+                                results = knn_model.tune_hyperparameters(
+                                    X_train, y_train,
+                                    cv_folds=knn_cv_folds,
+                                    scoring=knn_scoring,
+                                    k_range=k_range
+                                )
+                                
+                                best_params = results['best_params']
+                                best_score = results['best_score']
+                                
+                                st.session_state.knn_config = {
+                                    'optimization_method': 'Grid Search (All Parameters)',
+                                    'k_value': best_params['n_neighbors'],
+                                    'weights': best_params['weights'],
+                                    'metric': best_params['metric'],
+                                    'cv_folds': knn_cv_folds,
+                                    'scoring_metric': knn_scoring,
+                                    'best_score': best_score
+                                }
+                                
+                                st.success(f"✅ **Grid Search Complete**: K={best_params['n_neighbors']}")
+                                st.success(f"🏆 **Best Score**: {best_score:.4f}")
+                                st.success(f"📏 **Best Metric**: {best_params['metric']}")
+                            
+                            st.toast("🎉 **Optimization completed successfully!**")
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"❌ Error during KNN optimization: {str(e)}")
+            
+            # Show current configuration summary
+            if 'knn_config' in st.session_state:
+                st.markdown("---")
+                st.markdown("**📋 Current KNN Configuration:**")
+                config = st.session_state.knn_config
+                
+                # Different display based on optimization method
+                if config.get('optimization_method') == 'Manual Input':
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("🎯 K Value", config.get('k_value', 'Not set'))
+                    with col2:
+                        st.metric("⚖️ Weights", config.get('weights', 'Not set'))
+                    with col3:
+                        st.metric("📏 Metric", config.get('metric', 'Not set'))
+                else:
+                    st.info(f"🔍 **{config.get('optimization_method', 'Optimized')}**")
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("🎯 K Value", config.get('k_value', 'Not set'))
+                    with col2:
+                        st.metric("⚖️ Weights", config.get('weights', 'Not set'))
+                    with col3:
+                        st.metric("📏 Metric", config.get('metric', 'Not set'))
+                    
+                    if config.get('best_score') is not None:
+                        st.metric("🏆 Best Score", f"{config.get('best_score', 0):.4f}")
+                
+                # Clear config button
+                if st.button("🗑️ Clear KNN Config", type="secondary", 
+                            help="Xóa cấu hình KNN hiện tại"):
+                    del st.session_state.knn_config
+                    st.rerun()
+    
     # Text Vectorization Methods Section
     st.markdown("""
     <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">📚 Text Vectorization Methods:</h3>
@@ -1507,6 +1797,23 @@ def render_step3_wireframe():
             'completed': True
         }
         
+        # Add KNN specific configuration if KNN is selected and config exists
+        if knn_model and 'knn_config' in st.session_state:
+            knn_config = st.session_state.knn_config
+            # Ensure all required fields are present for manual input
+            if knn_config.get('optimization_method') == 'Manual Input':
+                step3_config['knn_config'] = {
+                    'optimization_method': 'Manual Input',
+                    'k_value': knn_config.get('k_value', 5),
+                    'weights': knn_config.get('weights', 'uniform'),
+                    'metric': knn_config.get('metric', 'cosine'),
+                    'best_score': None,
+                    'cv_folds': None,
+                    'scoring': None
+                }
+            else:
+                step3_config['knn_config'] = knn_config
+        
         session_manager.set_step_config('step3', step3_config)
         
         st.toast("Model configuration saved successfully! Ready for Step 4.")
@@ -1521,6 +1828,28 @@ def render_step3_wireframe():
         - **Selected Models**: {', '.join(selected_models)}
         - **Vectorization Methods**: {', '.join(selected_vectorization)}
         - **Total Combinations**: {len(selected_models) * len(selected_vectorization)} model-vectorization pairs
+        """)
+        
+        # Show KNN configuration if selected
+        if knn_model and 'knn_config' in step3_config:
+            knn_config = step3_config['knn_config']
+            if knn_config.get('optimization_method') == 'Manual Input':
+                print(f"""
+        **KNN Configuration (Manual Input):**
+        - **Method**: Manual Configuration
+        - **K Value**: {knn_config.get('k_value', 'Not set')}
+        - **Weights**: {knn_config.get('weights', 'Not set')}
+        - **Metric**: {knn_config.get('metric', 'Not set')}
+        - **Note**: Parameters set manually, no optimization performed
+        """)
+            else:
+                print(f"""
+        **KNN Configuration (Optimized):**
+        - **Method**: {knn_config.get('optimization_method', 'Not set')}
+        - **K Value**: {knn_config.get('k_value', 'Not set')}
+        - **Weights**: {knn_config.get('weights', 'Not set')}
+        - **Metric**: {knn_config.get('metric', 'Not set')}
+        - **Best Score**: {knn_config.get('best_score', 'Not available') if knn_config.get('best_score') is None else f"{knn_config.get('best_score'):.4f}"}
         """)
         
         # Show completion message

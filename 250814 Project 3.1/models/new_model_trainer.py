@@ -219,6 +219,7 @@ class NewModelTrainer:
         y_val: np.ndarray = None,
         X_test: Union[np.ndarray, sparse.csr_matrix] = None,
         y_test: np.ndarray = None,
+        step3_data: Dict = None,
         **model_params
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, float, float, Dict[str, Any]]:
         """Train, validate and test a specific model with 3-way split"""
@@ -239,15 +240,64 @@ class NewModelTrainer:
             # Create empty validation set (CV will handle it)
             X_val, y_val = np.array([]), np.array([])
             
-            # Print split summary
-            print(f"📊 Created 2-way data split (validation handled by CV):")
-            print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
-            print(f"   • Validation: Empty (CV folds will handle validation)")
+                    # Print split summary
+        print(f"📊 Created 2-way data split (validation handled by CV):")
+        print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
+        print(f"   • Validation: Empty (CV folds will handle validation)")
         
-        # Create model instance
+        # Create model instance with KNN configuration if available
         if not self.model_factory:
             raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        
+        # Special handling for KNN model with Step 3 configuration
+        if model_name == 'knn' and step3_data and 'knn_config' in step3_data:
+            knn_config = step3_data['knn_config']
+            optimization_method = knn_config.get('optimization_method', 'Default K=5')
+            
+            if optimization_method == "Default K=5":
+                # Use manual configuration
+                model_params.update({
+                    'n_neighbors': knn_config.get('k_value', 5),
+                    'weights': knn_config.get('weights', 'uniform'),
+                    'metric': knn_config.get('metric', 'cosine')
+                })
+                print(f"🎯 KNN Configuration: K={model_params.get('n_neighbors')}, "
+                      f"Weights={model_params.get('weights')}, Metric={model_params.get('metric')}")
+            elif optimization_method in ["Optimal K (Cosine Metric)", "Grid Search (All Parameters)"]:
+                # Use the BEST K found from optimization in Step 3
+                best_k = knn_config.get('k_value', 5)
+                best_weights = knn_config.get('weights', 'uniform')
+                best_metric = knn_config.get('metric', 'cosine')
+                
+                model_params.update({
+                    'n_neighbors': best_k,
+                    'weights': best_weights,
+                    'metric': best_metric
+                })
+                
+                print(f"🎯 KNN Configuration: Using OPTIMIZED parameters from Step 3:")
+                print(f"   • Best K: {best_k}")
+                print(f"   • Best Weights: {best_weights}")
+                print(f"   • Best Metric: {best_metric}")
+                print(f"   • Optimization Method: {optimization_method}")
+            else:
+                print(f"🎯 KNN Configuration: Will use Grid Search for all parameters")
+        
         model = self.model_factory.create_model(model_name, **model_params)
+        
+        # Log KNN model parameters if it's KNN
+        if model_name == 'knn' and hasattr(model, 'n_neighbors'):
+            print(f"🎯 [KNN TRAINING] Model parameters:")
+            print(f"   • K (n_neighbors): {model.n_neighbors}")
+            # Check if model has sklearn attributes
+            if hasattr(model, 'model') and hasattr(model.model, 'weights'):
+                print(f"   • Weights: {model.model.weights}")
+                print(f"   • Metric: {model.model.metric}")
+                print(f"   • Algorithm: {model.model.algorithm}")
+            else:
+                print(f"   • Weights: N/A (custom KNNModel)")
+                print(f"   • Metric: N/A (custom KNNModel)")
+                print(f"   • Algorithm: N/A (custom KNNModel)")
         
         # Train model
         print(f"\n🚀 Training {model_name} model...")

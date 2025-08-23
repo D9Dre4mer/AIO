@@ -442,7 +442,8 @@ class StreamlitTrainingPipeline:
                     sampling_config=sampling_config,  # Pass sampling config
                     selected_models=selected_models,
                     selected_embeddings=selected_vectorization,
-                    stop_callback=self.is_training_stopped  # Pass stop callback
+                    stop_callback=self.is_training_stopped,  # Pass stop callback
+                    step3_data=step3_data  # Pass Step 3 configuration for KNN
                 )
                 
                 # Update progress based on evaluation progress
@@ -805,7 +806,7 @@ class StreamlitTrainingPipeline:
             return np.random.rand(len(X), 100)
     
     def _train_all_models(self, vectorized_data: Dict, selected_models: List[str], 
-                          cv_config: Dict, progress_callback=None) -> Dict:
+                          cv_config: Dict, step3_data: Dict = None, progress_callback=None) -> Dict:
         """Train all selected models with all vectorization methods"""
         
         results = {}
@@ -834,7 +835,7 @@ class StreamlitTrainingPipeline:
                 try:
                     # Train model with labels
                     model_result = self._train_single_model(
-                        model_name, vec_method, vec_data, labels_dict, cv_folds, random_state
+                        model_name, vec_method, vec_data, labels_dict, cv_folds, random_state, step3_data
                     )
                     
                     if model_result:
@@ -857,7 +858,7 @@ class StreamlitTrainingPipeline:
         return results
     
     def _train_single_model(self, model_name: str, vec_method: str, 
-                           vec_data: Dict, labels_dict: Dict, cv_folds: int, random_state: int) -> Dict:
+                           vec_data: Dict, labels_dict: Dict, cv_folds: int, random_state: int, step3_data: Dict = None) -> Dict:
         """Train a single model with specific vectorization method"""
         
         try:
@@ -891,7 +892,7 @@ class StreamlitTrainingPipeline:
                                 print(f"Warning: NewModelTrainer constructor failed: {e2}")
                                 # Skip to sklearn fallback
                                 return self._train_sklearn_fallback(
-                                    model_name, vec_method, vec_data, labels_dict, cv_folds, random_state
+                                    model_name, vec_method, vec_data, labels_dict, cv_folds, random_state, step3_data
                                 )
                         
                         # Map model names to trainer method names
@@ -929,7 +930,7 @@ class StreamlitTrainingPipeline:
             
             # Fallback to sklearn models
             return self._train_sklearn_fallback(
-                model_name, vec_method, vec_data, labels_dict, cv_folds, random_state
+                model_name, vec_method, vec_data, labels_dict, cv_folds, random_state, step3_data
             )
             
         except Exception as e:
@@ -937,7 +938,7 @@ class StreamlitTrainingPipeline:
             return None
     
     def _train_sklearn_fallback(self, model_name: str, vec_method: str, 
-                               vec_data: Dict, labels_dict: Dict, cv_folds: int, random_state: int) -> Dict:
+                               vec_data: Dict, labels_dict: Dict, cv_folds: int, random_state: int, step3_data: Dict = None) -> Dict:
         """Fallback training using sklearn models"""
         
         try:
@@ -945,7 +946,7 @@ class StreamlitTrainingPipeline:
             from sklearn.metrics import accuracy_score, classification_report
             
             # Create model
-            model = self._create_sklearn_model(model_name, random_state)
+            model = self._create_sklearn_model(model_name, random_state, step3_data)
             
             # Train model
             model.fit(vec_data['train'], labels_dict['train'])
@@ -973,12 +974,89 @@ class StreamlitTrainingPipeline:
             print(f"Warning: Sklearn fallback failed: {e}")
             return None
     
-    def _create_sklearn_model(self, model_name: str, random_state: int):
-        """Create sklearn model instance"""
+    def _create_sklearn_model(self, model_name: str, random_state: int, step3_data: Dict = None):
+        """Create sklearn model instance with configuration from Step 3"""
         
         if 'K-Nearest Neighbors' in model_name:
             from sklearn.neighbors import KNeighborsClassifier
-            return KNeighborsClassifier(n_neighbors=5)
+            
+            # Get KNN configuration from Step 3 if available
+            knn_config = step3_data.get('knn_config', {}) if step3_data else {}
+            optimization_method = knn_config.get('optimization_method', 'Default K=5')
+            
+            print(f"\n🔍 [KNN MODEL CREATION] Debug information:")
+            print(f"   • Step3 data exists: {bool(step3_data)}")
+            print(f"   • KNN config exists: {bool(knn_config)}")
+            print(f"   • Optimization method: {optimization_method}")
+            print(f"   • Full KNN config: {knn_config}")
+            print(f"   • Step3 data keys: {list(step3_data.keys()) if step3_data else 'None'}")
+            print(f"   • KNN config keys: {list(knn_config.keys()) if knn_config else 'None'}")
+            print(f"   • K value in config: {knn_config.get('k_value', 'NOT FOUND')}")
+            print(f"   • Optimization method check: {optimization_method in ['Optimal K (Cosine Metric)', 'Grid Search (All Parameters)']}")
+            
+            if optimization_method == "Manual Input":
+                # Use manual configuration
+                k_value = knn_config.get('k_value', 5)
+                weights = knn_config.get('weights', 'uniform')
+                metric = knn_config.get('metric', 'cosine')
+                
+                print(f"🎯 [KNN] Using MANUAL configuration:")
+                print(f"   • K Value: {k_value}")
+                print(f"   • Weights: {weights}")
+                print(f"   • Metric: {metric}")
+                
+                knn_model = KNeighborsClassifier(
+                    n_neighbors=k_value,
+                    weights=weights,
+                    metric=metric
+                )
+                
+                print(f"✅ [KNN] Model created with K={k_value}")
+                return knn_model
+                
+            elif optimization_method in ["Optimal K (Cosine Metric)", "Grid Search (All Parameters)"]:
+                # Use the BEST K found from optimization in Step 3
+                best_k = knn_config.get('k_value', 5)
+                best_weights = knn_config.get('weights', 'uniform')
+                best_metric = knn_config.get('metric', 'cosine')
+                best_score = knn_config.get('best_score', 'N/A')
+                
+                print(f"🎯 [KNN] Using OPTIMIZED configuration from Step 3:")
+                print(f"   • Best K: {best_k}")
+                print(f"   • Best Weights: {best_weights}")
+                print(f"   • Best Metric: {best_metric}")
+                print(f"   • Best Score: {best_score}")
+                print(f"   • Optimization Method: {optimization_method}")
+                
+                # Ensure we have valid values
+                if best_k is None or best_k == 5:
+                    print(f"⚠️ [KNN] Warning: Best K is {best_k}, falling back to default")
+                    best_k = 5
+                
+                knn_model = KNeighborsClassifier(
+                    n_neighbors=best_k,
+                    weights=best_weights,
+                    metric=best_metric
+                )
+                
+                print(f"✅ [KNN] Model created with OPTIMIZED parameters:")
+                print(f"   • K={best_k} (from optimization)")
+                print(f"   • Weights={best_weights}")
+                print(f"   • Metric={best_metric}")
+                
+                return knn_model
+                
+            else:
+                # Fallback to default configuration
+                print(f"⚠️ [KNN] No valid configuration found, using default:")
+                print(f"   • K Value: 5 (default)")
+                print(f"   • Weights: uniform (default)")
+                print(f"   • Metric: euclidean (default)")
+                
+                knn_model = KNeighborsClassifier(n_neighbors=5)
+                
+                print(f"✅ [KNN] Model created with DEFAULT parameters: K=5")
+                return knn_model
         
         elif 'Decision Tree' in model_name:
             from sklearn.tree import DecisionTreeClassifier
