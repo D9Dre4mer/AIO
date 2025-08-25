@@ -301,7 +301,17 @@ class NewModelTrainer:
         
         # Train model
         print(f"\n🚀 Training {model_name} model...")
-        model.fit(X_train, y_train)
+        
+        # Special handling for KNN model with GPU acceleration
+        if model_name == 'knn':
+            try:
+                model.fit(X_train, y_train, use_gpu=True)
+                print(f"✅ KNN model trained successfully")
+            except Exception as e:
+                print(f"⚠️ GPU training failed, falling back to CPU: {e}")
+                model.fit(X_train, y_train, use_gpu=False)
+        else:
+            model.fit(X_train, y_train)
         
         # Validate model (only if validation set exists)
         if len(X_val) > 0 and len(y_val) > 0:

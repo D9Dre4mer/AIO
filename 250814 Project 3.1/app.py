@@ -10,6 +10,7 @@ Created: 2025-01-27
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import sys
 import os
 import time
@@ -796,9 +797,6 @@ def render_navigation_buttons():
 
 def render_sidebar():
     """Render sidebar with progress tracking"""
-    
-    st.sidebar.title("🔍 Progress Tracker")
-    
     # Initialize session manager
     session_manager = SessionManager()
     
@@ -814,15 +812,6 @@ def render_sidebar():
     ]
     
     current_step_name = step_names[current_step - 1] if current_step <= len(step_names) else "Unknown"
-    
-    st.sidebar.markdown(f"""
-    <div style="background: var(--secondary-background-color); padding: 1rem; border-radius: 8px; margin: 1rem 0; border: 1px solid var(--border-color);">
-        <h4>📍 Current Step</h4>
-        <p><strong>Step {current_step}/6:</strong> {current_step_name}</p>
-        <p><strong>Status:</strong> In Progress</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
     # Step status - Dynamic based on current progress
     current_step = get_current_step(session_manager)
     
@@ -836,17 +825,22 @@ def render_sidebar():
         "Text Classification"
     ]
     
-    step_status_html = ""
+    # Create clickable step status buttons
+    st.sidebar.markdown("### 📋 Navigation")
+    
     for i, step_name in enumerate(step_names, 1):
         if i < current_step:
             status_icon = "✅"
             status_text = "Completed"
+            button_color = "primary"
         elif i == current_step:
             status_icon = "🔄"
             status_text = "Current"
+            button_color = "secondary"
         else:
             status_icon = "⏳"
             status_text = "Pending"
+            button_color = "tertiary"
         
         # Check if step has data to show completion status
         step_data = session_manager.get_step_data(i)
@@ -854,46 +848,34 @@ def render_sidebar():
             if i == 1 and 'dataframe' in step_data:
                 status_icon = "✅"
                 status_text = "Completed"
+                button_color = "primary"
             elif i == 2 and step_data.get('completed', False):  # Step 2 (Column Selection & Preprocessing)
                 status_icon = "✅"
                 status_text = "Completed"
+                button_color = "primary"
             elif i == 3 and step_data.get('completed', False):  # Step 3 (Model Configuration)
                 status_icon = "✅"
                 status_text = "Completed"
+                button_color = "primary"
             elif i == 4 and step_data.get('completed', False):  # Step 4 (Training Execution)
                 status_icon = "✅"
                 status_text = "Completed"
+                button_color = "primary"
         
-        step_status_html += f'<p>{status_icon} Step {i}: {step_name} ({status_text})</p>'
-    
-    st.sidebar.markdown(f"""
-    <div style="background: var(--secondary-background-color); padding: 1rem; border-radius: 8px; margin: 1rem 0; border: 1px solid var(--border-color);">
-        <h4>📋 Step Status</h4>
-        {step_status_html}
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Quick actions
-    if st.sidebar.button("🔄 Reset Step", use_container_width=True):
-        session_manager = SessionManager()
-        current_step = get_current_step(session_manager)
-        if current_step > 1:
-            # Reset to step 1
-            session_manager.set_current_step(1)
-            st.sidebar.success(f"Reset from Step {current_step} to Step 1!")
-        else:
-            # Reset current step data and current_step
-            session_manager.reset_session()
-            session_manager.set_current_step(1)
-            st.sidebar.success("Step 1 reset!")
-        st.rerun()
-    
-    if st.sidebar.button("💾 Save Progress", use_container_width=True):
-        session_manager = SessionManager()
-        current_step = get_current_step(session_manager)
-        # Save current step to ensure progress is preserved
-        session_manager.set_current_step(current_step)
-        st.sidebar.success(f"Progress saved! Current step: {current_step}")
+        # Create clickable button for each step
+        if st.sidebar.button(
+            f"{status_icon} Step {i}: {step_name}",
+            type=button_color,
+            use_container_width=True,
+            key=f"step_nav_{i}",
+            help=None,
+
+        ):
+            # Navigate to selected step
+            session_manager.set_current_step(i)
+            st.sidebar.success(f"🚀 Navigated to Step {i}: {step_name}")
+            st.rerun()
+        
 
 def get_current_step(session_manager):
     """Get current step from session manager"""
@@ -1385,12 +1367,24 @@ def render_step3_wireframe():
             value="SVM" in existing_models,
             help="SVM classifier with kernel methods"
         )
+        
+        logistic_regression = st.checkbox(
+            "☑️ Logistic Regression (Supervised)",
+            value="Logistic Regression" in existing_models,
+            help="Logistic Regression classifier with multinomial support"
+        )
+        
+        linear_svc = st.checkbox(
+            "☑️ Linear SVC (Supervised)",
+            value="Linear SVC" in existing_models,
+            help="Linear Support Vector Classification"
+        )
     
     # KNN Advanced Configuration Section (only show if KNN is selected)
     if knn_model:
         with st.expander("🎯 KNN Advanced Configuration", expanded=False):
             st.markdown("**🔍 KNN Parameter Optimization:**")
-            
+                     
             # Optimization Type Selection with Manual Option
             st.markdown("### 🎯 **Chọn phương pháp tối ưu KNN:**")
             
@@ -1454,12 +1448,15 @@ def render_step3_wireframe():
                 with col1:
                     knn_cv_folds = st.slider(
                         "🔄 **Cross-Validation Folds:**",
-                        min_value=3,
+                        min_value=2,
                         max_value=10,
                         value=3,
                         step=1,
-                        help="Số folds cho cross-validation"
+                        help="Số folds cho cross-validation (sẽ tự động điều chỉnh nếu class quá nhỏ)"
                     )
+                    
+                    # Show warning about CV fold requirements
+                    st.caption("⚠️ **Lưu ý**: CV folds sẽ tự động điều chỉnh dựa trên số lượng mẫu nhỏ nhất trong mỗi class")
                     
                 with col2:
                     knn_scoring = st.selectbox(
@@ -1475,12 +1472,15 @@ def render_step3_wireframe():
                 with col1:
                     knn_cv_folds = st.slider(
                         "🔄 **Cross-Validation Folds:**",
-                        min_value=3,
+                        min_value=2,
                         max_value=10,
                         value=3,
                         step=1,
-                        help="Số folds cho cross-validation"
+                        help="Số folds cho cross-validation (sẽ tự động điều chỉnh nếu class quá nhỏ)"
                     )
+                    
+                    # Show warning about CV fold requirements
+                    st.caption("⚠️ **Lưu ý**: CV folds sẽ tự động điều chỉnh dựa trên số lượng mẫu nhỏ nhất trong mỗi class")
                     
                 with col2:
                     knn_scoring = st.selectbox(
@@ -1500,10 +1500,6 @@ def render_step3_wireframe():
                               f"Metric={current_config.get('metric', 'Not set')}")
                 else:
                     score_display = f"{current_config.get('best_score', 0):.4f}" if current_config.get('best_score') is not None else "N/A"
-                    st.success(f"✅ **Optimized Config**: K={current_config.get('k_value', 'Not set')}, "
-                              f"Weights={current_config.get('weights', 'Not set')}, "
-                              f"Metric={current_config.get('metric', 'Not set')}, "
-                              f"Score={score_display}")
             else:
                 st.warning("⚠️ **Current Config**: No configuration set")
             
@@ -1564,23 +1560,36 @@ def render_step3_wireframe():
                         # Calculate adaptive K range based on sample size (for embeddings)
                         n_samples = X_train.shape[0]  
                         n_classes = len(np.unique(y_train))
-                        k_sqrt = int(np.sqrt(n_samples))
-                        k_min = max(3, k_sqrt // 2)
-                        k_max = min(31, 2 * k_sqrt)
                         
-                        # Ensure odd numbers for better performance
-                        if k_min % 2 == 0:
-                            k_min += 1
-                        if k_max % 2 == 0:
-                            k_max -= 1
+                        # Check class distribution and adjust CV folds if needed
+                        from collections import Counter
+                        class_counts = Counter(y_train)
+                        min_class_samples = min(class_counts.values())
                         
-                        # Create K range for embeddings (same as notebook)
-                        k_range = list(range(k_min, k_max + 1, 2))
+                        # Adjust CV folds based on smallest class size
+                        original_cv_folds = knn_cv_folds
+                        if min_class_samples < knn_cv_folds:
+                            knn_cv_folds = max(2, min_class_samples)
+                       
+                        # Ensure we have enough samples for CV
+                        if n_samples < 10:
+                            st.error("❌ Sample size too small for KNN optimization. Need at least 10 samples.")
+                            return
+                        
+                        # Always use full K range from 3 to 31 for comprehensive benchmarking
+                        k_range = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]
+                        
+                        # Log the K range being used
+                        st.toast(f"🔍 **Using comprehensive K range**: {k_range}")
+                        
+                        # Validate K range
+                        if not k_range:
+                            st.error("❌ Invalid K range generated. Using default range.")
+                            k_range = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]
                         # Run optimization using KNNModel methods
                         with st.spinner("🔄 Running KNN optimization with embeddings..."):
                             from models.classification.knn_model import KNNModel
                             knn_model = KNNModel()
-                            st.info(f"📊 K range: {k_range} (based on √{n_samples} samples)")
                             
                             if knn_optimization_type == "Optimal K (Cosine Metric)":
                                 st.info("🎯 **Using determine_optimal_k** from KNNModel (cosine metric only)")
@@ -1589,7 +1598,8 @@ def render_step3_wireframe():
                                     cv_folds=knn_cv_folds, 
                                     scoring=knn_scoring,
                                     k_range=k_range,
-                                    plot_results=False
+                                    plot_results=False,
+                                    use_gpu=True
                                 )
                                 
                                 best_params = results['best_params']
@@ -1605,16 +1615,28 @@ def render_step3_wireframe():
                                     'best_score': best_score
                                 }
                                 
+                                # Store benchmark data for plotting
+                                st.session_state.knn_benchmark_data = {
+                                    'best_params': best_params,
+                                    'best_score': best_score,
+                                    'cv_results': results.get('cv_results', results),
+                                    'param_grid': results.get('param_grid', {'n_neighbors': k_range, 'weights': ['uniform', 'distance']}),
+                                    'n_samples': n_samples,
+                                    'n_classes': n_classes
+                                }
+                                st.session_state.show_knn_benchmark = True
+                                
                                 st.success(f"✅ **Optimal K Found**: {best_params['n_neighbors']}")
                                 st.success(f"🏆 **Best Score**: {best_score:.4f}")
                                 
                             else:  # Grid Search
-                                st.info("🔍 **Using tune_hyperparameters** from KNNModel (all metrics)")
+                                # Use the adjusted CV folds from above
                                 results = knn_model.tune_hyperparameters(
                                     X_train, y_train,
-                                    cv_folds=knn_cv_folds,
+                                    cv_folds=knn_cv_folds,  # This is already adjusted above
                                     scoring=knn_scoring,
-                                    k_range=k_range
+                                    k_range=k_range,
+                                    use_gpu=True
                                 )
                                 
                                 best_params = results['best_params']
@@ -1629,6 +1651,17 @@ def render_step3_wireframe():
                                     'scoring_metric': knn_scoring,
                                     'best_score': best_score
                                 }
+                                
+                                # Store benchmark data for plotting
+                                st.session_state.knn_benchmark_data = {
+                                    'best_params': best_params,
+                                    'best_score': best_score,
+                                    'cv_results': results.get('cv_results', results),
+                                    'param_grid': results.get('param_grid', {'n_neighbors': k_range, 'weights': ['uniform', 'distance']}),
+                                    'n_samples': n_samples,
+                                    'n_classes': n_classes
+                                }
+                                st.session_state.show_knn_benchmark = True
                                 
                                 st.success(f"✅ **Grid Search Complete**: K={best_params['n_neighbors']}")
                                 st.success(f"🏆 **Best Score**: {best_score:.4f}")
@@ -1674,6 +1707,50 @@ def render_step3_wireframe():
                             help="Xóa cấu hình KNN hiện tại"):
                     del st.session_state.knn_config
                     st.rerun()
+                
+                # Show benchmark popup with plot if available
+                if st.session_state.get('show_knn_benchmark', False) and 'knn_benchmark_data' in st.session_state:
+                    with st.expander("📊 KNN Optimization Benchmark Results", expanded=True):
+                        benchmark_data = st.session_state.knn_benchmark_data
+
+                        # Show benchmark plot if available
+                        if 'cv_results' in benchmark_data and benchmark_data['cv_results']:
+                            try:
+                                # Get CV results and param grid
+                                cv_results = benchmark_data['cv_results']
+                                param_grid = benchmark_data.get('param_grid', {})
+                                best_params = benchmark_data.get('best_params', {})
+                                best_score = benchmark_data.get('best_score', 0.0)
+
+                                if param_grid and 'n_neighbors' in param_grid and 'weights' in param_grid:
+                                    # Use the KNN model's plotting method
+                                    from models.classification.knn_model import KNNModel
+
+                                    # Create a temporary KNN model instance to use its plotting method
+                                    temp_knn = KNNModel()
+                                    fig = temp_knn._plot_k_benchmark(
+                                        cv_results=cv_results,
+                                        param_grid=param_grid,
+                                        best_params=best_params,
+                                        best_score=best_score
+                                    )
+
+                                    if fig is not None:
+                                        # Display the plot in Streamlit
+                                        st.pyplot(fig)
+                                        plt.close(fig)
+                                    else:
+                                        st.info("📊 Could not generate benchmark plot - check debug info above")
+
+                                else:
+                                    st.info("📊 Plot data not available - missing required parameters")
+
+                            except Exception as e:
+                                st.error(f"❌ Error creating benchmark plot: {str(e)}")
+                                st.write("🔍 **Full Error Details:**")
+                                import traceback
+                                st.code(traceback.format_exc())
+
     
     # Text Vectorization Methods Section
     st.markdown("""
@@ -1717,6 +1794,10 @@ def render_step3_wireframe():
         selected_models.append("K-Means Clustering")
     if svm_model:
         selected_models.append("Support Vector Machine")
+    if logistic_regression:
+        selected_models.append("Logistic Regression")
+    if linear_svc:
+        selected_models.append("Linear SVC")
     
     # Collect selected vectorization methods
     selected_vectorization = []
@@ -2175,7 +2256,6 @@ def render_step4_wireframe():
                                 'Precision': f"{res.get('test_metrics', {}).get('precision', 0):.3f}",
                                 'Recall': f"{res.get('test_metrics', {}).get('recall', 0):.3f}",
                                 'F1 Score': f"{res.get('f1_score', 0):.3f}",
-                                'F1 Balance': f"{res.get('f1_balance_score', 0):.3f}±{res.get('f1_variation_score', 0):.3f}",
                                 'Overfitting': res.get('overfitting_status', 'N/A').replace('_', ' ').title(),
                                 'Training Time': f"{res.get('training_time', 0):.2f}s"
                             })

@@ -7,6 +7,8 @@ from .classification.knn_model import KNNModel
 from .classification.decision_tree_model import DecisionTreeModel
 from .classification.naive_bayes_model import NaiveBayesModel
 from .classification.svm_model import SVMModel
+from .classification.logistic_regression_model import LogisticRegressionModel
+from .classification.linear_svc_model import LinearSVCModel
 
 
 def register_all_models(registry):
@@ -80,6 +82,36 @@ def register_all_models(registry):
             'supports_sparse': True,
             'has_feature_importance': True,  # Only for linear kernel
             'supports_probability': False  # Set to True if probability=True
+        }
+    )
+    
+    registry.register_model(
+        'logistic_regression',
+        LogisticRegressionModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'numerical',
+            'description': 'Logistic Regression classifier with multinomial support',
+            'parameters': ['C', 'max_iter', 'multi_class', 'solver'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True
+        }
+    )
+    
+    registry.register_model(
+        'linear_svc',
+        LinearSVCModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'numerical',
+            'description': 'Linear Support Vector Classification',
+            'parameters': ['C', 'loss', 'max_iter', 'dual'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': False
         }
     )
     

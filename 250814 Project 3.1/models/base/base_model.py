@@ -58,8 +58,8 @@ class BaseModel(ABC):
         
         return metrics
     
-    def get_params(self) -> Dict[str, Any]:
-        """Get model parameters"""
+    def get_params(self, deep: bool = True) -> Dict[str, Any]:
+        """Get model parameters (compatible with scikit-learn)"""
         return self.model_params.copy()
     
     def set_params(self, **params) -> 'BaseModel':

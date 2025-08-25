@@ -11,6 +11,8 @@ from .clustering.kmeans_model import KMeansModel
 from .classification.knn_model import KNNModel
 from .classification.decision_tree_model import DecisionTreeModel
 from .classification.naive_bayes_model import NaiveBayesModel
+from .classification.logistic_regression_model import LogisticRegressionModel
+from .classification.linear_svc_model import LinearSVCModel
 from .utils.model_factory import ModelFactory
 from .utils.model_registry import ModelRegistry
 from .utils.validation_manager import ValidationManager
@@ -42,6 +44,8 @@ __all__ = [
     'KNNModel',
     'DecisionTreeModel',
     'NaiveBayesModel',
+    'LogisticRegressionModel',
+    'LinearSVCModel',
     'ModelFactory',
     'ModelRegistry',
     'ValidationManager',
