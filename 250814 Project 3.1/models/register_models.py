@@ -22,9 +22,11 @@ def register_all_models(registry):
             'category': 'clustering',
             'task_type': 'unsupervised',
             'data_type': 'numerical',
-            'description': 'K-Means clustering with SVD optimization',
-            'parameters': ['n_clusters'],
-            'supports_sparse': True
+            'description': 'K-Means clustering with optimal K detection and SVD optimization',
+            'parameters': ['n_clusters', 'use_optimal_k'],
+            'supports_sparse': True,
+            'has_optimal_k_detection': True,
+            'has_optimization_plots': True
         }
     )
     
@@ -49,10 +51,12 @@ def register_all_models(registry):
             'category': 'classification',
             'task_type': 'supervised',
             'data_type': 'mixed',
-            'description': 'Decision Tree classifier',
-            'parameters': ['random_state'],
+            'description': 'Decision Tree classifier with advanced pruning techniques',
+            'parameters': ['random_state', 'pruning_method', 'cv_folds'],
             'supports_sparse': False,
-            'has_feature_importance': True
+            'has_feature_importance': True,
+            'has_pruning': True,
+            'pruning_methods': ['ccp', 'rep', 'mdl', 'cv_optimization']
         }
     )
     

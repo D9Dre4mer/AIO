@@ -244,11 +244,27 @@ class TextVectorizer:
         
     def get_feature_names_bow(self) -> List[str]:
         """Get feature names from BoW vectorizer"""
-        return self.bow_vectorizer.get_feature_names_out().tolist()
+        try:
+            if hasattr(self.bow_vectorizer, 'vocabulary_') and self.bow_vectorizer.vocabulary_:
+                return self.bow_vectorizer.get_feature_names_out().tolist()
+            else:
+                print("⚠️ Warning: BoW vectorizer not fitted yet")
+                return []
+        except Exception as e:
+            print(f"⚠️ Warning: Could not get BoW feature names: {e}")
+            return []
         
     def get_feature_names_tfidf(self) -> List[str]:
         """Get feature names from TF-IDF vectorizer"""
-        return self.tfidf_vectorizer.get_feature_names_out().tolist()
+        try:
+            if hasattr(self.tfidf_vectorizer, 'vocabulary_') and self.tfidf_vectorizer.vocabulary_:
+                return self.tfidf_vectorizer.get_feature_names_out().tolist()
+            else:
+                print("⚠️ Warning: TF-IDF vectorizer not fitted yet")
+                return []
+        except Exception as e:
+            print(f"⚠️ Warning: Could not get TF-IDF feature names: {e}")
+            return []
 
 
 def demonstrate_text_encoders():

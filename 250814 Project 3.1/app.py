@@ -755,6 +755,11 @@ def render_navigation_buttons():
             elif current_step == 2:
                 step_data = session_manager.get_step_data(2)
                 if step_data and step_data.get('completed', False):
+                    # Clear preview cache when moving to next step
+                    if 'step2_preview_cache' in st.session_state:
+                        del st.session_state.step2_preview_cache
+                        print("🧹 [NAVIGATION] Cleared Step 2 preview cache")
+                    
                     st.success("✅ Step 2 completed! Moving to Step 3...")
                     # Move to step 3
                     session_manager.set_current_step(3)
@@ -1143,17 +1148,157 @@ def render_step2_wireframe():
             help="Optimize data types for memory efficiency"
         )
     
+    # Advanced Preprocessing Options
+    st.markdown("---")
+    st.markdown("""
+    <h4 style="color: var(--text-color); margin: 1rem 0 0.5rem 0;">🚀 Advanced Preprocessing Options:</h4>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        rare_words_removal = st.checkbox(
+            "🔍 Rare Words Removal",
+            value=False,
+            help="Remove words that appear very rarely (improves model performance)"
+        )
+        
+        if rare_words_removal:
+            rare_words_threshold = st.slider(
+                "📊 Minimum Word Frequency:",
+                min_value=1,
+                max_value=10,
+                value=2,
+                help="Words appearing less than this many times will be removed"
+            )
+        
+        lemmatization = st.checkbox(
+            "🌿 Lemmatization",
+            value=False,
+            help="Convert words to their base form (e.g., 'running' → 'run')"
+        )
+    
+    with col2:
+        context_aware_stopwords = st.checkbox(
+            "🧠 Context-aware Stopwords",
+            value=False,
+            help="Intelligently remove stopwords based on context and domain"
+        )
+        
+        if context_aware_stopwords:
+            stopwords_aggressiveness = st.selectbox(
+                "⚡ Stopwords Aggressiveness:",
+                options=["Conservative", "Moderate", "Aggressive"],
+                index=1,
+                help="How aggressively to remove stopwords"
+            )
+        
+        phrase_detection = st.checkbox(
+            "🔗 Phrase Detection",
+            value=False,
+            help="Detect and preserve important phrases (e.g., 'machine learning')"
+        )
+        
+        if phrase_detection:
+            min_phrase_freq = st.slider(
+                "📊 Minimum Phrase Frequency:",
+                min_value=1,
+                max_value=20,
+                value=3,
+                help="Phrases appearing less than this many times will not be preserved"
+            )
+    
     # Column Preview Section
     st.markdown("""
     <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">👀 Column Preview:</h3>
     """, unsafe_allow_html=True)
     
     # Show sample data from selected columns
-    preview_df = df[[selected_text_column, selected_label_column]].head(10)
-    st.dataframe(preview_df, use_container_width=True)
+    if 'step2_preview_cache' not in st.session_state:
+        # Initial preview - show original data
+        preview_df = df[[selected_text_column, selected_label_column]].head(5)
+        st.dataframe(preview_df, use_container_width=True)
+        st.caption("📝 **Original data preview** - Apply preprocessing to see transformed data")
+    else:
+        # Show cached preview with preprocessing applied
+        cached_preview = st.session_state.step2_preview_cache
+        st.dataframe(cached_preview, use_container_width=True)
+     
+        # Add option to clear cache and show original data
+        if st.button("🔄 Show Original Data", key="show_original_preview"):
+            del st.session_state.step2_preview_cache
+            st.rerun()
     
     # Save configuration button
     if st.button("💾 Save Column Configuration", type="primary", use_container_width=True):
+        # Create preview cache with preprocessing applied
+        preview_data = []
+        sample_df = df[[selected_text_column, selected_label_column]].head(5)
+        
+        for idx, row in sample_df.iterrows():
+            text_value = str(row[selected_text_column])
+            label_value = str(row[selected_label_column])
+            
+            # Apply text cleaning if enabled
+            if text_cleaning:
+                # Remove \n characters and extra spaces
+                text_value = text_value.strip().replace("\n", " ")
+                # Remove special characters (keep only letters, numbers, spaces)
+                import re
+                text_value = re.sub(r'[^\w\s]', '', text_value)
+                # Remove digits
+                text_value = re.sub(r'\d+', '', text_value)
+                # Remove extra spaces
+                text_value = re.sub(r'\s+', ' ', text_value).strip()
+                # Convert to lowercase
+                text_value = text_value.lower()
+            
+            # Apply advanced preprocessing options using DataLoader functions
+            if rare_words_removal or lemmatization or context_aware_stopwords or phrase_detection:
+                # Create preprocessing config for preview
+                preview_preprocessing_config = {
+                    'text_cleaning': text_cleaning,
+                    'rare_words_removal': rare_words_removal,
+                    'rare_words_threshold': rare_words_threshold if 'rare_words_threshold' in locals() else 2,
+                    'lemmatization': lemmatization,
+                    'context_aware_stopwords': context_aware_stopwords,
+                    'stopwords_aggressiveness': stopwords_aggressiveness if 'stopwords_aggressiveness' in locals() else 'Moderate',
+                    'phrase_detection': phrase_detection,
+                    'min_phrase_freq': min_phrase_freq if 'min_phrase_freq' in locals() else 3
+                }
+                
+                # Create temporary DataLoader instance for preview
+                from data_loader import DataLoader
+                temp_loader = DataLoader()
+                temp_loader.samples = [{'abstract': text_value, 'categories': label_value}]
+                
+                # Apply preprocessing using DataLoader's actual logic
+                temp_loader.preprocess_samples(preview_preprocessing_config)
+                
+                if temp_loader.preprocessed_samples:
+                    # Get the preprocessed text
+                    text_value = temp_loader.preprocessed_samples[0]['text']
+                    label_value = temp_loader.preprocessed_samples[0]['label']
+            
+            # Apply data validation if enabled
+            if data_validation:
+                if not text_value.strip() or not label_value.strip():
+                    continue  # Skip invalid samples
+            
+            # Apply memory optimization if enabled
+            if memory_optimization:
+                text_value = str(text_value)
+                label_value = str(label_value)
+            
+            preview_data.append({
+                selected_text_column: text_value,
+                selected_label_column: label_value
+            })
+        
+        # Store preview cache in session state
+        if preview_data:
+            st.session_state.step2_preview_cache = pd.DataFrame(preview_data)
+        
         # Store step 2 configuration with preprocessing options
         step2_config = {
             'text_column': selected_text_column,
@@ -1170,12 +1315,21 @@ def render_step2_wireframe():
             'category_mapping': category_mapping,
             'data_validation': data_validation,
             'memory_optimization': memory_optimization,
+            # Advanced preprocessing options
+            'rare_words_removal': rare_words_removal,
+            'rare_words_threshold': rare_words_threshold if rare_words_removal else 2,
+            'lemmatization': lemmatization,
+            'context_aware_stopwords': context_aware_stopwords,
+            'stopwords_aggressiveness': stopwords_aggressiveness if context_aware_stopwords else 'Moderate',
+            'phrase_detection': phrase_detection,
+            'min_phrase_freq': min_phrase_freq if phrase_detection else 3,
             'completed': True
         }
         
         session_manager.set_step_config('step2', step2_config)
         
-        st.toast("Column configuration and preprocessing options saved! Ready for Step 3.")
+        st.toast("Column configuration and preprocessing options saved! Preview updated with preprocessing applied.")
+        st.rerun()
         
         # Use the actual_text_samples already calculated above
         # Get sampling configuration to show actual samples that will be used
@@ -1289,7 +1443,6 @@ def render_step3_wireframe():
     
     # Display final split information
     st.info(f"📊 **Final Data Split**: Training: {final_training}% | Test: {final_test}%")
-    st.info(f"💡 **Note**: Validation is handled automatically by Cross-Validation folds")
     
     # Cross-Validation Configuration
     st.markdown("**🔄 Cross-Validation:**")
@@ -1309,7 +1462,6 @@ def render_step3_wireframe():
         if final_training > 0 and cv_folds > 0:
             fold_percentage = final_training / cv_folds
             st.info(f"📊 **Each CV Fold**: ~{fold_percentage:.1f}% of training data")
-            st.info(f"💡 **Validation**: Each fold automatically splits its data into train/validation")
    
     with col2:
         random_state = st.number_input(
@@ -1388,13 +1540,25 @@ def render_step3_wireframe():
             # Optimization Type Selection with Manual Option
             st.markdown("### 🎯 **Chọn phương pháp tối ưu KNN:**")
             
-            knn_optimization_type = st.selectbox(
-                "🔍 **Optimization Strategy:**",
-                options=["Manual K Input", "Optimal K (Cosine Metric)", "Grid Search (All Parameters)"],
-                index=0,
-                help="Chọn cách thiết lập tham số KNN"
-            )
-            
+            col1, col2 = st.columns(2)
+            with col1:
+                knn_optimization_type = st.selectbox(
+                    "🔍 **Optimization Strategy:**",
+                    options=["Manual K Input", "Optimal K (Cosine Metric)", "Grid Search (All Parameters)"],
+                    index=0,
+                    help="Chọn cách thiết lập tham số KNN"
+                )
+            with col2:
+                knn_vectorizer_type = st.selectbox(
+                    "🧬 **Vectorization Method:**",
+                    options=[
+                        "Sentence Embeddings (Recommended)",
+                        "TF-IDF Vectorization",
+                        "Bag of Words (BoW)"
+                    ],
+                    index=0,
+                    help="Chọn phương pháp vector hóa văn bản cho KNN"
+                )
             st.markdown("---")
             
             # Show different UI based on optimization type
@@ -1464,7 +1628,7 @@ def render_step3_wireframe():
                         options=["f1_macro", "accuracy", "precision_macro", "recall_macro"],
                         index=0,
                         help="Metric đánh giá model"
-                    )
+                    )              
             
             else:  # Grid Search               
                 # CV Configuration for Grid Search  

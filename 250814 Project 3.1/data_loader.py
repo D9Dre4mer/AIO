@@ -12,7 +12,10 @@ import numpy as np
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 
-from config import CACHE_DIR, CATEGORIES_TO_SELECT, MAX_SAMPLES, TEST_SIZE, RANDOM_STATE
+from config import (
+    CACHE_DIR, CATEGORIES_TO_SELECT, MAX_SAMPLES, 
+    TEST_SIZE, RANDOM_STATE
+)
 
 
 class DataLoader:
@@ -437,29 +440,256 @@ class DataLoader:
             print("Abstract:", sample['abstract'])
             print("#" * 20 + "\n")
             
-    def preprocess_samples(self) -> None:
-        """Preprocess the selected samples"""
+    def preprocess_samples(self, preprocessing_config: Dict = None) -> None:
+        """Preprocess the selected samples with configurable options"""
         self.preprocessed_samples = []
+        
+        # Use default preprocessing config if none provided
+        if preprocessing_config is None:
+            preprocessing_config = {
+                'text_cleaning': True,
+                'data_validation': True,
+                'category_mapping': True,
+                'memory_optimization': True,
+                # Advanced preprocessing options with defaults
+                'rare_words_removal': False,
+                'rare_words_threshold': 2,
+                'lemmatization': False,
+                'context_aware_stopwords': False,
+                'stopwords_aggressiveness': 'Moderate',
+                'phrase_detection': False,
+                'min_phrase_freq': 3
+            }
+        
+        print(f"🔧 [DATALOADER] Applying preprocessing with config: "
+              f"{preprocessing_config}")
         
         for s in self.samples:
             abstract = s['abstract']
             
-            # Remove \n characters in the middle and leading/trailing spaces
-            abstract = abstract.strip().replace("\n", " ")
+            # Text cleaning (configurable)
+            if preprocessing_config.get('text_cleaning', True):
+                # Remove \n characters in the middle and leading/trailing spaces
+                abstract = abstract.strip().replace("\n", " ")
+                
+                # Remove special characters
+                abstract = re.sub(r'[^\w\s]', '', abstract)
+                
+                # Remove digits
+                abstract = re.sub(r'\d+', '', abstract)
+                
+                # Remove extra spaces
+                abstract = re.sub(r'\s+', ' ', abstract).strip()
+                
+                # Convert to lower case
+                abstract = abstract.lower()
             
-            # Remove special characters
-            abstract = re.sub(r'[^\w\s]', '', abstract)
+            # Apply advanced preprocessing options
+            if preprocessing_config.get('rare_words_removal', False):
+                # Professional rare words removal with global frequency analysis (ML standard)
+                try:
+                    import nltk
+                    try:
+                        # Download required NLTK data
+                        nltk.data.find('tokenizers/punkt')
+                    except LookupError:
+                        nltk.download('punkt', quiet=True)
+                    
+                    from nltk.tokenize import word_tokenize
+                    
+                    # Get global word frequencies from all samples (ML standard approach)
+                    if not hasattr(self, '_global_word_freq'):
+                        print("🔧 [DATALOADER] Computing global word frequencies for rare words removal...")
+                        self._global_word_freq = {}
+                        
+                        # Count word frequencies across all samples (including stopwords)
+                        for sample in self.samples:
+                            sample_tokens = word_tokenize(sample['abstract'].lower())
+                            for word in sample_tokens:
+                                if len(word) > 1:  # Only exclude single characters
+                                    self._global_word_freq[word] = self._global_word_freq.get(word, 0) + 1
+                        
+                        print(f"🔧 [DATALOADER] Global word frequencies computed: {len(self._global_word_freq)} unique words")
+                    
+                    # Apply rare words removal using global frequencies
+                    tokens = word_tokenize(abstract.lower())
+                    
+                    # Filter tokens based on global frequency threshold
+                    threshold = preprocessing_config.get('rare_words_threshold', 2)
+                    filtered_tokens = []
+                    
+                    for word in tokens:
+                        # Keep only words above frequency threshold (including stopwords if they meet threshold)
+                        if self._global_word_freq.get(word.lower(), 0) >= threshold:
+                            filtered_tokens.append(word)
+                    
+                    abstract = ' '.join(filtered_tokens)
+                    
+                    removed_count = len(tokens) - len(filtered_tokens)
+                    print(f"🔧 [DATALOADER] Applied ML-standard rare words removal: "
+                          f"{len(tokens)} → {len(filtered_tokens)} tokens "
+                          f"(removed {removed_count} rare words with global freq < {threshold})")
+                        
+                except ImportError:
+                    # Fallback - no external libraries available for rare words removal
+                    print("⚠️ [DATALOADER] NLTK not available, skipping rare words removal")
+                    pass
             
-            # Remove digits
-            abstract = re.sub(r'\d+', '', abstract)
+            if preprocessing_config.get('lemmatization', False):
+                # Professional lemmatization using NLTK WordNetLemmatizer
+                try:
+                    import nltk
+                    try:
+                        # Download WordNet if not available
+                        nltk.data.find('corpora/wordnet')
+                    except LookupError:
+                        nltk.download('wordnet', quiet=True)
+                        nltk.download('averaged_perceptron_tagger', quiet=True)
+                    
+                    from nltk.stem import WordNetLemmatizer
+                    from nltk.corpus import wordnet
+                    
+                    def get_wordnet_pos(word):
+                        """Map POS tag to first character lemmatize() accepts"""
+                        tag = nltk.pos_tag([word])[0][1][0].upper()
+                        tag_dict = {"J": wordnet.ADJ,
+                                  "N": wordnet.NOUN,
+                                  "V": wordnet.VERB,
+                                  "R": wordnet.ADV}
+                        return tag_dict.get(tag, wordnet.NOUN)
+                    
+                    lemmatizer = WordNetLemmatizer()
+                    words = abstract.split()
+                    lemmatized_words = []
+                    
+                    for word in words:
+                        # Get POS tag and lemmatize accordingly
+                        pos = get_wordnet_pos(word)
+                        lemmatized_word = lemmatizer.lemmatize(word, pos)
+                        lemmatized_words.append(lemmatized_word)
+                    
+                    abstract = ' '.join(lemmatized_words)
+                    print(f"🔧 [DATALOADER] Applied NLTK lemmatization: "
+                          f"{len(words)} words processed")
+                    
+                except ImportError:
+                    # Fallback - no external libraries available for lemmatization
+                    print("⚠️ [DATALOADER] NLTK not available, skipping lemmatization")
+                    pass
             
-            # Remove extra spaces
-            abstract = re.sub(r'\s+', ' ', abstract).strip()
+            if preprocessing_config.get('context_aware_stopwords', False):
+                # Professional stopwords removal using NLTK or stop-words library only
+                try:
+                    # Try to use NLTK first (more comprehensive)
+                    import nltk
+                    try:
+                        # Download stopwords if not available
+                        nltk.data.find('corpora/stopwords')
+                    except LookupError:
+                        nltk.download('stopwords', quiet=True)
+                    
+                    from nltk.corpus import stopwords
+                    english_stopwords = set(stopwords.words('english'))
+                    
+                    # Apply aggressiveness level using only library stopwords
+                    aggressiveness = preprocessing_config.get('stopwords_aggressiveness', 'Moderate')
+                    if aggressiveness == 'Conservative':
+                        # Take first 20 most common stopwords from NLTK
+                        all_stopwords = set(list(english_stopwords)[:20])
+                    elif aggressiveness == 'Aggressive':
+                        # Use all NLTK stopwords
+                        all_stopwords = english_stopwords
+                    else:  # 'Moderate' - use default NLTK stopwords
+                        all_stopwords = english_stopwords
+                    
+                    words = abstract.split()
+                    filtered_words = [word for word in words if word.lower() not in all_stopwords]
+                    abstract = ' '.join(filtered_words)
+                    
+                    print(f"🔧 [DATALOADER] Applied {aggressiveness} stopwords removal using NLTK: "
+                          f"{len(words)} → {len(filtered_words)} words")
+                    
+                except ImportError:
+                    # Fallback to stop-words library if NLTK not available
+                    try:
+                        from stop_words import get_stop_words
+                        english_stopwords = set(get_stop_words('en'))
+                        
+                        # Apply aggressiveness level for stop-words library
+                        aggressiveness = preprocessing_config.get('stopwords_aggressiveness', 'Moderate')
+                        if aggressiveness == 'Conservative':
+                            # Take first 20 most common stopwords from the library
+                            all_stopwords = set(list(english_stopwords)[:20])
+                        elif aggressiveness == 'Aggressive':
+                            all_stopwords = english_stopwords
+                        else:  # 'Moderate'
+                            all_stopwords = english_stopwords
+                        
+                        words = abstract.split()
+                        filtered_words = [word for word in words if word.lower() not in all_stopwords]
+                        abstract = ' '.join(filtered_words)
+                        
+                        print(f"🔧 [DATALOADER] Applied {aggressiveness} stopwords removal using stop-words library: "
+                              f"{len(words)} → {len(filtered_words)} words")
+                        
+                    except ImportError:
+                        # Final fallback - no external libraries available
+                        print("⚠️ [DATALOADER] NLTK and stop-words not available, skipping stopwords removal")
+                        pass
             
-            # Convert to lower case
-            abstract = abstract.lower()
+            if preprocessing_config.get('phrase_detection', False):
+                # Professional phrase detection using NLTK or basic n-gram analysis
+                try:
+                    import nltk
+                    try:
+                        # Download required NLTK data
+                        nltk.data.find('tokenizers/punkt')
+                    except LookupError:
+                        nltk.download('punkt', quiet=True)
+                    
+                    from nltk.util import ngrams
+                    from nltk.tokenize import word_tokenize
+                    
+                    # Use NLTK's built-in collocation detection for phrases
+                    min_freq = preprocessing_config.get('min_phrase_freq', 3)
+                    
+                    # Tokenize and create bigrams/trigrams
+                    tokens = word_tokenize(abstract.lower())
+                    bigrams = list(ngrams(tokens, 2))
+                    trigrams = list(ngrams(tokens, 3))
+                    
+                    # Count all bigram and trigram frequencies (no predefined phrases)
+                    phrase_counts = {}
+                    
+                    # Count bigrams
+                    for bigram in bigrams:
+                        phrase = ' '.join(bigram)
+                        phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+                    
+                    # Count trigrams
+                    for trigram in trigrams:
+                        phrase = ' '.join(trigram)
+                        phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
+                    
+                    # Replace frequent phrases with underscore version
+                    replaced_count = 0
+                    for phrase, count in phrase_counts.items():
+                        if count >= min_freq:
+                            # Replace with underscore version
+                            underscore_phrase = phrase.replace(' ', '_')
+                            abstract = abstract.replace(phrase, underscore_phrase)
+                            replaced_count += 1
+                    
+                    print(f"🔧 [DATALOADER] Applied NLTK phrase detection: "
+                          f"found {len(phrase_counts)} phrases, "
+                          f"replaced {replaced_count} with frequency >= {min_freq}")
+                    
+                except ImportError:
+                    # Fallback - no external libraries available for phrase detection
+                    print("⚠️ [DATALOADER] NLTK not available, skipping phrase detection")
+                    pass
             
-            # For the label, we only keep the first part
+            # For the label, we only keep the first part (always applied)
             parts = s['categories'].split(' ')
             category = parts[0].split('.')[0]
             
@@ -468,6 +698,28 @@ class DataLoader:
                 "label": category
             })
             
+        # Apply additional preprocessing options
+        if preprocessing_config.get('data_validation', True):
+            # Remove samples with empty text or labels
+            original_count = len(self.preprocessed_samples)
+            self.preprocessed_samples = [
+                sample for sample in self.preprocessed_samples
+                if sample['text'].strip() and sample['label'].strip()
+            ]
+            removed_count = original_count - len(self.preprocessed_samples)
+            if removed_count > 0:
+                print(f"🧹 [DATALOADER] Data validation removed "
+                      f"{removed_count} invalid samples")
+        
+        if preprocessing_config.get('memory_optimization', True):
+            # Convert text to category for memory efficiency
+            for sample in self.preprocessed_samples:
+                sample['text'] = str(sample['text'])
+        
+        print(f"✅ [DATALOADER] Preprocessing completed: "
+              f"{len(self.preprocessed_samples)} samples")
+        print(f"🔧 [DATALOADER] Applied options: {preprocessing_config}")
+        
         # Print first 3 preprocessed samples
         for sample in self.preprocessed_samples[:3]:
             print(f"Label: {sample['label']}")

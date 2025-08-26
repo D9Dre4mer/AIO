@@ -7,5 +7,7 @@ datasets>=2.0.0
 sentence-transformers>=2.0.0
 torch>=1.9.0
 networkx>=3.0.0
+nltk>=3.8.0
+stop-words>=2018.7.23
 pathlib
 warnings

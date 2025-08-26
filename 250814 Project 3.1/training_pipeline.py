@@ -100,12 +100,25 @@ class StreamlitTrainingPipeline:
             sampling_config = step1_data.get('sampling_config', {})
             text_column = step2_data.get('text_column')
             label_column = step2_data.get('label_column')
-            preprocessing_config = {
+            
+            # Store preprocessing config in instance for later use
+            self.preprocessing_config = {
                 'text_cleaning': step2_data.get('text_cleaning', True),
                 'category_mapping': step2_data.get('category_mapping', True),
                 'data_validation': step2_data.get('data_validation', True),
-                'memory_optimization': step2_data.get('memory_optimization', True)
+                'memory_optimization': step2_data.get('memory_optimization', True),
+                # Advanced preprocessing options
+                'rare_words_removal': step2_data.get('rare_words_removal', False),
+                'rare_words_threshold': step2_data.get('rare_words_threshold', 2),
+                'lemmatization': step2_data.get('lemmatization', False),
+                'context_aware_stopwords': step2_data.get('context_aware_stopwords', False),
+                'stopwords_aggressiveness': step2_data.get('stopwords_aggressiveness', 'Moderate'),
+                'phrase_detection': step2_data.get('phrase_detection', False),
+                'min_phrase_freq': step2_data.get('min_phrase_freq', 3)
             }
+            
+            # Create local variable for return
+            preprocessing_config = self.preprocessing_config
             
             model_config = step3_data.get('data_split', {})
             selected_models = step3_data.get('selected_models', [])
@@ -174,7 +187,15 @@ class StreamlitTrainingPipeline:
                 'text_cleaning': step2_data.get('text_cleaning', True),
                 'category_mapping': step2_data.get('category_mapping', True),
                 'data_validation': step2_data.get('data_validation', True),
-                'memory_optimization': step2_data.get('memory_optimization', True)
+                'memory_optimization': step2_data.get('memory_optimization', True),
+                # Advanced preprocessing options
+                'rare_words_removal': step2_data.get('rare_words_removal', False),
+                'rare_words_threshold': step2_data.get('rare_words_threshold', 2),
+                'lemmatization': step2_data.get('lemmatization', False),
+                'context_aware_stopwords': step2_data.get('context_aware_stopwords', False),
+                'stopwords_aggressiveness': step2_data.get('stopwords_aggressiveness', 'Moderate'),
+                'phrase_detection': step2_data.get('phrase_detection', False),
+                'min_phrase_freq': step2_data.get('min_phrase_freq', 3)
             },
             'model': step3_data.get('data_split', {}),
             'vectorization': step3_data.get('selected_vectorization', []),
@@ -339,6 +360,11 @@ class StreamlitTrainingPipeline:
             if progress_callback:
                 progress_callback(self.current_phase, "Initializing comprehensive evaluation...", 0.05)
 
+            # Initialize pipeline to get preprocessing config
+            init_result = self.initialize_pipeline(df, step1_data, step2_data, step3_data)
+            if init_result['status'] != 'success':
+                return init_result
+
             # Extract configuration
             text_column = step2_data.get('text_column')
             label_column = step2_data.get('label_column')
@@ -443,7 +469,8 @@ class StreamlitTrainingPipeline:
                     selected_models=selected_models,
                     selected_embeddings=selected_vectorization,
                     stop_callback=self.is_training_stopped,  # Pass stop callback
-                    step3_data=step3_data  # Pass Step 3 configuration for KNN
+                    step3_data=step3_data,  # Pass Step 3 configuration for KNN
+                    preprocessing_config=self.preprocessing_config  # Pass preprocessing config from instance
                 )
                 
                 # Update progress based on evaluation progress
@@ -978,7 +1005,8 @@ class StreamlitTrainingPipeline:
         """Create sklearn model instance with configuration from Step 3"""
         
         if 'K-Nearest Neighbors' in model_name:
-            from sklearn.neighbors import KNeighborsClassifier
+            # Use custom KNN model with advanced optimization
+            from models.classification.knn_model import KNNModel
             
             # Get KNN configuration from Step 3 if available
             knn_config = step3_data.get('knn_config', {}) if step3_data else {}
@@ -1005,10 +1033,11 @@ class StreamlitTrainingPipeline:
                 print(f"   • Weights: {weights}")
                 print(f"   • Metric: {metric}")
                 
-                knn_model = KNeighborsClassifier(
+                knn_model = KNNModel(
                     n_neighbors=k_value,
                     weights=weights,
-                    metric=metric
+                    metric=metric,
+                    random_state=random_state
                 )
                 
                 print(f"✅ [KNN] Model created with K={k_value}")
@@ -1033,10 +1062,11 @@ class StreamlitTrainingPipeline:
                     print(f"⚠️ [KNN] Warning: Best K is {best_k}, falling back to default")
                     best_k = 5
                 
-                knn_model = KNeighborsClassifier(
+                knn_model = KNNModel(
                     n_neighbors=best_k,
                     weights=best_weights,
-                    metric=best_metric
+                    metric=best_metric,
+                    random_state=random_state
                 )
                 
                 print(f"✅ [KNN] Model created with OPTIMIZED parameters:")
@@ -1053,31 +1083,162 @@ class StreamlitTrainingPipeline:
                 print(f"   • Weights: uniform (default)")
                 print(f"   • Metric: euclidean (default)")
                 
-                knn_model = KNeighborsClassifier(n_neighbors=5)
+                knn_model = KNNModel(
+                    n_neighbors=5,
+                    weights='uniform',
+                    metric='euclidean',
+                    random_state=random_state
+                )
                 
                 print(f"✅ [KNN] Model created with DEFAULT parameters: K=5")
                 return knn_model
         
-        elif 'Decision Tree' in model_name:
-            from sklearn.tree import DecisionTreeClassifier
-            return DecisionTreeClassifier(random_state=random_state)
+        elif ('Decision Tree' in model_name or 'decision_tree' in model_name.lower()):
+            # Use custom Decision Tree model with advanced pruning
+            from models.classification.decision_tree_model import DecisionTreeModel
+            
+            # Get Decision Tree configuration from Step 3 if available
+            dt_config = step3_data.get('decision_tree_config', {}) if step3_data else {}
+            pruning_method = dt_config.get('pruning_method', 'none')  # Default to 'none' for Windows compatibility
+            cv_folds = dt_config.get('cv_folds', 5)
+            max_depth = dt_config.get('max_depth', None)
+            min_samples_split = dt_config.get('min_samples_split', 2)
+            min_samples_leaf = dt_config.get('min_samples_leaf', 1)
+            
+            print(f"🎯 [Decision Tree] Using CUSTOM model with advanced pruning:")
+            print(f"   • Pruning Method: {pruning_method}")
+            print(f"   • CV Folds: {cv_folds}")
+            print(f"   • Max Depth: {max_depth}")
+            print(f"   • Min Samples Split: {min_samples_split}")
+            print(f"   • Min Samples Leaf: {min_samples_leaf}")
+            print(f"   • GPU Acceleration: True")
+            print(f"   • GPU Library: auto")
+            
+            # GPU configuration - AUTO ENABLE by default
+            use_gpu = True  # Always enable GPU for performance
+            gpu_library = 'auto'  # Auto-select best GPU library
+            
+            # Ensure random_state is an integer
+            safe_random_state = random_state if isinstance(random_state, int) else 42
+            
+            dt_model = DecisionTreeModel(
+                pruning_method=pruning_method,
+                cv_folds=cv_folds,
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                random_state=safe_random_state,
+                use_gpu=use_gpu,           # Enable GPU acceleration
+                gpu_library=gpu_library    # GPU library selection
+            )
+            
+            # Force GPU initialization if requested
+            if use_gpu:
+                dt_model._init_gpu_libraries()
+                # IMPORTANT: After GPU init, check if pruning was disabled on Windows
+                if dt_model.pruning_method == 'none':
+                    print(f"   ✅ Pruning method automatically disabled: {pruning_method} → none")
+            
+            print(f"✅ [Decision Tree] Custom model created with pruning + GPU: {use_gpu}")
+            return dt_model
         
         elif 'Naive Bayes' in model_name:
-            from sklearn.naive_bayes import MultinomialNB
-            return MultinomialNB()
+            # Use custom Naive Bayes model with automatic type selection
+            from models.classification.naive_bayes_model import NaiveBayesModel
+            
+            print(f"🎯 [Naive Bayes] Using CUSTOM model with automatic type selection")
+            print(f"   • CV Folds: None (no CV for Naive Bayes)")
+            
+            nb_model = NaiveBayesModel(random_state=random_state)
+            
+            print(f"✅ [Naive Bayes] Custom model created with automatic type selection")
+            return nb_model
         
         elif 'K-Means' in model_name:
-            from sklearn.cluster import KMeans
-            return KMeans(n_clusters=5, random_state=random_state)
+            # Use custom K-Means model with optimal K detection
+            from models.clustering.kmeans_model import KMeansModel
+            
+            # Get K-Means configuration from Step 3 if available
+            kmeans_config = step3_data.get('kmeans_config', {}) if step3_data else {}
+            n_clusters = kmeans_config.get('n_clusters', 5)
+            use_optimal_k = kmeans_config.get('use_optimal_k', False)
+            
+            print(f"🎯 [K-Means] Using CUSTOM model with optimal K detection:")
+            print(f"   • Initial Clusters: {n_clusters}")
+            print(f"   • Use Optimal K: {use_optimal_k}")
+            
+            kmeans_model = KMeansModel(
+                n_clusters=n_clusters,
+                random_state=random_state
+            )
+            
+            print(f"✅ [K-Means] Custom model created with optimal K detection")
+            return kmeans_model
         
         elif 'SVM' in model_name:
-            from sklearn.svm import SVC
-            return SVC(random_state=random_state)
+            # Use custom SVM model with advanced features
+            from models.classification.svm_model import SVMModel
+            
+            print(f"🎯 [SVM] Using CUSTOM model with advanced features")
+            
+            svm_model = SVMModel(random_state=random_state)
+            
+            print(f"✅ [SVM] Custom model created with advanced features")
+            return svm_model
+        
+        elif 'Logistic Regression' in model_name:
+            # Use custom Logistic Regression model with multinomial support
+            from models.classification.logistic_regression_model import LogisticRegressionModel
+            
+            print(f"🎯 [Logistic Regression] Using CUSTOM model with multinomial support")
+            
+            lr_model = LogisticRegressionModel(random_state=random_state)
+            
+            print(f"✅ [Logistic Regression] Custom model created with multinomial support")
+            return lr_model
+        
+        elif 'Linear SVC' in model_name:
+            # Use custom Linear SVC model with advanced features
+            from models.classification.linear_svc_model import LinearSVCModel
+            
+            print(f"🎯 [Linear SVC] Using CUSTOM model with advanced features")
+            
+            lsvc_model = LinearSVCModel(random_state=random_state)
+            
+            print(f"✅ [Linear SVC] Custom model created with advanced features")
+            return lsvc_model
         
         else:
-            # Default to Decision Tree
-            from sklearn.tree import DecisionTreeClassifier
-            return DecisionTreeClassifier(random_state=random_state)
+            # Default to custom Decision Tree model
+            from models.classification.decision_tree_model import DecisionTreeModel
+            
+            # GPU configuration - AUTO ENABLE by default
+            use_gpu = True  # Always enable GPU for performance
+            gpu_library = 'auto'  # Auto-select best GPU library
+            
+            print(f"🎯 [Default] Using CUSTOM Decision Tree model as fallback")
+            print(f"   • GPU Acceleration: True")
+            print(f"   • GPU Library: auto")
+            
+            # Ensure random_state is an integer
+            safe_random_state = random_state if isinstance(random_state, int) else 42
+            
+            dt_model = DecisionTreeModel(
+                pruning_method='none',     # Disable pruning for Windows compatibility
+                random_state=safe_random_state,
+                use_gpu=use_gpu,           # Enable GPU acceleration
+                gpu_library=gpu_library    # GPU library selection
+            )
+            
+            # Force GPU initialization if requested
+            if use_gpu:
+                dt_model._init_gpu_libraries()
+                # IMPORTANT: After GPU init, check if pruning was disabled on Windows
+                if dt_model.pruning_method == 'none':
+                    print(f"   ✅ Pruning method automatically disabled: ccp → none")
+            
+            print(f"✅ [Default] Custom Decision Tree model created as fallback + GPU: {use_gpu}")
+            return dt_model
     
     def _generate_visualizations(self, training_results: Dict, y_test: np.ndarray):
         """Generate confusion matrices and other visualizations"""

@@ -81,7 +81,6 @@ class ComprehensiveEvaluator:
         print(f"   • Validation Size: {validation_size:.1%}")
         print(f"   • Test Size: {test_size:.1%}")
         print(f"   • Random State: {random_state}")
-        print("   • Note: Using reduced samples (1000) for faster testing")
 
     def precompute_cv_embeddings(self, texts: List[str], labels: List[str], stop_callback=None) -> Dict[str, Any]:
         """Pre-compute embeddings for all CV folds to ensure fair comparison across models
@@ -207,7 +206,7 @@ class ComprehensiveEvaluator:
         print(f"✅ Created CV folds for {embedding_type.upper()}: {self.cv_folds} folds")
         return cv_folds
     
-    def load_and_prepare_data(self, max_samples: int = None, skip_csv_prompt: bool = False, sampling_config: Dict = None) -> Tuple[Dict[str, Any], List[str]]:
+    def load_and_prepare_data(self, max_samples: int = None, skip_csv_prompt: bool = False, sampling_config: Dict = None, preprocessing_config: Dict = None) -> Tuple[Dict[str, Any], List[str]]:
         """
         Load and prepare all data formats for evaluation
         
@@ -215,6 +214,7 @@ class ComprehensiveEvaluator:
             max_samples: Maximum number of samples to use
             skip_csv_prompt: If True, skip CSV backup prompt (for Streamlit usage)
             sampling_config: Sampling configuration from Streamlit (optional)
+            preprocessing_config: Preprocessing configuration from Streamlit (optional)
         
         Returns:
             Tuple of (data_dict, sorted_labels)
@@ -239,7 +239,44 @@ class ComprehensiveEvaluator:
         
         self.data_loader.select_samples(actual_max_samples)
         
-        self.data_loader.preprocess_samples()
+        # Apply preprocessing with advanced options
+        # Use default preprocessing config if none provided
+        if preprocessing_config is None:
+            preprocessing_config = {
+                'text_cleaning': True,
+                'data_validation': True,
+                'category_mapping': True,
+                'memory_optimization': True,
+                # Advanced preprocessing options with defaults
+                'rare_words_removal': False,
+                'rare_words_threshold': 2,
+                'lemmatization': False,
+                'context_aware_stopwords': False,
+                'stopwords_aggressiveness': 'Moderate',
+                'phrase_detection': False,
+                'min_phrase_freq': 3
+            }
+        
+        # Ensure all advanced preprocessing options are included
+        full_preprocessing_config = {
+            'text_cleaning': preprocessing_config.get('text_cleaning', True),
+            'data_validation': preprocessing_config.get('data_validation', True),
+            'category_mapping': preprocessing_config.get('category_mapping', True),
+            'memory_optimization': preprocessing_config.get('memory_optimization', True),
+            # Advanced preprocessing options
+            'rare_words_removal': preprocessing_config.get('rare_words_removal', False),
+            'rare_words_threshold': preprocessing_config.get('rare_words_threshold', 2),
+            'lemmatization': preprocessing_config.get('lemmatization', False),
+            'context_aware_stopwords': preprocessing_config.get('context_aware_stopwords', False),
+            'stopwords_aggressiveness': preprocessing_config.get('stopwords_aggressiveness', 'Moderate'),
+            'phrase_detection': preprocessing_config.get('phrase_detection', False),
+            'min_phrase_freq': preprocessing_config.get('min_phrase_freq', 3)
+        }
+        
+        print(f"🔧 [EVALUATOR] Applying preprocessing with full config: "
+              f"{full_preprocessing_config}")
+        
+        self.data_loader.preprocess_samples(full_preprocessing_config)
         self.data_loader.create_label_mappings()
         
         # Prepare train/test data (no separate validation set)
@@ -750,7 +787,7 @@ class ComprehensiveEvaluator:
             return 0.0
     
     def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False, 
-                                   sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None, step3_data: Dict = None) -> Dict[str, Any]:
+                                   sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None, step3_data: Dict = None, preprocessing_config: Dict = None) -> Dict[str, Any]:
         """
         Run comprehensive evaluation of model-embedding combinations
         
@@ -760,6 +797,7 @@ class ComprehensiveEvaluator:
             sampling_config: Sampling configuration from Streamlit (optional)
             selected_models: List of model names to evaluate (if None, evaluate all)
             selected_embeddings: List of embedding names to evaluate (if None, evaluate all)
+            preprocessing_config: Preprocessing configuration from Streamlit (optional)
         
         Returns:
             Complete evaluation results
@@ -770,7 +808,7 @@ class ComprehensiveEvaluator:
         start_time = time.time()
         
         # 1. Load and prepare data
-        data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt, sampling_config)
+        data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt, sampling_config, preprocessing_config)
         
         # 2. Create selected embeddings (only once)
         if not hasattr(self, 'embeddings') or self.embeddings is None:

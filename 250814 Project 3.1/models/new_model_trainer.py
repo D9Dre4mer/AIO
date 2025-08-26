@@ -44,16 +44,42 @@ class NewModelTrainer:
     ) -> Dict[str, Any]:
         """Perform cross-validation using pre-computed embeddings for fair comparison"""
         
+        # Add GPU configuration for Decision Tree models
+        if ('Decision Tree' in model_name or 
+                'decision_tree' in model_name.lower()):
+            model_params.update({
+                'use_gpu': True,
+                'gpu_library': 'auto',
+                'pruning_method': 'none'  # Disable pruning for Windows compatibility
+            })
+            print(f"   🚀 GPU acceleration enabled for {model_name} in CV")
+        
         # Create model instance
         if not self.model_factory:
-            raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+            raise ValueError(
+                "Model factory not set. Please provide model_factory in constructor."
+            )
         model = self.model_factory.create_model(model_name, **model_params)
+        
+        # Initialize GPU libraries if GPU is enabled
+        if (hasattr(model, '_init_gpu_libraries') and 
+                hasattr(model, 'use_gpu') and model.use_gpu):
+            model._init_gpu_libraries()
+            print(f"   🔧 GPU libraries initialized for {model_name}")
+            
+            # IMPORTANT: Check if pruning was disabled on Windows
+            if hasattr(model, 'pruning_method') and model.pruning_method == 'none':
+                print(f"   ✅ Pruning method automatically disabled on Windows")
         
         # Perform cross-validation
         if not self.validation_manager:
-            raise ValueError("Validation manager not set. Please provide validation_manager in constructor.")
-        cv_results = self.validation_manager.cross_validate_with_precomputed_embeddings(
-            model, cv_embeddings, metrics
+            raise ValueError(
+                "Validation manager not set. Please provide validation_manager in constructor."
+            )
+        cv_results = (
+            self.validation_manager.cross_validate_with_precomputed_embeddings(
+                model, cv_embeddings, metrics
+            )
         )
         
         # Print summary
@@ -81,10 +107,30 @@ class NewModelTrainer:
     ) -> Dict[str, Any]:
         """Perform cross-validation on a specific model"""
         
+        # Add GPU configuration for Decision Tree models
+        if ('Decision Tree' in model_name or 
+                'decision_tree' in model_name.lower()):
+            model_params.update({
+                'use_gpu': True,
+                'gpu_library': 'auto',
+                'pruning_method': 'none'  # Disable pruning for Windows compatibility
+            })
+            print(f"   🚀 GPU acceleration enabled for {model_name} in CV")
+        
         # Create model instance
         if not self.model_factory:
             raise ValueError("Model factory not set. Please provide model_factory in constructor.")
         model = self.model_factory.create_model(model_name, **model_params)
+        
+        # Initialize GPU libraries if GPU is enabled
+        if (hasattr(model, '_init_gpu_libraries') and 
+                hasattr(model, 'use_gpu') and model.use_gpu):
+            model._init_gpu_libraries()
+            print(f"   🔧 GPU libraries initialized for {model_name}")
+            
+            # IMPORTANT: Check if pruning was disabled on Windows
+            if hasattr(model, 'pruning_method') and model.pruning_method == 'none':
+                print(f"   ✅ Pruning method automatically disabled on Windows")
         
         # Perform cross-validation
         if not self.validation_manager:
@@ -248,6 +294,16 @@ class NewModelTrainer:
         # Create model instance with KNN configuration if available
         if not self.model_factory:
             raise ValueError("Model factory not set. Please provide model_factory in constructor.")
+        
+        # Add GPU configuration for Decision Tree models
+        if ('Decision Tree' in model_name or 
+                'decision_tree' in model_name.lower()):
+            model_params.update({
+                'use_gpu': True,
+                'gpu_library': 'auto',
+                'pruning_method': 'none'  # Disable pruning for Windows compatibility
+            })
+            print(f"   🚀 GPU acceleration enabled for {model_name} in training")
         
         # Special handling for KNN model with Step 3 configuration
         if model_name == 'knn' and step3_data and 'knn_config' in step3_data:
