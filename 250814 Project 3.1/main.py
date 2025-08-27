@@ -66,6 +66,24 @@ def main():
         num_samples = 100000
         print(f"⚠️ Invalid input, using default: {num_samples:,} samples")
     
+    # Discover categories first if not already done
+    if not data_loader.available_categories:
+        print("🔍 Discovering available categories...")
+        data_loader.discover_categories()
+    
+    # Get recommended categories if none selected
+    if not data_loader.selected_categories:
+        recommended_categories = data_loader.get_category_recommendations(max_categories=5)
+        if recommended_categories:
+            print(f"💡 Setting recommended categories: {recommended_categories}")
+            data_loader.set_selected_categories(recommended_categories)
+        else:
+            # Fallback: use all available categories
+            all_categories = data_loader.available_categories[:5]  # Limit to 5
+            print(f"⚠️ No categories available, using first 5: {all_categories}")
+            data_loader.set_selected_categories(all_categories)
+    
+    # Now select samples with categories
     data_loader.select_samples(max_samples=num_samples)
     data_loader.preprocess_samples()
     

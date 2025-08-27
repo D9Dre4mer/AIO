@@ -460,6 +460,51 @@ class StreamlitTrainingPipeline:
                 selected_models = step3_data.get('selected_models', [])
                 selected_vectorization = step3_data.get('selected_vectorization', [])
                 
+                # CRITICAL: Apply sampling to step1_data dataframe BEFORE passing to evaluator
+                if step1_data and 'dataframe' in step1_data and sampling_config and sampling_config.get('num_samples'):
+                    original_size = len(step1_data['dataframe'])
+                    requested_samples = sampling_config['num_samples']
+                    
+                    if original_size > requested_samples:
+                        print(f"🎯 [TRAINING_PIPELINE] Applying sampling to step1_data: {original_size:,} → {requested_samples:,}")
+                        
+                        # Apply the same sampling logic that was used in the pipeline
+                        df = step1_data['dataframe']
+                        text_col = step2_data.get('text_column', 'text') if step2_data else 'text'
+                        label_col = step2_data.get('label_column', 'label') if step2_data else 'label'
+                        
+                        if sampling_config.get('sampling_strategy') == 'Stratified (Recommended)':
+                            # Stratified sampling
+                            from sklearn.model_selection import train_test_split
+                            df_sampled, _ = train_test_split(
+                                df, 
+                                train_size=requested_samples,
+                                stratify=df[label_col],
+                                random_state=42
+                            )
+                        else:
+                            # Random sampling
+                            df_sampled = df.sample(n=requested_samples, random_state=42)
+                        
+                        # Update step1_data with sampled dataframe
+                        step1_data['dataframe'] = df_sampled
+                        print(f"✅ [TRAINING_PIPELINE] Sampling applied: {original_size:,} → {len(df_sampled):,}")
+                    else:
+                        print(f"ℹ️ [TRAINING_PIPELINE] No sampling needed: {original_size:,} ≤ {requested_samples:,}")
+                
+                # Debug: Check what we're passing to evaluator
+                print(f"🔍 [TRAINING_PIPELINE] Debug - Data being passed to evaluator:")
+                print(f"   • step1_data exists: {step1_data is not None}")
+                if step1_data:
+                    print(f"   • step1_data type: {type(step1_data)}")
+                    print(f"   • step1_data keys: {list(step1_data.keys()) if isinstance(step1_data, dict) else 'Not a dict'}")
+                    if isinstance(step1_data, dict) and 'dataframe' in step1_data:
+                        print(f"   • step1_data['dataframe'] size: {len(step1_data['dataframe']):,}")
+                print(f"   • step2_data exists: {step2_data is not None}")
+                if step2_data:
+                    print(f"   • step2_data type: {type(step2_data)}")
+                    print(f"   • step2_data keys: {list(step2_data.keys()) if isinstance(step2_data, dict) else 'Not a dict'}")
+                
                 # Run comprehensive evaluation with selected models and embeddings
                 # Pass sampling config to respect user choice and stop callback
                 evaluation_results = evaluator.run_comprehensive_evaluation(
@@ -470,7 +515,9 @@ class StreamlitTrainingPipeline:
                     selected_embeddings=selected_vectorization,
                     stop_callback=self.is_training_stopped,  # Pass stop callback
                     step3_data=step3_data,  # Pass Step 3 configuration for KNN
-                    preprocessing_config=self.preprocessing_config  # Pass preprocessing config from instance
+                    preprocessing_config=self.preprocessing_config,  # Pass preprocessing config from instance
+                    step1_data=step1_data,  # Pass Step 1 data to avoid reloading dataset
+                    step2_data=step2_data  # Pass Step 2 data with column configuration
                 )
                 
                 # Update progress based on evaluation progress

@@ -222,22 +222,119 @@ class ComprehensiveEvaluator:
         print("\n📊 Loading and Preparing Data...")
         print("=" * 50)
         
-        # Load dataset
-        self.data_loader.load_dataset(skip_csv_prompt=skip_csv_prompt)
+        # Check if we already have sampled data from Step 1
+        print(f"🔍 [DEBUG] Checking for Step 1 data:")
+        print(f"   • hasattr(self, 'step1_data'): {hasattr(self, 'step1_data')}")
+        if hasattr(self, 'step1_data'):
+            print(f"   • self.step1_data: {self.step1_data}")
+            if self.step1_data:
+                print(f"   • 'dataframe' in step1_data: {'dataframe' in self.step1_data}")
+                if 'dataframe' in self.step1_data:
+                    print(f"   • step1_data keys: {list(self.step1_data.keys())}")
         
-        # Select samples - prioritize sampling_config over max_samples
-        if skip_csv_prompt:
-            print("🚀 Streamlit mode: Using existing data configuration...")
+        if hasattr(self, 'step1_data') and self.step1_data and 'dataframe' in self.step1_data:
+            print("🚀 Using pre-sampled data from Step 1...")
+            df = self.step1_data['dataframe']
+            print(f"📊 Pre-sampled data size: {len(df):,} samples")
             
-        # Use sampling_config if available, otherwise fall back to max_samples
-        if sampling_config and sampling_config.get('num_samples'):
-            actual_max_samples = sampling_config['num_samples']
-            print(f"📊 Using sampling config: {actual_max_samples:,} samples")
+            # Convert DataFrame to DataLoader format
+            self.data_loader.samples = []
+            
+            # CRITICAL: Get actual column names from Step 2 configuration
+            # Check if we have step2_data with column configuration
+            step2_data = getattr(self, 'step2_data', None)
+            if step2_data and 'text_column' in step2_data and 'label_column' in step2_data:
+                text_col = step2_data['text_column']
+                label_col = step2_data['label_column']
+                print(f"🔍 Using Step 2 column config: text='{text_col}', label='{label_col}'")
+            else:
+                # Fallback: try to guess column names
+                text_col = 'text' if 'text' in df.columns else df.columns[0]
+                label_col = 'label' if 'label' in df.columns else df.columns[-1]
+                print(f"⚠️ No Step 2 config, guessing columns: text='{text_col}', label='{label_col}'")
+            
+            print(f"🔍 Available columns in DataFrame: {list(df.columns)}")
+            print(f"🔍 Using columns: text='{text_col}', label='{label_col}'")
+            
+            for idx, row in df.iterrows():
+                sample = {
+                    'abstract': str(row.get(text_col, '')),
+                    'categories': str(row.get(label_col, ''))
+                }
+                self.data_loader.samples.append(sample)
+            
+            print(f"✅ Converted {len(self.data_loader.samples):,} samples to DataLoader format")
+            
+            # Skip dataset loading and category discovery since we have pre-sampled data
+            actual_max_samples = len(self.data_loader.samples)
+            print(f"📊 Using pre-sampled samples: {actual_max_samples:,}")
+            
+            # IMPORTANT: Set available_categories and selected_categories for pre-sampled data
+            # Extract unique categories from the pre-sampled data
+            unique_categories = set()
+            for sample in self.data_loader.samples:
+                if sample['categories']:
+                    categories = [cat.strip() for cat in str(sample['categories']).split()]
+                    unique_categories.update(categories)
+            
+            self.data_loader.available_categories = sorted(unique_categories)
+            self.data_loader.selected_categories = list(unique_categories)
+            
+            print(f"🔍 Discovered {len(self.data_loader.available_categories)} categories from pre-sampled data")
+            print(f"💡 Categories: {self.data_loader.selected_categories[:5]}...")
+            
+            # CRITICAL: Validate that we have valid data
+            valid_samples = [s for s in self.data_loader.samples if s['abstract'].strip() and s['categories'].strip()]
+            print(f"🔍 Valid samples (non-empty text & categories): {len(valid_samples):,}")
+            
+            if len(valid_samples) == 0:
+                print("❌ ERROR: No valid samples found! All samples have empty text or categories.")
+                print("🔍 Debug: First few samples:")
+                for i, sample in enumerate(self.data_loader.samples[:3]):
+                    print(f"   Sample {i}: text='{sample['abstract'][:50]}...', categories='{sample['categories']}'")
+                raise ValueError("No valid samples found. Check column mapping and data quality.")
+            
         else:
-            actual_max_samples = max_samples
-            print(f"📊 Using max_samples parameter: {actual_max_samples:,} samples" if actual_max_samples else "📊 No sample limit specified")
-        
-        self.data_loader.select_samples(actual_max_samples)
+            # Fallback: Load dataset from scratch (for non-Streamlit usage)
+            print("📥 [DEBUG] Falling back to loading dataset from scratch...")
+            print(f"   • Reason: No valid step1_data found")
+            print(f"   • step1_data exists: {hasattr(self, 'step1_data')}")
+            if hasattr(self, 'step1_data'):
+                print(f"   • step1_data value: {self.step1_data}")
+                if self.step1_data:
+                    print(f"   • step1_data type: {type(self.step1_data)}")
+                    print(f"   • step1_data keys: {list(self.step1_data.keys()) if isinstance(self.step1_data, dict) else 'Not a dict'}")
+            
+            print("📥 Loading dataset from scratch...")
+            self.data_loader.load_dataset(skip_csv_prompt=skip_csv_prompt)
+            
+            # Use sampling_config if available, otherwise fall back to max_samples
+            if sampling_config and sampling_config.get('num_samples'):
+                actual_max_samples = sampling_config['num_samples']
+                print(f"📊 Using sampling config: {actual_max_samples:,} samples")
+            else:
+                actual_max_samples = max_samples
+                print(f"📊 Using max_samples parameter: {actual_max_samples:,} samples" if actual_max_samples else "📊 No sample limit specified")
+            
+            # Discover categories first if not already done
+            if not self.data_loader.available_categories:
+                print("🔍 Discovering available categories...")
+                self.data_loader.discover_categories()
+            
+            # Get recommended categories if none selected
+            if not self.data_loader.selected_categories:
+                recommended_categories = self.data_loader.get_category_recommendations(max_categories=5)
+                if recommended_categories:
+                    print(f"💡 Setting recommended categories: {recommended_categories}")
+                    self.data_loader.set_selected_categories(recommended_categories)
+                else:
+                    # Fallback: use all available categories
+                    all_categories = self.data_loader.available_categories[:5]  # Limit to 5
+                    print(f"⚠️ No categories available, using first 5: {all_categories}")
+                    self.data_loader.set_selected_categories(all_categories)
+            
+            # Now select samples with categories
+            self.data_loader.select_samples(actual_max_samples)
         
         # Apply preprocessing with advanced options
         # Use default preprocessing config if none provided
@@ -276,8 +373,30 @@ class ComprehensiveEvaluator:
         print(f"🔧 [EVALUATOR] Applying preprocessing with full config: "
               f"{full_preprocessing_config}")
         
+        # CRITICAL: Ensure we have samples before preprocessing
+        if not self.data_loader.samples:
+            print("❌ ERROR: No samples available for preprocessing!")
+            print(f"🔍 Debug: samples count = {len(self.data_loader.samples)}")
+            print(f"🔍 Debug: available_categories = {self.data_loader.available_categories}")
+            print(f"🔍 Debug: selected_categories = {self.data_loader.selected_categories}")
+            raise ValueError("No samples available for preprocessing. Check data loading.")
+        
+        print(f"📊 Preprocessing {len(self.data_loader.samples):,} samples...")
+        
         self.data_loader.preprocess_samples(full_preprocessing_config)
         self.data_loader.create_label_mappings()
+        
+        # CRITICAL: Debug data state before train/test split
+        print(f"🔍 [DEBUG] Data state before train/test split:")
+        print(f"   • samples count: {len(self.data_loader.samples)}")
+        print(f"   • preprocessed_samples count: {len(self.data_loader.preprocessed_samples)}")
+        print(f"   • available_categories: {len(self.data_loader.available_categories)}")
+        print(f"   • selected_categories: {len(self.data_loader.selected_categories)}")
+        
+        if not self.data_loader.preprocessed_samples:
+            print("❌ ERROR: No preprocessed samples available!")
+            print("🔍 Debug: Check if preprocessing was successful")
+            raise ValueError("No preprocessed samples available for train/test split")
         
         # Prepare train/test data (no separate validation set)
         X_train, X_test, y_train, y_test = self.data_loader.prepare_train_test_data()
@@ -835,7 +954,7 @@ class ComprehensiveEvaluator:
             return 0.0
     
     def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False, 
-                                   sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None, step3_data: Dict = None, preprocessing_config: Dict = None) -> Dict[str, Any]:
+                                   sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None, step3_data: Dict = None, preprocessing_config: Dict = None, step1_data: Dict = None, step2_data: Dict = None) -> Dict[str, Any]:
         """
         Run comprehensive evaluation of model-embedding combinations
         
@@ -846,6 +965,8 @@ class ComprehensiveEvaluator:
             selected_models: List of model names to evaluate (if None, evaluate all)
             selected_embeddings: List of embedding names to evaluate (if None, evaluate all)
             preprocessing_config: Preprocessing configuration from Streamlit (optional)
+            step1_data: Step 1 data from Streamlit to avoid reloading dataset (optional)
+            step2_data: Step 2 data from Streamlit with column configuration (optional)
         
         Returns:
             Complete evaluation results
@@ -856,6 +977,15 @@ class ComprehensiveEvaluator:
         start_time = time.time()
         
         # 1. Load and prepare data
+        # Store step1_data and step2_data for use in load_and_prepare_data
+        if step1_data:
+            self.step1_data = step1_data
+            print(f"📊 Received Step 1 data with keys: {list(step1_data.keys())}")
+        
+        if step2_data:
+            self.step2_data = step2_data
+            print(f"📊 Received Step 2 data with keys: {list(step2_data.keys())}")
+        
         data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt, sampling_config, preprocessing_config)
         
         # 2. Create selected embeddings (only once)

@@ -6,8 +6,8 @@ Contains constants and settings used throughout the project
 # Cache directory for datasets
 CACHE_DIR = "./cache"
 
-# Categories to select for analysis
-CATEGORIES_TO_SELECT = ['astro-ph', 'cond-mat', 'cs', 'math', 'physics']
+# Dynamic category selection (will be set at runtime)
+# CATEGORIES_TO_SELECT removed - now handled dynamically by DataLoader
 
 # Number of samples to load (None = respect user choice from sampling config)
 MAX_SAMPLES = None

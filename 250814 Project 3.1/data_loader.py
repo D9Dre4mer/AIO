@@ -13,13 +13,13 @@ from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 
 from config import (
-    CACHE_DIR, CATEGORIES_TO_SELECT, MAX_SAMPLES, 
+    CACHE_DIR, MAX_SAMPLES, 
     TEST_SIZE, RANDOM_STATE
 )
 
 
 class DataLoader:
-    """Class for loading and preprocessing the ArXiv abstracts dataset"""
+    """Class for loading and preprocessing any dataset with dynamic category detection"""
     
     def __init__(self, cache_dir: str = CACHE_DIR):
         self.cache_dir = cache_dir
@@ -28,9 +28,13 @@ class DataLoader:
         self.preprocessed_samples = []
         self.label_to_id = {}
         self.id_to_label = {}
+        # Dynamic category management
+        self.available_categories = []
+        self.selected_categories = []
+        self.category_stats = {}
         
     def load_dataset(self, skip_csv_prompt: bool = False) -> None:
-        """Load the ArXiv abstracts dataset from HuggingFace and create CSV backup"""
+        """Load any dataset and automatically detect categories"""
         dataset_cache_path = (Path(self.cache_dir) / 
                              "UniverseTBD___arxiv-abstracts-large")
         csv_backup_path = Path(self.cache_dir) / "arxiv_dataset_backup.csv"
@@ -403,9 +407,22 @@ class DataLoader:
             
         return sorted_categories
         
-    def select_samples(self, max_samples: int = None) -> None:
-        """Select samples with single labels from specific categories"""
+    def select_samples(self, max_samples: int = None, categories: List[str] = None) -> None:
+        """
+        Select samples with dynamic category filtering
+        
+        Args:
+            max_samples: Maximum number of samples to select
+            categories: List of categories to filter by (uses self.selected_categories if None)
+        """
         self.samples = []
+        
+        # Use provided categories or fall back to selected categories
+        if categories is None:
+            if not self.selected_categories:
+                print("❌ No categories selected. Call set_selected_categories() first.")
+                return
+            categories = self.selected_categories
         
         # Use provided max_samples or fall back to config default
         if max_samples is None:
@@ -419,12 +436,17 @@ class DataLoader:
         else:
             print(f"📊 Using specified samples: {max_samples:,} samples")
         
+        print(f"🎯 Filtering for categories: {categories}")
+        
         for s in self.dataset['train']:
-            if len(s['categories'].split(' ')) != 1:
+            if 'categories' not in s or not s['categories']:
                 continue
-                
-            cur_category = s['categories'].strip().split('.')[0]
-            if cur_category not in CATEGORIES_TO_SELECT:
+            
+            # Split categories and check if any match selected categories
+            sample_categories = [cat.strip() for cat in str(s['categories']).split()]
+            
+            # Check if any category matches (more flexible than single label only)
+            if not any(cat in categories for cat in sample_categories):
                 continue
                 
             self.samples.append(s)
@@ -439,6 +461,98 @@ class DataLoader:
             print(f"Category: {sample['categories']}")
             print("Abstract:", sample['abstract'])
             print("#" * 20 + "\n")
+    
+    def discover_categories(self) -> List[str]:
+        """
+        Automatically discover all available categories from the loaded dataset
+        
+        Returns:
+            List[str]: List of available category codes
+        """
+        if self.dataset is None:
+            print("❌ No dataset loaded. Call load_dataset() first.")
+            return []
+        
+        print("🔍 Discovering available categories...")
+        
+        # Extract all unique categories
+        all_categories = set()
+        category_counts = Counter()
+        
+        for sample in self.dataset['train']:
+            if 'categories' in sample and sample['categories']:
+                # Split multiple categories and clean
+                categories = [cat.strip() for cat in str(sample['categories']).split()]
+                all_categories.update(categories)
+                
+                # Count occurrences
+                for cat in categories:
+                    category_counts[cat] += 1
+        
+        # Convert to sorted list
+        self.available_categories = sorted(all_categories)
+        
+        # Store category statistics
+        self.category_stats = {
+            'total_categories': len(self.available_categories),
+            'total_samples': len(self.dataset['train']),
+            'category_counts': dict(category_counts),
+            'top_categories': sorted(
+                category_counts.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            )[:10]
+        }
+        
+        print(f"✅ Discovered {len(self.available_categories)} categories")
+        print("📊 Top 5 categories by sample count:")
+        for cat, count in self.category_stats['top_categories'][:5]:
+            print(f"   {cat}: {count:,} samples")
+        
+        return self.available_categories
+    
+    def set_selected_categories(self, categories: List[str]) -> bool:
+        """
+        Set the categories to use for sample selection
+        
+        Args:
+            categories: List of category codes to select
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not categories:
+            print("❌ No categories provided")
+            return False
+        
+        # Validate categories
+        invalid_categories = [cat for cat in categories if cat not in self.available_categories]
+        if invalid_categories:
+            print(f"❌ Invalid categories: {invalid_categories}")
+            return False
+        
+        self.selected_categories = categories
+        print(f"✅ Set selected categories: {categories}")
+        return True
+    
+    def get_category_recommendations(self, max_categories: int = 5) -> List[str]:
+        """
+        Get recommended categories based on sample count
+        
+        Args:
+            max_categories: Maximum number of categories to recommend
+            
+        Returns:
+            List[str]: Recommended category codes
+        """
+        if not self.category_stats:
+            print("❌ No category statistics available. Call discover_categories() first.")
+            return []
+        
+        # Get top categories by sample count
+        recommended = [cat for cat, _ in self.category_stats['top_categories'][:max_categories]]
+        print(f"💡 Recommended categories: {recommended}")
+        return recommended
             
     def preprocess_samples(self, preprocessing_config: Dict = None) -> None:
         """Preprocess the selected samples with configurable options"""
