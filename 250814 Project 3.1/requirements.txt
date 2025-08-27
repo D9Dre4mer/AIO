@@ -6,10 +6,10 @@ seaborn>=0.13.2
 scikit-learn>=1.7.1
 scipy>=1.16.1
 
-# Deep Learning & NLP (GPU-Enabled)
-torch>=2.5.1+cu121
-torchvision>=0.20.1+cu121
-torchaudio>=2.5.1+cu121
+# Deep Learning & NLP (GPU-Enabled - CUDA 12.6)
+torch>=2.8.0+cu126
+torchvision>=0.23.0+cu126
+torchaudio>=2.8.0+cu126
 sentence-transformers>=5.1.0
 transformers>=4.55.4
 datasets>=4.0.0
@@ -17,8 +17,6 @@ tokenizers>=0.21.4
 
 # GPU Acceleration Libraries
 cupy-cuda12x>=13.6.0
-numba>=0.61.2
-llvmlite>=0.44.0
 
 # Text Processing
 nltk>=3.9.1
@@ -38,6 +36,11 @@ plotly>=6.3.0
 pyarrow>=21.0.0
 huggingface-hub>=0.34.4
 tqdm>=4.67.1
+
+# Dependencies for HuggingFace ecosystem
+requests>=2.32.5
+pyyaml>=6.0.2
+filelock>=3.19.1
 
 # Built-in modules (no version needed)
 pathlib
