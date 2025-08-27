@@ -239,7 +239,10 @@ class ValidationManager:
                 'fold': fold,
                 'accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0,
                 'n_train': len(fold_data['y_train']),
-                'n_val': len(fold_data['y_val'])
+                'n_val': len(fold_data['y_val']),
+                # Add training and validation accuracy for overfitting detection
+                'train_accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0,  # For precomputed, use same accuracy
+                'validation_accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0
             }
             cv_results['fold_results'].append(fold_result)
         
@@ -349,6 +352,11 @@ class ValidationManager:
             fold_metrics['fold'] = fold
             fold_metrics['n_train'] = X_train.shape[0]
             fold_metrics['n_val'] = X_val.shape[0]
+            
+            # Add training accuracy for overfitting detection
+            y_train_pred = model.predict(X_train)
+            fold_metrics['train_accuracy'] = accuracy_score(y_train, y_train_pred)
+            fold_metrics['validation_accuracy'] = fold_metrics['accuracy']  # Rename for clarity
             
             fold_results.append(fold_metrics)
             

@@ -132,7 +132,23 @@ class EmbeddingVectorizer:
                 normalize_embeddings=self.normalize,
                 show_progress_bar=False  # Disable built-in progress bar
             )
-            all_embeddings.extend(batch_embeddings.tolist())
+            
+            # Handle different return types from sentence-transformers
+            if hasattr(batch_embeddings, 'tolist'):
+                # numpy array or tensor
+                batch_list = batch_embeddings.tolist()
+            elif isinstance(batch_embeddings, list):
+                # already a list
+                batch_list = batch_embeddings
+            else:
+                # tensor or other type, try to convert
+                try:
+                    batch_list = batch_embeddings.tolist()
+                except AttributeError:
+                    # fallback: convert to list directly
+                    batch_list = list(batch_embeddings)
+            
+            all_embeddings.extend(batch_list)
             
             # Calculate time estimates
             elapsed_time = time.time() - start_time
@@ -246,7 +262,11 @@ class TextVectorizer:
         """Get feature names from BoW vectorizer"""
         try:
             if hasattr(self.bow_vectorizer, 'vocabulary_') and self.bow_vectorizer.vocabulary_:
-                return self.bow_vectorizer.get_feature_names_out().tolist()
+                feature_names = self.bow_vectorizer.get_feature_names_out()
+                if hasattr(feature_names, 'tolist'):
+                    return feature_names.tolist()
+                else:
+                    return list(feature_names)
             else:
                 print("⚠️ Warning: BoW vectorizer not fitted yet")
                 return []
@@ -258,7 +278,11 @@ class TextVectorizer:
         """Get feature names from TF-IDF vectorizer"""
         try:
             if hasattr(self.tfidf_vectorizer, 'vocabulary_') and self.tfidf_vectorizer.vocabulary_:
-                return self.tfidf_vectorizer.get_feature_names_out().tolist()
+                feature_names = self.tfidf_vectorizer.get_feature_names_out()
+                if hasattr(feature_names, 'tolist'):
+                    return feature_names.tolist()
+                else:
+                    return list(feature_names)
             else:
                 print("⚠️ Warning: TF-IDF vectorizer not fitted yet")
                 return []

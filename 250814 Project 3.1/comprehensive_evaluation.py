@@ -533,54 +533,41 @@ class ComprehensiveEvaluator:
                     
                     # Classify overfitting level
                     if overfitting_score > 0.1:
-                        overfitting_level = "High overfitting - model memorizing training data"
+                        overfitting_level = f"High overfitting - {overfitting_score:.3f}"
                     elif overfitting_score > 0.05:
-                        overfitting_level = "Moderate overfitting - model overfitting to training data"
+                        overfitting_level = f"Moderate overfitting - {overfitting_score:.3f}"
                     elif overfitting_score > -0.05:
-                        overfitting_level = "Good fit - model generalizing well"
+                        overfitting_level = f"Good fit - {overfitting_score:.3f}"
                     elif overfitting_score > -0.1:
-                        overfitting_level = "Slight underfitting - model could learn more"
+                        overfitting_level = f"Slight underfitting - {overfitting_score:.3f}"
                     else:
-                        overfitting_level = "Underfitting - model not learning enough"
+                        overfitting_level = f"Underfitting - {overfitting_score:.3f}"
                     
-                    print(f"     📊 ML Standard Overfitting: Train Acc={train_acc:.3f}, Val Acc={val_acc:.3f}, Score={overfitting_score:+.3f}")
+                    if overfitting_score is not None:
+                        print(f"     📊 ML Standard Overfitting: Train Acc={train_acc:.3f}, Val Acc={val_acc:.3f}, Score={overfitting_score:+.3f}")
+                    else:
+                        print(f"     📊 ML Standard Overfitting: Train Acc={train_acc:.3f}, Val Acc={val_acc:.3f}, Score=Not available")
                     print(f"     📊 Overfitting Level: {overfitting_level}")
                     
                 else:
-                    # No validation set: Use Training vs Test accuracy for overfitting detection
-                    # This is still ML standard but using test set as validation proxy
-                    overfitting_score = train_acc - test_acc  # Training Acc - Test Acc
-                    overfitting_status = self._classify_overfitting(overfitting_score)
+                    # No validation set: Will calculate overfitting from CV fold later
+                    # overfitting_score, overfitting_status, and overfitting_level will be set after CV
+                    overfitting_score = None
+                    overfitting_status = None
+                    overfitting_level = None
                     
-                    # Classify overfitting level using training vs test
-                    if overfitting_score > 0.1:
-                        overfitting_level = "High overfitting - model memorizing training data"
-                    elif overfitting_score > 0.05:
-                        overfitting_level = "Moderate overfitting - model overfitting to training data"
-                    elif overfitting_score > -0.05:
-                        overfitting_level = "Good fit - model generalizing well"
-                    elif overfitting_score > -0.1:
-                        overfitting_level = "Slight underfitting - model could learn more"
-                    else:
-                        overfitting_level = "Underfitting - model not learning enough"
-                    
-                    print(f"     📊 ML Standard Overfitting (Train vs Test): Train Acc={train_acc:.3f}, Test Acc={test_acc:.3f}, Score={overfitting_score:+.3f}")
-                    print(f"     📊 Overfitting Level: {overfitting_level}")
-                    print(f"     ⚠️ Note: Using test set as validation proxy (no separate validation set)")
+                    print(f"     ⚠️ No validation set: Will calculate overfitting from CV fold after CV completes")
+                    print(f"     📊 Overfitting Level: Will be calculated from CV fold")
+                    print(f"     💡 Note: Using CV fold data for overfitting detection")
                     
             except Exception as e:
-                # Fallback to F1-based overfitting if ML standard fails
-                if val_metrics and 'f1_score' in val_metrics and test_metrics and 'f1_score' in test_metrics:
-                    val_f1 = val_metrics['f1_score']
-                    test_f1 = test_metrics['f1_score']
-                    overfitting_score = val_f1 - test_f1
-                    overfitting_status = self._classify_overfitting(overfitting_score)
-                    print(f"     📊 F1-based Overfitting (fallback): Val F1={val_f1:.3f}, Test F1={test_f1:.3f}, Score={overfitting_score:+.3f}")
-                else:
-                    overfitting_score = val_acc - test_acc
-                    overfitting_status = self._classify_overfitting(overfitting_score)
-                    print(f"     📊 Accuracy-based Overfitting (fallback): Val Acc={val_acc:.3f}, Test Acc={test_acc:.3f}, Score={overfitting_score:+.3f}")
-                print(f"     ⚠️ ML Standard overfitting failed, using fallback: {e}")
+                # Cannot calculate overfitting if ML standard fails
+                overfitting_score = None
+                overfitting_status = "calculation_failed"
+                overfitting_level = "Cannot determine - calculation failed"
+                print(f"     ❌ ML Standard overfitting calculation failed: {e}")
+                print(f"     📊 Overfitting Level: {overfitting_level}")
+                print(f"     💡 Recommendation: Check validation data and model configuration")
             
             # Cross-validation - ENHANCED: Use optimized CV for sparse embeddings (BoW/TF-IDF) or fitted embeddings
             if embedding_name in ['bow', 'tfidf']:
@@ -632,23 +619,49 @@ class ComprehensiveEvaluator:
                     cv_f1_based_std = abs(train_acc - val_acc) / 2.0   # ML standard variation
                     print(f"     📊 ML Standard CV: Train Acc={train_acc:.3f}, Val Acc={val_acc:.3f}, CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
                 else:
-                    # No validation set: Use training vs test accuracy for CV calculation
-                    cv_f1_based_accuracy = (train_acc + test_acc) / 2.0  # ML standard CV accuracy (train vs test)
-                    cv_f1_based_std = abs(train_acc - test_acc) / 2.0   # ML standard variation (train vs test)
-                    print(f"     📊 ML Standard CV (Train vs Test): Train Acc={train_acc:.3f}, Test Acc={test_acc:.3f}, CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
+                    # No validation set: Use first CV fold to calculate overfitting approximation
+                    # This provides a reasonable estimate without changing the data structure
+                    if cv_results and 'fold_results' in cv_results and len(cv_results['fold_results']) > 0:
+                        # Get first fold results for overfitting approximation
+                        first_fold = cv_results['fold_results'][0]
+                        if 'train_accuracy' in first_fold and 'validation_accuracy' in first_fold:
+                            cv_train_acc = first_fold['train_accuracy']
+                            cv_val_acc = first_fold['validation_accuracy']
+                            
+                            # Calculate overfitting from first CV fold
+                            overfitting_score = cv_train_acc - cv_val_acc
+                            overfitting_status = self._classify_overfitting(overfitting_score)  # Sử dụng classification thay vì "cv_fold_approximation"
+                            overfitting_level = self._get_overfitting_level_from_score(overfitting_score)
+                            
+                            # Calculate ML standard CV from first fold
+                            cv_f1_based_accuracy = (cv_train_acc + cv_val_acc) / 2.0
+                            cv_f1_based_std = abs(cv_train_acc - cv_val_acc) / 2.0
+                            
+                            print(f"     📊 CV Fold Overfitting: Train Acc={cv_train_acc:.3f}, Val Acc={cv_val_acc:.3f}, Score={overfitting_score:+.3f}")
+                            print(f"     📊 ML Standard CV (CV Fold): CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
+                        else:
+                            cv_f1_based_accuracy = None
+                            cv_f1_based_std = None
+                            # Set default values when CV fold data is incomplete
+                            overfitting_score = None
+                            overfitting_status = "cv_data_incomplete"
+                            overfitting_level = "Cannot determine - CV fold data incomplete"
+                            print(f"     ⚠️ CV fold data incomplete, cannot calculate overfitting")
+                    else:
+                        cv_f1_based_accuracy = None
+                        cv_f1_based_std = None
+                        # Set default values when CV results are not available
+                        overfitting_score = None
+                        overfitting_status = "cv_not_available"
+                        overfitting_level = "Cannot determine - CV results not available"
+                        print(f"     ⚠️ CV results not available, cannot calculate overfitting")
                 
             except Exception as e:
-                # Fallback to F1-based calculation if ML standard fails
-                if val_metrics and 'f1_score' in val_metrics and test_metrics and 'f1_score' in test_metrics:
-                    val_f1 = val_metrics['f1_score']
-                    test_f1 = test_metrics['f1_score']
-                    cv_f1_based_accuracy = (val_f1 + test_f1) / 2.0
-                    cv_f1_based_std = abs(val_f1 - test_f1) / 2.0
-                else:
-                    # Safe fallback if all methods fail
-                    cv_f1_based_accuracy = test_acc
-                    cv_f1_based_std = 0.0
-                print(f"     ⚠️ ML Standard CV failed, using fallback: {e}")
+                # Cannot calculate ML standard CV if it fails
+                cv_f1_based_accuracy = None
+                cv_f1_based_std = None
+                print(f"     ❌ ML Standard CV calculation failed: {e}")
+                print(f"     💡 Recommendation: Check validation data and model configuration")
             
             # Store results
             result = {
@@ -666,7 +679,8 @@ class ComprehensiveEvaluator:
                 # Overfitting analysis
                 'overfitting_score': overfitting_score,
                 'overfitting_status': overfitting_status,
-                'overfitting_classification': self._get_overfitting_classification(overfitting_score),
+                'overfitting_level': overfitting_level,  # ← Thêm overfitting_level vào result
+                'overfitting_classification': self._get_overfitting_classification(overfitting_score) if overfitting_score is not None else "Cannot determine",
                 
                 # Cross-validation results - Traditional CV accuracy from folds
                 'cv_mean_accuracy': cv_results.get('overall_results', {}).get('accuracy_mean', val_acc),  # Traditional CV accuracy (from folds)
@@ -675,8 +689,8 @@ class ComprehensiveEvaluator:
                 'cv_std_f1': cv_results.get('overall_results', {}).get('f1_std', 0.0),                  # Traditional CV F1 std (from folds)
                 
                 # ML Standard CV Score - NEW: Based on training vs validation accuracy for overfitting detection
-                'ml_cv_accuracy': cv_f1_based_accuracy,   # ← ML standard CV accuracy (avg of train_acc + val_acc)
-                'ml_cv_variation': cv_f1_based_std,       # ← ML standard variation (variation between train_acc and val_acc)
+                'ml_cv_accuracy': cv_f1_based_accuracy,   # ← ML standard CV accuracy (avg of train_acc + val_acc) or None if no validation
+                'ml_cv_variation': cv_f1_based_std,       # ← ML standard variation (variation between train_acc and val_acc) or None if no validation
                 'cv_stability_score': self._calculate_stability_score(cv_results) if hasattr(self, '_calculate_stability_score') else 0.0,
                 
                 # Timing
@@ -702,7 +716,18 @@ class ComprehensiveEvaluator:
                 'error_message': None
             }
             
-            print(f"     ✅ {combination_key}: Val={val_acc:.3f}, Test={test_acc:.3f}, ML-CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
+            if cv_f1_based_accuracy is not None:
+                print(f"     ✅ {combination_key}: Val={val_acc:.3f}, Test={test_acc:.3f}, ML-CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
+            else:
+                print(f"     ✅ {combination_key}: Val={val_acc:.3f}, Test={test_acc:.3f}, ML-CV=Not available")
+            
+            # Print overfitting information if available
+            if overfitting_score is not None:
+                print(f"     📊 Overfitting: {overfitting_level}")
+                print(f"     📊 Status: {overfitting_status}")
+            else:
+                print(f"     📊 Overfitting: {overfitting_level}")
+                print(f"     📊 Status: {overfitting_status}")
             
             return result
             
@@ -716,8 +741,12 @@ class ComprehensiveEvaluator:
                 'validation_accuracy': 0.0,
                 'test_accuracy': 0.0,
                 'f1_score': 0.0,  # ← Thêm F1 score cho error case
-                'overfitting_score': 0.0,
-                'overfitting_status': 'error'
+                'overfitting_score': None,
+                'overfitting_status': 'error',
+                'overfitting_level': 'Error occurred',
+                'overfitting_classification': 'Error occurred',
+                'ml_cv_accuracy': None,
+                'ml_cv_variation': None
             }
             print(f"     ❌ {combination_key}: Error - {e}")
             return error_result
@@ -756,7 +785,9 @@ class ComprehensiveEvaluator:
     
     def _classify_overfitting(self, overfitting_score: float) -> str:
         """Classify the level of overfitting"""
-        if overfitting_score < -0.05:
+        if overfitting_score is None:
+            return "no_validation_data"
+        elif overfitting_score < -0.05:
             return "underfitting"
         elif overfitting_score > 0.05:
             return "overfitting"
@@ -765,7 +796,9 @@ class ComprehensiveEvaluator:
     
     def _get_overfitting_classification(self, overfitting_score: float) -> str:
         """Get detailed overfitting classification"""
-        if overfitting_score < -0.1:
+        if overfitting_score is None:
+            return "Cannot Determine"
+        elif overfitting_score < -0.1:
             return "Severe Underfitting"
         elif overfitting_score < -0.05:
             return "Moderate Underfitting"
@@ -777,6 +810,21 @@ class ComprehensiveEvaluator:
             return "Moderate Overfitting"
         else:
             return "Severe Overfitting"
+    
+    def _get_overfitting_level_from_score(self, overfitting_score: float) -> str:
+        """Get overfitting level description from score (for CV fold approximation)"""
+        if overfitting_score is None:
+            return "Cannot Determine"
+        elif overfitting_score > 0.1:
+            return f"High overfitting - {overfitting_score:.3f}"
+        elif overfitting_score > 0.05:
+            return f"Moderate overfitting - {overfitting_score:.3f}"
+        elif overfitting_score > -0.05:
+            return f"Good fit - {overfitting_score:.3f}"
+        elif overfitting_score > -0.1:
+            return f"Slight underfitting - {overfitting_score:.3f}"
+        else:
+            return f"Underfitting - {overfitting_score:.3f}"
     
     def _calculate_stability_score(self, cv_results: Dict[str, Any]) -> float:
         """Calculate model stability score from CV results"""

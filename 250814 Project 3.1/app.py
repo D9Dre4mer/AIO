@@ -271,13 +271,41 @@ st.markdown("""
     
     /* Force theme consistency */
     * {
-        transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    }
+    
+    /* Optimize transitions for better performance */
+    .step-container, .section-box, .metric-box {
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    
+    /* Reduce transition effects that might cause dark screen */
+    .stMarkdown, .stText, .stButton, .stSelectbox, .stRadio, .stFileUploader {
+        transition: none !important;
+    }
+    
+    /* Ensure smooth loading without dark transitions */
+    .stSpinner {
+        transition: opacity 0.1s ease !important;
+    }
+    
+    /* Prevent dark screen during loading */
+    .stApp[data-theme="dark"] .stSpinner {
+        background: rgba(14, 17, 23, 0.8) !important;
+    }
+    
+    .stApp[data-theme="light"] .stSpinner {
+        background: rgba(255, 255, 255, 0.8) !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
 def main():
     """Main application following wireframe design"""
+    
+    # Initialize loading state
+    if 'is_loading' not in st.session_state:
+        st.session_state.is_loading = False
     
     # Header
     st.markdown("""
@@ -290,6 +318,12 @@ def main():
     # Initialize session manager
     session_manager = SessionManager()
     current_step = get_current_step(session_manager)
+    
+    # Show loading indicator if processing
+    if st.session_state.is_loading:
+        with st.spinner("🔄 Processing your request..."):
+            time.sleep(0.1)  # Small delay to show spinner
+    
     # Main content area
     col1, col2 = st.columns([3, 1])
     
@@ -311,6 +345,9 @@ def main():
     
     with col2:
         render_sidebar()
+    
+    # Reset loading state
+    st.session_state.is_loading = False
 
 def render_step1_wireframe():
     """Render Step 1 exactly as per wireframe design"""
@@ -353,59 +390,65 @@ def render_step1_wireframe():
                 try:
                     # Check if file exists
                     if os.path.exists(file_path):
-                        # Read file based on extension
-                        file_extension = file_path.split('.')[-1].lower()
-                        
-                        if file_extension == 'csv':
-                            df = pd.read_csv(file_path)
-                        elif file_extension in ['xlsx', 'xls']:
-                            df = pd.read_excel(file_path)
-                        elif file_extension == 'json':
-                            df = pd.read_json(file_path)
-                        elif file_extension == 'txt':
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                lines = f.readlines()[:100]
-                            df = pd.DataFrame({'text': lines})
-                        else:
-                            st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
-                            return
+                        # Add loading indicator for file reading
+                        with st.spinner("🔄 Reading file from path..."):
+                            # Read file based on extension
+                            file_extension = file_path.split('.')[-1].lower()
+                            
+                            if file_extension == 'csv':
+                                df = pd.read_csv(file_path)
+                            elif file_extension in ['xlsx', 'xls']:
+                                df = pd.read_excel(file_path)
+                            elif file_extension == 'json':
+                                df = pd.read_json(file_path)
+                            elif file_extension == 'txt':
+                                with open(file_path, 'r', encoding='utf-8') as f:
+                                    lines = f.readlines()[:100]
+                                df = pd.DataFrame({'text': lines})
+                            else:
+                                st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
+                                return
                         
                         st.success(f"✅ File loaded successfully from: {file_path}")
                         
-                        # Store in session
-                        session_manager = SessionManager()
-                        session_manager.update_step_data(1, 'dataframe', df)
-                        session_manager.update_step_data(1, 'file_path', 
-                                                       file_path)
+                        # Store in session with loading indicator
+                        with st.spinner("💾 Saving to session..."):
+                            # Store in session
+                            session_manager = SessionManager()
+                            session_manager.update_step_data(1, 'dataframe', df)
+                            session_manager.update_step_data(1, 'file_path', 
+                                                           file_path)
+                            
+                            # Store default sampling configuration
+                            dataset_size = len(df)
+                            if dataset_size <= 10:
+                                default_samples = dataset_size
+                            elif dataset_size < 1000:
+                                default_samples = dataset_size
+                            else:
+                                default_samples = min(100000, dataset_size)
+                            
+                            default_sampling_config = {
+                                'num_samples': default_samples,
+                                'sampling_strategy': 'Stratified (Recommended)'
+                            }
+                            
+                            session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
+                            print(f"💾 Saved default sampling config from path: {default_sampling_config}")
+                            
+                            # Also store dataset size for reference
+                            session_manager.update_step_data(1, 'dataset_size', dataset_size)
                         
-                        # Store default sampling configuration
-                        dataset_size = len(df)
-                        if dataset_size <= 10:
-                            default_samples = dataset_size
-                        elif dataset_size < 1000:
-                            default_samples = dataset_size
-                        else:
-                            default_samples = min(100000, dataset_size)
-                        
-                        default_sampling_config = {
-                            'num_samples': default_samples,
-                            'sampling_strategy': 'Stratified (Recommended)'
-                        }
-                        
-                        session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
-                        print(f"💾 Saved default sampling config from path: {default_sampling_config}")
-                        
-                        # Also store dataset size for reference
-                        session_manager.update_step_data(1, 'dataset_size', dataset_size)
-                        
-                        # Show file preview
-                        show_file_preview(df, file_extension)
+                        # Show file preview with loading indicator
+                        with st.spinner("📊 Generating file preview..."):
+                            show_file_preview(df, file_extension)
                         
                     else:
                         st.error("❌ File not found. Please check the path and try again.")
                         
                 except Exception as e:
                     st.error(f"❌ Error loading file: {str(e)}")
+                    st.exception(e)  # Show full error details
         
     elif "Sample Dataset" in dataset_source:
         import glob
@@ -438,51 +481,58 @@ def render_step1_wireframe():
                 file_path = os.path.join(cache_dir, selected_file)
                 file_extension = selected_file.split('.')[-1].lower()
                 try:
-                    if file_extension == 'csv':
-                        df = pd.read_csv(file_path)
-                    elif file_extension in ['xlsx', 'xls']:
-                        df = pd.read_excel(file_path)
-                    elif file_extension == 'json':
-                        df = pd.read_json(file_path)
-                    elif file_extension == 'txt':
-                        with open(file_path, 'r', encoding='utf-8') as f:
-                            lines = f.readlines()[:100]
-                        df = pd.DataFrame({'text': lines})
-                    else:
-                        st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
-                        return
+                    # Add loading indicator for sample dataset
+                    with st.spinner(f"🔄 Loading sample dataset '{selected_file}'..."):
+                        if file_extension == 'csv':
+                            df = pd.read_csv(file_path)
+                        elif file_extension in ['xlsx', 'xls']:
+                            df = pd.read_excel(file_path)
+                        elif file_extension == 'json':
+                            df = pd.read_json(file_path)
+                        elif file_extension == 'txt':
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                lines = f.readlines()[:100]
+                            df = pd.DataFrame({'text': lines})
+                        else:
+                            st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
+                            return
 
                     st.toast(f"✅ Sample dataset '{selected_file}' loaded from cache.")
 
-                    # Store in session
-                    session_manager = SessionManager()
-                    session_manager.update_step_data(1, 'dataframe', df)
-                    session_manager.update_step_data(1, 'file_path', file_path)
+                    # Store in session with loading indicator
+                    with st.spinner("💾 Saving to session..."):
+                        # Store in session
+                        session_manager = SessionManager()
+                        session_manager.update_step_data(1, 'dataframe', df)
+                        session_manager.update_step_data(1, 'file_path', file_path)
 
-                    # Store default sampling configuration
-                    dataset_size = len(df)
-                    if dataset_size <= 10:
-                        default_samples = dataset_size
-                    elif dataset_size < 1000:
-                        default_samples = dataset_size
-                    else:
-                        default_samples = min(100000, dataset_size)
-                    
-                    default_sampling_config = {
-                        'num_samples': default_samples,
-                        'sampling_strategy': 'Stratified (Recommended)'
-                    }
-                    
-                    session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
-                    print(f"💾 Saved default sampling config from sample: {default_sampling_config}")
-                    
-                    # Also store dataset size for reference
-                    session_manager.update_step_data(1, 'dataset_size', dataset_size)
+                        # Store default sampling configuration
+                        dataset_size = len(df)
+                        if dataset_size <= 10:
+                            default_samples = dataset_size
+                        elif dataset_size < 1000:
+                            default_samples = dataset_size
+                        else:
+                            default_samples = min(100000, dataset_size)
+                        
+                        default_sampling_config = {
+                            'num_samples': default_samples,
+                            'sampling_strategy': 'Stratified (Recommended)'
+                        }
+                        
+                        session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
+                        print(f"💾 Saved default sampling config from sample: {default_sampling_config}")
+                        
+                        # Also store dataset size for reference
+                        session_manager.update_step_data(1, 'dataset_size', dataset_size)
 
-                    # Show file preview
-                    show_file_preview(df, file_extension)
+                    # Show file preview with loading indicator
+                    with st.spinner("📊 Generating file preview..."):
+                        show_file_preview(df, file_extension)
+                        
                 except Exception as e:
                     st.toast(f"❌ Error loading sample dataset: {str(e)}")
+                    st.exception(e)  # Show full error details
     
     # Custom File Upload Section
     if "Upload Custom File" in dataset_source:
@@ -603,58 +653,63 @@ def render_step1_wireframe():
 def process_uploaded_file(uploaded_file):
     """Process the uploaded file and show preview"""
     
-    try:
-        # Read file based on type
-        file_extension = uploaded_file.name.split('.')[-1].lower()
-        
-        if file_extension == 'csv':
-            df = pd.read_csv(uploaded_file)
-        elif file_extension in ['xlsx', 'xls']:
-            df = pd.read_excel(uploaded_file)
-        elif file_extension == 'json':
-            df = pd.read_json(uploaded_file)
-        elif file_extension == 'txt':
-            content = uploaded_file.read().decode('utf-8')
-            lines = content.split('\n')[:100]
-            df = pd.DataFrame({'text': lines})
-            uploaded_file.seek(0)
-        
-        st.success(f"✅ File '{uploaded_file.name}' uploaded successfully!")
-        
-        # Show file preview
-        show_file_preview(df, file_extension)
-        
-        # Store in session
-        session_manager = SessionManager()
-        session_manager.update_step_data(1, 'dataframe', df)
-        session_manager.update_step_data(1, 'uploaded_file', {
-            'name': uploaded_file.name,
-            'size': uploaded_file.size,
-            'type': uploaded_file.type
-        })
-        
-        # Store default sampling configuration
-        dataset_size = len(df)
-        if dataset_size <= 10:
-            default_samples = dataset_size
-        elif dataset_size < 1000:
-            default_samples = dataset_size
-        else:
-            default_samples = min(100000, dataset_size)
-        
-        default_sampling_config = {
-            'num_samples': default_samples,
-            'sampling_strategy': 'Stratified (Recommended)'
-        }
-        
-        session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
-        print(f"💾 Saved default sampling config: {default_sampling_config}")
-        
-        # Also store dataset size for reference
-        session_manager.update_step_data(1, 'dataset_size', dataset_size)
-        
-    except Exception as e:
-        st.error(f"❌ Error processing file: {str(e)}")
+    # Add loading indicator
+    with st.spinner("🔄 Processing uploaded file..."):
+        try:
+            # Read file based on type
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            
+            if file_extension == 'csv':
+                df = pd.read_csv(uploaded_file)
+            elif file_extension in ['xlsx', 'xls']:
+                df = pd.read_excel(uploaded_file)
+            elif file_extension == 'json':
+                df = pd.read_json(uploaded_file)
+            elif file_extension == 'txt':
+                content = uploaded_file.read().decode('utf-8')
+                lines = content.split('\n')[:100]
+                df = pd.DataFrame({'text': lines})
+                uploaded_file.seek(0)
+            
+            st.success(f"✅ File '{uploaded_file.name}' uploaded successfully!")
+            
+            # Show file preview with progress
+            with st.spinner("📊 Generating file preview..."):
+                show_file_preview(df, file_extension)
+            
+            # Store in session
+            with st.spinner("💾 Saving to session..."):
+                session_manager = SessionManager()
+                session_manager.update_step_data(1, 'dataframe', df)
+                session_manager.update_step_data(1, 'uploaded_file', {
+                    'name': uploaded_file.name,
+                    'size': uploaded_file.size,
+                    'type': uploaded_file.type
+                })
+                
+                # Store default sampling configuration
+                dataset_size = len(df)
+                if dataset_size <= 10:
+                    default_samples = dataset_size
+                elif dataset_size < 1000:
+                    default_samples = dataset_size
+                else:
+                    default_samples = min(100000, dataset_size)
+                
+                default_sampling_config = {
+                    'num_samples': default_samples,
+                    'sampling_strategy': 'Stratified (Recommended)'
+                }
+                
+                session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
+                print(f"💾 Saved default sampling config: {default_sampling_config}")
+                
+                # Also store dataset size for reference
+                session_manager.update_step_data(1, 'dataset_size', dataset_size)
+            
+        except Exception as e:
+            st.error(f"❌ Error processing file: {str(e)}")
+            st.exception(e)  # Show full error details
 
 
 def show_file_preview(df, file_extension):
@@ -2369,27 +2424,6 @@ def render_step4_wireframe():
                 if 'best_combinations' in result and result['best_combinations']:
                     best_overall = result['best_combinations'].get('best_overall', {})
                     if best_overall:
-                        best_accuracy.metric("Best Accuracy", f"{best_overall.get('test_accuracy', 0):.3f}")
-                        st.session_state.training_log.append(f"🏆 Best: {best_overall.get('combination_key', 'N/A')}")
-                
-                # Show completion message
-                if result.get('from_cache', False):
-                    st.toast("🎯 Using cached results!")
-                    st.info(f"📋 Retrieved {total_combinations} model-embedding combinations from cache (no training needed)")
-                else:
-                    st.toast("🎉 Comprehensive evaluation completed successfully!")
-                    st.info(f"Evaluated {total_combinations} model-embedding combinations in {result['elapsed_time']:.2f} seconds")
-                
-                # ===== COMPREHENSIVE RESULTS DISPLAY =====
-                st.markdown("---")
-                st.markdown("""
-                <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🥇 Best Overall Model</h3>
-                """, unsafe_allow_html=True)
-                
-                # Best Model Performance
-                if 'best_combinations' in result and result['best_combinations']:
-                    best_overall = result['best_combinations'].get('best_overall', {})
-                    if best_overall:
                         
                         best_col1, best_col2, best_col3 = st.columns(3)
                         
@@ -2420,7 +2454,7 @@ def render_step4_wireframe():
                                 'Precision': f"{res.get('test_metrics', {}).get('precision', 0):.3f}",
                                 'Recall': f"{res.get('test_metrics', {}).get('recall', 0):.3f}",
                                 'F1 Score': f"{res.get('f1_score', 0):.3f}",
-                                'Overfitting': res.get('overfitting_status', 'N/A').replace('_', ' ').title(),
+                                'Overfitting': res.get('overfitting_level', res.get('overfitting_status', 'N/A')).replace('_', ' ').title(),
                                 'Training Time': f"{res.get('training_time', 0):.2f}s"
                             })
                     
