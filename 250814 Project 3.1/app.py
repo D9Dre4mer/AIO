@@ -11,6 +11,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
 import sys
 import os
 import time
@@ -271,7 +273,9 @@ st.markdown("""
     
     /* Force theme consistency */
     * {
-        transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+        transition: background-color 0.2s ease, 
+                   color 0.2s ease, 
+                   border-color 0.2s ease;
     }
     
     /* Optimize transitions for better performance */
@@ -340,6 +344,8 @@ def main():
             render_step3_wireframe()
         elif current_step == 4:
             render_step4_wireframe()
+        elif current_step == 5:
+            render_step5_wireframe()
         else:
             render_step1_wireframe()  # Default to step 1
     
@@ -348,6 +354,7 @@ def main():
     
     # Reset loading state
     st.session_state.is_loading = False
+
 
 def render_step1_wireframe():
     """Render Step 1 exactly as per wireframe design"""
@@ -416,7 +423,7 @@ def render_step1_wireframe():
                             # Store in session
                             session_manager = SessionManager()
                             session_manager.update_step_data(1, 'dataframe', df)
-                            session_manager.update_step_data(1, 'file_path', 
+                            session_manager.update_step_data(1, 'file_path',
                                                            file_path)
                             
                             # Store default sampling configuration
@@ -921,6 +928,10 @@ def render_sidebar():
                 status_icon = "✅"
                 status_text = "Completed"
                 button_color = "primary"
+            elif i == 5 and step_data.get('completed', False):  # Step 5 (Results Analysis)
+                status_icon = "✅"
+                status_text = "Completed"
+                button_color = "primary"
         
         # Create clickable button for each step
         if st.sidebar.button(
@@ -972,9 +983,6 @@ def get_current_step(session_manager):
         except Exception:
             pass
         return 1
-
-
-
 
 def render_step2_wireframe():
     """Render Step 2 - Column Selection & Preprocessing"""
@@ -2550,6 +2558,345 @@ def render_step4_wireframe():
         except Exception as e:
             st.error(f"❌ Error during training: {str(e)}")
             st.session_state.training_started = False
+    
+    # Navigation buttons
+    render_navigation_buttons()
+
+def render_step5_wireframe():
+    """Render Step 5 - Results Analysis & Export exactly as per wireframe design"""
+    
+    # Step title
+    st.markdown("""
+    <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
+        📍 STEP 5/6: Results Analysis & Export
+    </h2>
+    """, unsafe_allow_html=True)
+    
+    # Get data from previous steps
+    session_manager = SessionManager()
+    step1_data = session_manager.get_step_data(1)
+    step2_data = session_manager.get_step_data(2)
+    step3_data = session_manager.get_step_data(3)
+    step4_data = session_manager.get_step_data(4)
+    
+    if not step1_data or 'dataframe' not in step1_data:
+        st.error("❌ No dataset found. Please complete Step 1 first.")
+        if st.button("← Go to Step 1"):
+            session_manager.set_current_step(1)
+            st.rerun()
+        return
+    
+    if not step2_data or not step2_data.get('completed', False):
+        st.error("❌ Please complete Step 2 (Column Selection & Preprocessing) first.")
+        if st.button("← Go to Step 2"):
+            session_manager.set_current_step(2)
+            st.rerun()
+        return
+    
+    if not step3_data or not step3_data.get('completed', False):
+        st.error("❌ Please complete Step 3 (Model Configuration & Vectorization) first.")
+        if st.button("← Go to Step 3"):
+            session_manager.set_current_step(3)
+            st.rerun()
+        return
+    
+    if not step4_data or not step4_data.get('completed', False):
+        st.error("❌ Please complete Step 4 (Training Execution & Monitoring) first.")
+        if st.button("← Go to Step 4"):
+            session_manager.set_current_step(4)
+            st.rerun()
+        return
+    
+    # Get training results from step 4
+    training_results = step4_data.get('training_results', {})
+    
+    if not training_results or training_results.get('status') != 'success':
+        st.error("❌ No training results found. Please complete Step 4 first.")
+        if st.button("← Go to Step 4"):
+            session_manager.set_current_step(4)
+            st.rerun()
+        return
+    
+    # 🏆 Best Model Selection Section
+    st.markdown("""
+    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🏆 Best Model Selection:</h3>
+    """, unsafe_allow_html=True)
+    
+    # Get best model from training results
+    best_combinations = training_results.get('best_combinations', {})
+    best_overall = best_combinations.get('best_overall', {})
+    
+    if best_overall:
+
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            model_name = best_overall.get('combination_key', 'N/A')
+            st.markdown(f"""
+            <div class="metric-box">
+                <h4>🥇 TOP PERFORMER</h4>
+                <p><strong>{model_name}</strong></p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            f1_score = best_overall.get('f1_score', 0)
+            st.markdown(f"""
+            <div class="metric-box">
+                <h4>📊 F1 Score</h4>
+                <p><strong>{f1_score:.3f}</strong></p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            training_time = best_overall.get('training_time', 0)
+            st.markdown(f"""
+            <div class="metric-box">
+                <h4>⏱️ Training Time</h4>
+                <p><strong>{training_time:.1f}s</strong></p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Additional metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            test_accuracy = best_overall.get('test_accuracy', 0)
+            st.markdown(f"""
+            <div class="metric-box">
+                <h4>🎯 Test Accuracy</h4>
+                <p><strong>{test_accuracy:.3f}</strong></p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            if 'test_metrics' in best_overall:
+                test_metrics = best_overall['test_metrics']
+                precision = test_metrics.get('precision', 0)
+                
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>📊 Precision</h4>
+                    <p><strong>{precision:.3f}</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col3:
+            if 'test_metrics' in best_overall:
+                test_metrics = best_overall['test_metrics']
+                recall = test_metrics.get('recall', 0)
+                
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>📈 Recall</h4>
+                    <p><strong>{recall:.3f}</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.warning("⚠️ No best model results found in training data.")
+    
+    # 🎯 Model Comparison Chart Section
+    st.markdown("""
+    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🎯 Model Comparison Chart:</h3>
+    """, unsafe_allow_html=True)
+    
+    # Get comprehensive results for comparison
+    comprehensive_results = training_results.get('comprehensive_results', [])
+    
+    if comprehensive_results:
+        # Create comparison data
+        comparison_data = []
+        for result in comprehensive_results:
+            if result.get('status') == 'success':
+                model_name = result.get('model_name', 'Unknown')
+                embedding_name = result.get('embedding_name', 'Unknown')
+                combination_key = f"{model_name} + {embedding_name}"
+                
+                # Get both F1 Score and Test Accuracy separately
+                f1_score = result.get('f1_score', 0)
+                test_accuracy = result.get('test_accuracy', 0)
+                
+                comparison_data.append({
+                    'Model': combination_key.replace('_', ' ').title(),
+                    'F1 Score': f1_score,
+                    'Test Accuracy': test_accuracy,
+                    'Precision': result.get('test_metrics', {}).get('precision', 0),
+                    'Recall': result.get('test_metrics', {}).get('recall', 0),
+                    'Training Time': result.get('training_time', 0)
+                })
+        
+        if comparison_data:
+            # Create interactive bar chart
+            import plotly.express as px
+            import plotly.graph_objects as go
+            
+            # Sort by F1 Score for better visualization
+            comparison_df = pd.DataFrame(comparison_data)
+            comparison_df = comparison_df.sort_values('F1 Score', ascending=False)
+            
+            # Create bar chart
+            fig = px.bar(
+                comparison_df,
+                x='Model',
+                y='F1 Score',
+                title='Model Performance Comparison (F1 Score)',
+                color='F1 Score',
+                color_continuous_scale='viridis',
+                text=comparison_df['F1 Score'].apply(lambda x: f'{x:.3f}')
+            )
+            
+            fig.update_traces(textposition='outside')
+            fig.update_layout(
+                xaxis_title="Model + Vectorization",
+                yaxis_title="F1 Score",
+                showlegend=False,
+                height=500
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Show comparison table
+            st.markdown("**📊 Detailed Comparison Table:**")
+            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ No valid comparison data available.")
+    else:
+        st.warning("⚠️ No comprehensive results available for comparison.")
+    
+    # 🔍 Detailed Model Analysis Section
+    st.markdown("""
+    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🔍 Detailed Model Analysis:</h3>
+    """, unsafe_allow_html=True)
+    
+    # View All Model Results Button
+    if st.button("📊 View All Model Results", type="primary", use_container_width=True):
+        if comprehensive_results:
+            # Create detailed results display
+            st.markdown("**📋 Complete Model Evaluation Results:**")
+            
+            # Group results by model type
+            model_groups = {}
+            for result in comprehensive_results:
+                if result.get('status') == 'success':
+                    model_name = result.get('model_name', 'Unknown')
+                    if model_name not in model_groups:
+                        model_groups[model_name] = []
+                    model_groups[model_name].append(result)
+            
+            # Display results by model group
+            for model_name, results in model_groups.items():
+                with st.expander(f"🔍 {model_name.replace('_', ' ').title()} Results", expanded=False):
+                    # Create results table for this model
+                    model_data = []
+                    for result in results:
+                        embedding_name = result.get('embedding_name', 'Unknown')
+                        accuracy = result.get('f1_score', result.get('test_accuracy', 0))
+                        training_time = result.get('training_time', 0)
+                        
+                        model_data.append({
+                            'Vectorization': embedding_name.replace('_', ' ').title(),
+                            'F1 Score': f"{result.get('f1_score', 0):.3f}",
+                            'Test Accuracy': f"{result.get('test_accuracy', 0):.3f}",
+                            'Precision': f"{result.get('test_metrics', {}).get('precision', 0):.3f}",
+                            'Recall': f"{result.get('test_metrics', {}).get('recall', 0):.3f}",
+                            'Training Time': f"{training_time:.2f}s",
+                            'Overfitting': result.get('overfitting_level', 'N/A')
+                        })
+                    
+                    if model_data:
+                        model_df = pd.DataFrame(model_data)
+                        st.dataframe(model_df, use_container_width=True, hide_index=True)
+                    else:
+                        st.info("No results available for this model.")
+        else:
+            st.warning("⚠️ No detailed results available.")
+    
+    # Export Functionality Section
+    st.markdown("---")
+    st.markdown("""
+    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">📤 Export & Documentation:</h3>
+    """, unsafe_allow_html=True)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # CSV Export
+        if comprehensive_results:
+            # Prepare CSV data
+            csv_data = []
+            for result in comprehensive_results:
+                if result.get('status') == 'success':
+                    csv_data.append({
+                        'Model': result.get('model_name', 'Unknown'),
+                        'Vectorization': result.get('embedding_name', 'Unknown'),
+                        'F1 Score': result.get('f1_score', 0),
+                        'Test Accuracy': result.get('test_accuracy', 0),
+                        'Precision': result.get('test_metrics', {}).get('precision', 0),
+                        'Recall': result.get('test_metrics', {}).get('recall', 0),
+                        'Training Time (s)': result.get('training_time', 0),
+                        'Overfitting Level': result.get('overfitting_level', 'N/A'),
+                        'CV Mean Accuracy': result.get('cv_mean_accuracy', 0),
+                        'CV Std Accuracy': result.get('cv_std_accuracy', 0)
+                    })
+            
+            if csv_data:
+                csv_df = pd.DataFrame(csv_data)
+                csv = csv_df.to_csv(index=False)
+                
+                st.download_button(
+                    label="📥 Download Results CSV",
+                    data=csv,
+                    file_name="comprehensive_evaluation_results.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.warning("⚠️ No data available for CSV export.")
+        else:
+            st.warning("⚠️ No results available for export.")
+    
+    with col2:
+        # Summary Report
+        if comprehensive_results:
+            # Generate summary statistics
+            successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
+            
+            if successful_results:
+                total_models = len(successful_results)
+                avg_accuracy = sum(r.get('f1_score', 0) for r in successful_results) / total_models
+                avg_training_time = sum(r.get('training_time', 0) for r in successful_results) / total_models
+                
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>📊 Summary</h4>
+                    <p>• Total Models: <strong>{total_models}</strong></p>
+                    <p>• Avg Accuracy: <strong>{avg_accuracy:.3f}</strong></p>
+                    <p>• Avg Training Time: <strong>{avg_training_time:.2f}s</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.warning("⚠️ No successful results for summary.")
+        else:
+            st.warning("⚠️ No results available for summary.")
+    
+    # Close results container
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Save step 5 configuration
+    step5_config = {
+        'results_analyzed': True,
+        'best_model': best_overall,
+        'total_models': len(comprehensive_results) if comprehensive_results else 0,
+        'export_generated': True,
+        'completed': True
+    }
+    session_manager.set_step_config('step5', step5_config)
+    
+    # Show completion message
+    st.toast("✅ Step 5 completed successfully!")
+    st.toast("Click 'Next ▶' button to proceed to Step 6.")
     
     # Navigation buttons
     render_navigation_buttons()
