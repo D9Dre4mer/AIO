@@ -505,6 +505,15 @@ class StreamlitTrainingPipeline:
                     print(f"   • step2_data type: {type(step2_data)}")
                     print(f"   • step2_data keys: {list(step2_data.keys()) if isinstance(step2_data, dict) else 'Not a dict'}")
                 
+                # Check if ensemble learning is enabled
+                ensemble_config = step3_data.get('ensemble_learning', {})
+                ensemble_enabled = ensemble_config.get('enabled', False)
+                
+                print(f"🚀 [TRAINING_PIPELINE] Ensemble Learning: {'Enabled' if ensemble_enabled else 'Disabled'}")
+                if ensemble_enabled:
+                    print(f"   • Final Estimator: {ensemble_config.get('final_estimator', 'logistic_regression')}")
+                    print(f"   • Base Models: KNN + Decision Tree + Naive Bayes")
+                
                 # Run comprehensive evaluation with selected models and embeddings
                 # Pass sampling config to respect user choice and stop callback
                 evaluation_results = evaluator.run_comprehensive_evaluation(
@@ -517,7 +526,8 @@ class StreamlitTrainingPipeline:
                     step3_data=step3_data,  # Pass Step 3 configuration for KNN
                     preprocessing_config=self.preprocessing_config,  # Pass preprocessing config from instance
                     step1_data=step1_data,  # Pass Step 1 data to avoid reloading dataset
-                    step2_data=step2_data  # Pass Step 2 data with column configuration
+                    step2_data=step2_data,  # Pass Step 2 data with column configuration
+                    ensemble_config=ensemble_config  # Pass ensemble learning configuration
                 )
                 
                 # Update progress based on evaluation progress

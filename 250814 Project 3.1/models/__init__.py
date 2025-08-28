@@ -13,6 +13,8 @@ from .classification.decision_tree_model import DecisionTreeModel
 from .classification.naive_bayes_model import NaiveBayesModel
 from .classification.logistic_regression_model import LogisticRegressionModel
 from .classification.linear_svc_model import LinearSVCModel
+from .ensemble.ensemble_manager import EnsembleManager
+from .ensemble.stacking_classifier import EnsembleStackingClassifier
 from .utils.model_factory import ModelFactory
 from .utils.model_registry import ModelRegistry
 from .utils.validation_manager import ValidationManager
@@ -46,6 +48,8 @@ __all__ = [
     'NaiveBayesModel',
     'LogisticRegressionModel',
     'LinearSVCModel',
+    'EnsembleManager',
+    'EnsembleStackingClassifier',
     'ModelFactory',
     'ModelRegistry',
     'ValidationManager',

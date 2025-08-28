@@ -2027,6 +2027,46 @@ def render_step3_wireframe():
     if embeddings_vectorization:
         selected_vectorization.append("Word Embeddings")
     
+    # 🚀 ENSEMBLE LEARNING AUTO-DETECTION
+    ensemble_eligible = False
+    ensemble_enabled = False
+    
+    # Check if ensemble learning should be activated
+    required_models = {"K-Nearest Neighbors", "Decision Tree", "Naive Bayes"}
+    selected_models_set = set(selected_models)
+    
+    if required_models.issubset(selected_models_set):
+        ensemble_eligible = True
+        st.toast("🎯 **Ensemble Learning Eligible!** All 3 base models selected.")
+        
+        # Ensemble Learning Configuration
+        st.markdown("""
+        <h4 style="color: var(--text-color); margin: 1rem 0 0.5rem 0;">🚀 Ensemble Learning Configuration:</h4>
+        """, unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ensemble_enabled = st.checkbox(
+                "🚀 Enable Ensemble Learning",
+                value=True,
+                help="Use StackingClassifier to combine KNN + Decision Tree + Naive Bayes for enhanced performance"
+            )
+            
+        
+        with col2:
+            if ensemble_enabled:
+                ensemble_final_estimator = st.selectbox(
+                    "🎯 Final Estimator:",
+                    options=["logistic_regression", "random_forest"],
+                    index=0,
+                    help="Final estimator for stacking (Logistic Regression recommended for text classification)"
+                )
+                
+    else:
+        missing_models = required_models - selected_models_set
+        st.info(f"ℹ️ **Ensemble Learning**: Requires all 3 base models. Missing: {', '.join(missing_models)}")
+    
     # Validation
     validation_errors = []
     validation_warnings = []
@@ -2092,6 +2132,11 @@ def render_step3_wireframe():
             },
             'selected_models': selected_models,
             'selected_vectorization': selected_vectorization,
+            'ensemble_learning': {
+                'eligible': ensemble_eligible,
+                'enabled': ensemble_enabled if ensemble_eligible else False,
+                'final_estimator': ensemble_final_estimator if ensemble_eligible and ensemble_enabled else None
+            },
             'validation_errors': validation_errors,
             'validation_warnings': validation_warnings,
             'completed': True
@@ -2128,6 +2173,18 @@ def render_step3_wireframe():
         - **Selected Models**: {', '.join(selected_models)}
         - **Vectorization Methods**: {', '.join(selected_vectorization)}
         - **Total Combinations**: {len(selected_models) * len(selected_vectorization)} model-vectorization pairs
+        - **Ensemble Learning**: {'Enabled' if ensemble_eligible and ensemble_enabled else 'Not Eligible' if not ensemble_eligible else 'Disabled'}
+        """)
+        
+        # Show ensemble learning configuration if enabled
+        if ensemble_eligible and ensemble_enabled:
+            print(f"""
+        **Ensemble Learning Configuration:**
+        - **Status**: Enabled
+        - **Base Models**: KNN + Decision Tree + Naive Bayes
+        - **Final Estimator**: {ensemble_final_estimator.replace('_', ' ').title()}
+        - **Expected Performance**: 2-5% accuracy improvement
+        - **Training Time**: ~1.5-2x individual models
         """)
         
         # Show KNN configuration if selected

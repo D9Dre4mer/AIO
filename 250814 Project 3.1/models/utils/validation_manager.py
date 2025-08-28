@@ -197,7 +197,21 @@ class ValidationManager:
             # Calculate metrics for this fold
             for metric in metrics:
                 if metric == 'accuracy':
-                    score = accuracy_score(y_val, y_pred)
+                    # Calculate validation accuracy (model on validation data)
+                    val_score = accuracy_score(y_val, y_pred)
+                    # Calculate training accuracy (model on training data)
+                    y_train_pred = model.predict(X_train)
+                    train_score = accuracy_score(y_train, y_train_pred)
+                    
+                    # Store both scores for overfitting detection
+                    if 'train_accuracy' not in fold_scores:
+                        fold_scores['train_accuracy'] = []
+                        fold_scores['validation_accuracy'] = []
+                    fold_scores['train_accuracy'].append(train_score)
+                    fold_scores['validation_accuracy'].append(val_score)
+                    
+                    # Store validation accuracy in regular accuracy list
+                    score = val_score
                 elif metric == 'precision':
                     score = precision_score(y_val, y_pred, average='weighted', zero_division=0)
                 elif metric == 'recall':
@@ -240,9 +254,9 @@ class ValidationManager:
                 'accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0,
                 'n_train': len(fold_data['y_train']),
                 'n_val': len(fold_data['y_val']),
-                # Add training and validation accuracy for overfitting detection
-                'train_accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0,  # For precomputed, use same accuracy
-                'validation_accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0
+                # Use real training vs validation accuracy for overfitting detection
+                'train_accuracy': fold_scores['train_accuracy'][fold-1] if 'train_accuracy' in fold_scores and fold_scores['train_accuracy'] else 0,
+                'validation_accuracy': fold_scores['validation_accuracy'][fold-1] if 'validation_accuracy' in fold_scores and fold_scores['validation_accuracy'] else 0
             }
             cv_results['fold_results'].append(fold_result)
         

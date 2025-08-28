@@ -62,6 +62,32 @@ class ModelFactory:
         
         return models
     
+    def create_ensemble_model(
+        self, 
+        base_model_names: list,
+        final_estimator: str = 'logistic_regression',
+        cv_folds: int = 5,
+        random_state: int = 42
+    ) -> 'EnsembleManager':
+        """Create ensemble learning model"""
+        
+        try:
+            from ..ensemble.ensemble_manager import EnsembleManager
+            
+            ensemble = EnsembleManager(
+                base_models=base_model_names,
+                final_estimator=final_estimator,
+                cv_folds=cv_folds,
+                random_state=random_state
+            )
+            
+            print(f"✅ Ensemble model created successfully")
+            return ensemble
+            
+        except Exception as e:
+            print(f"❌ Error creating ensemble model: {e}")
+            raise
+    
     def get_available_models(self) -> list:
         """Get list of available model names"""
         if not self.registry:
