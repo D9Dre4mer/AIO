@@ -754,10 +754,11 @@ class ComprehensiveEvaluator:
                             print(f"     🔍 DEBUG: First CV fold data = {first_fold}")
                             print(f"     🔍 DEBUG: cv_train_acc = {cv_train_acc}, cv_val_acc = {cv_val_acc}")
                             
-                            # Calculate overfitting using CV vs Test (not CV Training vs CV Validation)
-                            # Use CV validation accuracy (cv_val_acc) vs test accuracy for overfitting detection
-                            cv_mean_accuracy = cv_val_acc  # CV validation accuracy
-                            overfitting_score = cv_mean_accuracy - test_acc  # CV vs Test
+                            # Calculate overfitting using mean(train_accuracy_folds) − mean(val_accuracy_folds)
+                            train_mean = np.mean([fold['train_accuracy'] for fold in cv_results['fold_results']])
+                            val_mean = np.mean([fold['validation_accuracy'] for fold in cv_results['fold_results']])
+                            cv_mean_accuracy = val_mean  # Keep for compatibility with logging
+                            overfitting_score = train_mean - val_mean
                             overfitting_status = self._classify_overfitting(overfitting_score)
                             overfitting_level = self._get_overfitting_level_from_score(overfitting_score)
                             

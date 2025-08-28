@@ -178,17 +178,44 @@ class StreamlitTrainingPipeline:
             print(f"Warning: Could not save cache metadata: {e}")
     
     def _generate_cache_key(self, step1_data: Dict, step2_data: Dict, step3_data: Dict) -> str:
-        """Generate unique cache key based on configuration"""
+        """Generate unique cache key based on configuration with human-readable naming"""
+        # Extract key configuration details for naming
+        sampling_config = step1_data.get('sampling_config', {})
+        selected_models = step3_data.get('selected_models', [])
+        selected_vectorization = step3_data.get('selected_vectorization', [])
+        text_column = step2_data.get('text_column', 'text')
+        label_column = step2_data.get('label_column', 'label')
+        
+        # Create human-readable cache name
+        sample_count = sampling_config.get('num_samples', 'full')
+        if sample_count == 'full':
+            sample_str = "full_dataset"
+        else:
+            sample_str = f"{sample_count}samples"
+        
+        # Get first few models and vectorization methods for name
+        model_str = "_".join(selected_models[:3])  # First 3 models
+        vector_str = "_".join(selected_vectorization[:2])  # First 2 vectorization methods
+        
+        # Truncate if too long
+        if len(model_str) > 30:
+            model_str = model_str[:30] + "..."
+        if len(vector_str) > 20:
+            vector_str = vector_str[:20] + "..."
+        
+        # Create human-readable name
+        human_name = f"{model_str}_{vector_str}_{sample_str}_{text_column}_{label_column}"
+        
+        # Also create hash for uniqueness
         config_hash = {
-            'sampling': step1_data.get('sampling_config', {}),
+            'sampling': sampling_config,
             'preprocessing': {
-                'text_column': step2_data.get('text_column'),
-                'label_column': step2_data.get('label_column'),
+                'text_column': text_column,
+                'label_column': label_column,
                 'text_cleaning': step2_data.get('text_cleaning', True),
                 'category_mapping': step2_data.get('category_mapping', True),
                 'data_validation': step2_data.get('data_validation', True),
                 'memory_optimization': step2_data.get('memory_optimization', True),
-                # Advanced preprocessing options
                 'rare_words_removal': step2_data.get('rare_words_removal', False),
                 'rare_words_threshold': step2_data.get('rare_words_threshold', 2),
                 'lemmatization': step2_data.get('lemmatization', False),
@@ -198,14 +225,17 @@ class StreamlitTrainingPipeline:
                 'min_phrase_freq': step2_data.get('min_phrase_freq', 3)
             },
             'model': step3_data.get('data_split', {}),
-            'vectorization': step3_data.get('selected_vectorization', []),
+            'vectorization': selected_vectorization,
             'cv': step3_data.get('cross_validation', {})
         }
         
-        # Create hash from config
+        # Create hash for uniqueness
         import hashlib
         config_str = json.dumps(config_hash, sort_keys=True)
-        return hashlib.md5(config_str.encode()).hexdigest()
+        config_hash_str = hashlib.md5(config_str.encode()).hexdigest()[:8]
+        
+        # Return human-readable name with hash
+        return f"{human_name}_{config_hash_str}"
     
     def _check_cache(self, cache_key: str) -> Dict:
         """Check if results exist in cache"""
@@ -222,7 +252,12 @@ class StreamlitTrainingPipeline:
                     try:
                         with open(cache_file, 'rb') as f:
                             cached_results = pickle.load(f)
-                        print(f"✅ Using cached results (age: {cache_age/3600:.1f}h)")
+                        
+                        # Display cache hit information
+                        cache_name = cache_info.get('cache_name', cache_key)
+                        print(f"✅ Using cached results: {cache_name}")
+                        print(f"   Age: {cache_age/3600:.1f}h | File: {cache_key}")
+                        
                         return cached_results
                     except Exception as e:
                         print(f"Warning: Could not load cached results: {e}")
@@ -230,7 +265,7 @@ class StreamlitTrainingPipeline:
         return None
     
     def _save_to_cache(self, cache_key: str, results: Dict):
-        """Save results to cache"""
+        """Save results to cache with human-readable information"""
         try:
             cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
             
@@ -238,11 +273,11 @@ class StreamlitTrainingPipeline:
             with open(cache_file, 'wb') as f:
                 pickle.dump(results, f)
             
-            # Update metadata
+            # Update metadata with human-readable info
             self.cache_metadata[cache_key] = {
                 'timestamp': time.time(),
                 'file_path': cache_file,
-                'config_hash': cache_key,
+                'cache_name': cache_key,  # Human-readable name
                 'results_summary': {
                     'successful_combinations': results.get('successful_combinations', 0),
                     'total_combinations': results.get('total_combinations', 0),
@@ -251,10 +286,38 @@ class StreamlitTrainingPipeline:
             }
             
             self._save_cache_metadata()
-            print(f"✅ Results cached successfully: {cache_file}")
+            print(f"✅ Results cached successfully: {cache_key}")
             
         except Exception as e:
             print(f"Warning: Could not save to cache: {e}")
+    
+    def show_cache_status(self):
+        """Display cache status in a user-friendly format"""
+        cached_results = self.list_cached_results()
+        
+        print("\n" + "="*70)
+        print("📊 CACHE STATUS REPORT")
+        print("="*70)
+        print(f"📍 Cache Directory: {self.cache_dir}")
+        print(f"📁 Total Entries: {len(cached_results)}")
+        print("-"*70)
+        
+        if cached_results:
+            print("📋 CACHED RESULTS:")
+            for i, item in enumerate(cached_results[:10], 1):  # Show first 10
+                cache_name = item.get('cache_name', item['cache_key'])
+                age_hours = item['age_hours']
+                results = item['results_summary']
+                
+                print(f"{i:2d}. {cache_name}")
+                print(f"    Age: {age_hours:.1f}h | Key: {item['cache_key'][:12]}...")
+                print(f"    Results: {results.get('successful_combinations', 0)}/{results.get('total_combinations', 0)} combinations")
+                print(f"    Time: {results.get('evaluation_time', 0):.1f}s")
+                print()
+        else:
+            print("📭 No cached results found")
+        
+        print("="*70)
     
     def get_cached_results(self, step1_data: Dict, step2_data: Dict, step3_data: Dict) -> Dict:
         """Get cached results if available"""
@@ -292,6 +355,7 @@ class StreamlitTrainingPipeline:
         for cache_key, metadata in self.cache_metadata.items():
             cached_results.append({
                 'cache_key': cache_key,
+                'cache_name': metadata.get('cache_name', cache_key),
                 'timestamp': metadata['timestamp'],
                 'age_hours': (time.time() - metadata['timestamp']) / 3600,
                 'results_summary': metadata.get('results_summary', {}),
