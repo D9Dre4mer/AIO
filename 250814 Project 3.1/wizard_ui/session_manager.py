@@ -15,6 +15,7 @@ import streamlit as st
 from typing import Dict, Any, Optional
 import json
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,10 @@ class SessionManager:
     def __init__(self):
         """Initialize the session manager"""
         self._initialize_session_state()
+        
+        # FIXED: Auto-restore session state from backup
+        self.auto_restore_session()
+        
         logger.info("Session Manager initialized")
     
     def _initialize_session_state(self) -> None:
@@ -123,6 +128,9 @@ class SessionManager:
         step_data = self.get_step_data(step_number)
         step_data[key] = value
         self.set_step_data(step_number, step_data)
+        
+        # FIXED: Auto-save session state after update
+        self.auto_save_session()
     
     def set_step_config(self, step_name: str, config: Dict[str, Any]) -> None:
         """
@@ -399,9 +407,174 @@ class SessionManager:
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON data: {str(e)}")
             return False
+    
+    def save_to_file(self, file_path: str = None) -> bool:
+        """
+        Save session state to file for persistence
+        
+        Args:
+            file_path: Path to save session file (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if file_path is None:
+                # Use default path in wizard_ui directory
+                import os
+                default_dir = os.path.dirname(os.path.abspath(__file__))
+                file_path = os.path.join(default_dir, "session_backup.json")
+            
+            # Create directory if it doesn't exist
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Save session state
+            session_data = self.save_session_state()
+            
+            # Add timestamp
+            session_data['_metadata'] = {
+                'saved_at': datetime.now().isoformat(),
+                'version': '1.0',
+                'source': 'SessionManager.save_to_file'
+            }
+            
+            # Write to file
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, default=str, ensure_ascii=False)
+            
+            logger.info(f"Session state saved to file: {file_path}")
+            return True
+            
         except Exception as e:
-            logger.error(f"Failed to import session data: {str(e)}")
+            logger.error(f"Failed to save session state to file: {str(e)}")
             return False
+    
+    def load_from_file(self, file_path: str = None) -> bool:
+        """
+        Load session state from file
+        
+        Args:
+            file_path: Path to load session file from (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if file_path is None:
+                # Use default path in wizard_ui directory
+                import os
+                default_dir = os.path.dirname(os.path.abspath(__file__))
+                file_path = os.path.join(default_dir, "session_backup.json")
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                logger.warning(f"Session backup file not found: {file_path}")
+                return False
+            
+            # Read from file
+            with open(file_path, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
+            
+            # Remove metadata
+            if '_metadata' in session_data:
+                metadata = session_data.pop('_metadata')
+                logger.info(f"Loading session from backup saved at: {metadata.get('saved_at', 'Unknown')}")
+            
+            # Restore session state
+            success = self.restore_session_state(session_data)
+            
+            if success:
+                logger.info(f"Session state loaded from file: {file_path}")
+            else:
+                logger.error(f"Failed to restore session state from file: {file_path}")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"Failed to load session state from file: {str(e)}")
+            return False
+    
+    def auto_save_enabled(self) -> bool:
+        """Check if auto-save is enabled"""
+        return st.session_state.wizard_config.get('auto_save', True)
+    
+    def enable_auto_save(self) -> None:
+        """Enable auto-save functionality"""
+        st.session_state.wizard_config['auto_save'] = True
+        logger.info("Auto-save enabled")
+    
+    def disable_auto_save(self) -> None:
+        """Disable auto-save functionality"""
+        st.session_state.wizard_config['auto_save'] = False
+        logger.info("Auto-save disabled")
+    
+    def auto_save_session(self) -> None:
+        """Auto-save session state if enabled"""
+        if self.auto_save_enabled():
+            try:
+                self.save_to_file()
+                logger.debug("Auto-save completed")
+            except Exception as e:
+                logger.warning(f"Auto-save failed: {str(e)}")
+    
+    def auto_restore_session(self) -> None:
+        """Auto-restore session state on startup"""
+        try:
+            if self.load_from_file():
+                logger.info("Session state auto-restored from backup")
+            else:
+                logger.info("No session backup found, using default state")
+        except Exception as e:
+            logger.warning(f"Auto-restore failed: {str(e)}")
+    
+    def get_session_backup_info(self) -> Dict[str, Any]:
+        """
+        Get information about session backup file
+        
+        Returns:
+            Dictionary with backup file information
+        """
+        try:
+            import os
+            default_dir = os.path.dirname(os.path.abspath(__file__))
+            file_path = os.path.join(default_dir, "session_backup.json")
+            
+            if not os.path.exists(file_path):
+                return {
+                    'exists': False,
+                    'file_path': file_path,
+                    'size': 0,
+                    'modified': None
+                }
+            
+            stat = os.stat(file_path)
+            return {
+                'exists': True,
+                'file_path': file_path,
+                'size': stat.st_size,
+                'modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                'size_human': self._format_file_size(stat.st_size)
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get backup info: {str(e)}")
+            return {
+                'exists': False,
+                'error': str(e)
+            }
+    
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format"""
+        if size_bytes == 0:
+            return "0B"
+        
+        size_names = ["B", "KB", "MB", "GB"]
+        i = 0
+        while size_bytes >= 1024 and i < len(size_names) - 1:
+            size_bytes /= 1024.0
+            i += 1
+        
+        return f"{size_bytes:.1f}{size_names[i]}"
     
     def get_session_summary(self) -> Dict[str, Any]:
         """

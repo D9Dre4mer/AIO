@@ -13,6 +13,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
+import seaborn as sns
 import sys
 import os
 import time
@@ -22,6 +23,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from wizard_ui.session_manager import SessionManager
 from training_pipeline import StreamlitTrainingPipeline
+
+# FIXED: Create global SessionManager instance for persistence
+@st.cache_resource
+def get_session_manager():
+    """Get or create global SessionManager instance"""
+    return SessionManager()
+
+# Initialize global session manager
+session_manager = get_session_manager()
 
 
 def get_cache_info():
@@ -311,6 +321,12 @@ def main():
     if 'is_loading' not in st.session_state:
         st.session_state.is_loading = False
     
+    # Initialize detailed analysis session state
+    if 'selected_model_detail' not in st.session_state:
+        st.session_state.selected_model_detail = None
+    if 'selected_model_result' not in st.session_state:
+        st.session_state.selected_model_result = None
+    
     # Header
     st.markdown("""
     <div class="main-header">
@@ -320,7 +336,7 @@ def main():
     """, unsafe_allow_html=True)
     
     # Initialize session manager
-    session_manager = SessionManager()
+    # Use global session_manager instance
     current_step = get_current_step(session_manager)
     
     # Show loading indicator if processing
@@ -420,8 +436,7 @@ def render_step1_wireframe():
                         
                         # Store in session with loading indicator
                         with st.spinner("💾 Saving to session..."):
-                            # Store in session
-                            session_manager = SessionManager()
+                            # Store in session using global instance
                             session_manager.update_step_data(1, 'dataframe', df)
                             session_manager.update_step_data(1, 'file_path',
                                                            file_path)
@@ -508,8 +523,7 @@ def render_step1_wireframe():
 
                     # Store in session with loading indicator
                     with st.spinner("💾 Saving to session..."):
-                        # Store in session
-                        session_manager = SessionManager()
+                        # Store in session using global instance
                         session_manager.update_step_data(1, 'dataframe', df)
                         session_manager.update_step_data(1, 'file_path', file_path)
 
@@ -565,8 +579,16 @@ def render_step1_wireframe():
         
         with col1:
             # Number of samples slider
-            session_manager = SessionManager()
+            # Use global session_manager instance
             step1_data = session_manager.get_step_data(1)
+            
+            # Initialize default values for sampling variables
+            min_samples = 100
+            max_samples = 1000
+            step_size = 100
+            default_samples = 1000
+            dataset_size = 0
+            existing_config = {}
             
             if step1_data and 'dataframe' in step1_data:
                 df = step1_data['dataframe']
@@ -575,7 +597,7 @@ def render_step1_wireframe():
                 # Get existing sampling config from session
                 existing_config = session_manager.get_step_data(1).get('sampling_config', {})
                 default_samples = existing_config.get('num_samples', min(100000, dataset_size))
-                
+            
                 # Adjust min_value and step based on dataset size
                 if dataset_size <= 10:
                     min_samples = 1
@@ -602,32 +624,35 @@ def render_step1_wireframe():
                     max_samples = min(500000, dataset_size)
                     step_size = 1000
                     default_samples = min(100000, dataset_size)
-                
-                # Final safety check to ensure max > min
-                if max_samples <= min_samples:
-                    max_samples = min_samples + step_size
-                
-                num_samples = st.slider(
-                    "📊 Number of Samples:",
-                    min_value=min_samples,
-                    max_value=max_samples,
-                    value=default_samples,
-                    step=step_size,
-                    help=f"Select number of samples ({min_samples:,} - {max_samples:,})"
-                )
-                
-                # Show warning for small datasets
-                if dataset_size < 1000:
-                    st.warning(f"⚠️ Small dataset detected ({dataset_size:,} rows). "
-                              f"Consider using all available data for better model performance.")
-                elif dataset_size == 1000:
-                    st.info(f"ℹ️ Dataset size: {dataset_size:,} rows. "
-                           f"You can sample from 100 to 1000 rows.")
-            else:
+            
+            # Final safety check to ensure max > min
+            if max_samples <= min_samples:
+                max_samples = min_samples + step_size
+            
+            num_samples = st.slider(
+                "📊 Number of Samples:",
+                min_value=min_samples,
+                max_value=max_samples,
+                value=default_samples,
+                step=step_size,
+                help=f"Select number of samples ({min_samples:,} - {max_samples:,})"
+            )
+            
+            # Show warning for small datasets
+            if dataset_size < 1000 and dataset_size > 0:
+                st.warning(f"⚠️ Small dataset detected ({dataset_size:,} rows). "
+                          f"Consider using all available data for better model performance.")
+            elif dataset_size == 1000:
+                st.info(f"ℹ️ Dataset size: {dataset_size:,} rows. "
+                       f"You can sample from 1000 rows.")
+            elif dataset_size == 0:
                 st.warning("⚠️ Please load a dataset first to configure sampling.")
         
         with col2:
             # Sampling strategy
+            # Initialize default sampling strategy
+            sampling_strategy = 'Stratified (Recommended)'
+            
             if step1_data and 'dataframe' in step1_data:
                 existing_strategy = existing_config.get('sampling_strategy', 'Stratified (Recommended)')
                 strategy_index = 1 if existing_strategy == "Stratified (Recommended)" else 0
@@ -686,7 +711,7 @@ def process_uploaded_file(uploaded_file):
             
             # Store in session
             with st.spinner("💾 Saving to session..."):
-                session_manager = SessionManager()
+                # Use global session_manager instance
                 session_manager.update_step_data(1, 'dataframe', df)
                 session_manager.update_step_data(1, 'uploaded_file', {
                     'name': uploaded_file.name,
@@ -728,7 +753,7 @@ def show_file_preview(df, file_extension):
     st.dataframe(df.head(5), use_container_width=True)
     
     # Get sampling configuration for display
-    session_manager = SessionManager()
+    # Use global session_manager instance
     step1_data = session_manager.get_step_data(1)
     sampling_config = step1_data.get('sampling_config', {}) if step1_data else {}
     
@@ -778,7 +803,7 @@ def render_navigation_buttons():
     with col1:
         if st.button("◀ Previous", use_container_width=True):
             # Go back to previous step
-            session_manager = SessionManager()
+            # Use global session_manager instance
             current_step = get_current_step(session_manager)
             if current_step > 1:
                 session_manager.set_current_step(current_step - 1)
@@ -789,7 +814,7 @@ def render_navigation_buttons():
     
     with col2:
         if st.button("Next ▶", use_container_width=True):
-            session_manager = SessionManager()
+            # Use global session_manager instance
             current_step = get_current_step(session_manager)
             
             if current_step == 1:
@@ -865,7 +890,7 @@ def render_navigation_buttons():
 def render_sidebar():
     """Render sidebar with progress tracking"""
     # Initialize session manager
-    session_manager = SessionManager()
+    # Use global session_manager instance
     
     # Current step info - Dynamic based on current step
     current_step = get_current_step(session_manager)
@@ -995,7 +1020,7 @@ def render_step2_wireframe():
     """, unsafe_allow_html=True)
     
     # Get data from step 1
-    session_manager = SessionManager()
+    # Use global session_manager instance
     step1_data = session_manager.get_step_data(1)
     
     if not step1_data or 'dataframe' not in step1_data:
@@ -1426,7 +1451,6 @@ def render_step2_wireframe():
     # Navigation buttons
     render_navigation_buttons()
 
-
 def render_step3_wireframe():
     """Render Step 3 - Model Configuration & Vectorization exactly as per wireframe design"""
     
@@ -1438,7 +1462,7 @@ def render_step3_wireframe():
     """, unsafe_allow_html=True)
     
     # Get data from previous steps
-    session_manager = SessionManager()
+    # Use global session_manager instance
     step1_data = session_manager.get_step_data(1)
     step2_data = session_manager.get_step_data(2)
     
@@ -2236,7 +2260,7 @@ def render_step4_wireframe():
     """, unsafe_allow_html=True)
     
     # Get data from previous steps
-    session_manager = SessionManager()
+    # Use global session_manager instance
     step1_data = session_manager.get_step_data(1)
     step2_data = session_manager.get_step_data(2)
     step3_data = session_manager.get_step_data(3)
@@ -2448,7 +2472,7 @@ def render_step4_wireframe():
                     'status': 'success',
                     'message': 'Using cached results',
                     'results': cached_results,
-                    'comprehensive_results': cached_results.get('all_results', []),
+                    'comprehensive_results': cached_results.get('comprehensive_results', []),
                     'successful_combinations': cached_results.get('successful_combinations', 0),
                     'total_combinations': cached_results.get('total_combinations', 0),
                     'best_combinations': cached_results.get('best_combinations', {}),
@@ -2496,10 +2520,14 @@ def render_step4_wireframe():
                             st.metric("Model", best_overall.get('combination_key', 'N/A'))
                         
                         with best_col2:
-                            st.metric("F1 Score", f"{best_overall.get('f1_score', 0):.3f}")
+                            f1_score = best_overall.get('f1_score')
+                            f1_display = f"{f1_score:.3f}" if f1_score is not None else "N/A"
+                            st.metric("F1 Score", f1_display)
                         
                         with best_col3:
-                            st.metric("Validation Accuracy", f"{best_overall.get('validation_accuracy', 0):.3f}")
+                            val_acc = best_overall.get('validation_accuracy')
+                            val_acc_display = f"{val_acc:.3f}" if val_acc is not None else "N/A"
+                            st.metric("Validation Accuracy", val_acc_display)
                 
                 # Detailed Results Table
                 if 'comprehensive_results' in result and result['comprehensive_results']:
@@ -2511,16 +2539,34 @@ def render_step4_wireframe():
                     results_data = []
                     for res in result['comprehensive_results']:
                         if res['status'] == 'success':
+                            # Safe formatting function to handle None values
+                            def safe_format(value, format_spec, default=0):
+                                if value is None:
+                                    return f"{default}{format_spec}"
+                                try:
+                                    return f"{value}{format_spec}"
+                                except (ValueError, TypeError):
+                                    return f"{default}{format_spec}"
+                            
+                            # Safe string processing
+                            def safe_string_process(value, default="N/A"):
+                                if value is None:
+                                    return default
+                                try:
+                                    return str(value).replace('_', ' ').title()
+                                except:
+                                    return default
+                            
                             results_data.append({
-                                'Model': res['model_name'].replace('_', ' ').title(),
-                                'Embedding': res['embedding_name'].replace('_', ' ').title(),
-                                'CV Accuracy': f"{res.get('cv_mean_accuracy', 0):.3f}±{res.get('cv_std_accuracy', 0):.3f}",
-                                'Test Accuracy': f"{res.get('test_accuracy', 0):.3f}",
-                                'Precision': f"{res.get('test_metrics', {}).get('precision', 0):.3f}",
-                                'Recall': f"{res.get('test_metrics', {}).get('recall', 0):.3f}",
-                                'F1 Score': f"{res.get('f1_score', 0):.3f}",
-                                'Overfitting': res.get('overfitting_level', res.get('overfitting_status', 'N/A')).replace('_', ' ').title(),
-                                'Training Time': f"{res.get('training_time', 0):.2f}s"
+                                'Model': safe_string_process(res.get('model_name'), 'Unknown Model'),
+                                'Embedding': safe_string_process(res.get('embedding_name'), 'Unknown Embedding'),
+                                'CV Accuracy': f"{safe_format(res.get('cv_mean_accuracy'), '.3f', 0)}±{safe_format(res.get('cv_std_accuracy'), '.3f', 0)}",
+                                'Test Accuracy': safe_format(res.get('test_accuracy'), '.3f', 0),
+                                'Precision': safe_format(res.get('test_metrics', {}).get('precision'), '.3f', 0),
+                                'Recall': safe_format(res.get('test_metrics', {}).get('recall'), '.3f', 0),
+                                'F1 Score': safe_format(res.get('f1_score'), '.3f', 0),
+                                'Overfitting': safe_string_process(res.get('overfitting_level', res.get('overfitting_status'))),
+                                'Training Time': safe_format(res.get('training_time'), '.2f', 0)
                             })
                     
                     if results_data:
@@ -2573,7 +2619,7 @@ def render_step5_wireframe():
     """, unsafe_allow_html=True)
     
     # Get data from previous steps
-    session_manager = SessionManager()
+    # Use global session_manager instance
     step1_data = session_manager.get_step_data(1)
     step2_data = session_manager.get_step_data(2)
     step3_data = session_manager.get_step_data(3)
@@ -2617,95 +2663,187 @@ def render_step5_wireframe():
             st.rerun()
         return
     
-    # 🏆 Best Model Selection Section
-    st.markdown("""
-    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🏆 Best Model Selection:</h3>
-    """, unsafe_allow_html=True)
-    
-    # Get best model from training results
-    best_combinations = training_results.get('best_combinations', {})
-    best_overall = best_combinations.get('best_overall', {})
-    
-    if best_overall:
-
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            model_name = best_overall.get('combination_key', 'N/A')
-            st.markdown(f"""
-            <div class="metric-box">
-                <h4>🥇 TOP PERFORMER</h4>
-                <p><strong>{model_name}</strong></p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            f1_score = best_overall.get('f1_score', 0)
-            st.markdown(f"""
-            <div class="metric-box">
-                <h4>📊 F1 Score</h4>
-                <p><strong>{f1_score:.3f}</strong></p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            training_time = best_overall.get('training_time', 0)
-            st.markdown(f"""
-            <div class="metric-box">
-                <h4>⏱️ Training Time</h4>
-                <p><strong>{training_time:.1f}s</strong></p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Additional metrics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            test_accuracy = best_overall.get('test_accuracy', 0)
-            st.markdown(f"""
-            <div class="metric-box">
-                <h4>🎯 Test Accuracy</h4>
-                <p><strong>{test_accuracy:.3f}</strong></p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            if 'test_metrics' in best_overall:
-                test_metrics = best_overall['test_metrics']
-                precision = test_metrics.get('precision', 0)
-                
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>📊 Precision</h4>
-                    <p><strong>{precision:.3f}</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        with col3:
-            if 'test_metrics' in best_overall:
-                test_metrics = best_overall['test_metrics']
-                recall = test_metrics.get('recall', 0)
-                
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>📈 Recall</h4>
-                    <p><strong>{recall:.3f}</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.warning("⚠️ No best model results found in training data.")
-    
-    # 🎯 Model Comparison Chart Section
-    st.markdown("""
-    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🎯 Model Comparison Chart:</h3>
-    """, unsafe_allow_html=True)
-    
-    # Get comprehensive results for comparison
+    # Get comprehensive results for comparison - try multiple sources
     comprehensive_results = training_results.get('comprehensive_results', [])
     
-    if comprehensive_results:
+    # If no results from step4_data, try session state
+    if not comprehensive_results and 'training_results' in st.session_state and st.session_state.training_results:
+        comprehensive_results = st.session_state.training_results.get('comprehensive_results', [])
+    
+    # If still no results, try to load from any available cache
+    if not comprehensive_results:
+        try:
+            from training_pipeline import StreamlitTrainingPipeline
+            pipeline = StreamlitTrainingPipeline()
+            cached_results_list = pipeline.list_cached_results()
+            
+            if cached_results_list:
+                # Use the most recent cache
+                most_recent_cache = max(cached_results_list, key=lambda x: x['timestamp'])
+                cache_key = most_recent_cache['cache_key']
+                
+                # Load the cached results
+                import pickle
+                import os
+                cache_file = os.path.join(pipeline.cache_dir, f"{cache_key}.pkl")
+                if os.path.exists(cache_file):
+                    with open(cache_file, 'rb') as f:
+                        cached_results = pickle.load(f)
+                    
+                    # Debug: Check cache structure
+                    st.toast(f"🔍 Cache structure: {list(cached_results.keys())}")
+                    
+                    # Try different possible keys for comprehensive results
+                    if 'all_results' in cached_results:
+                        comprehensive_results = cached_results['all_results']
+                        st.toast(f"📊 Found 'all_results': {len(comprehensive_results)} items")
+                    elif 'comprehensive_results' in cached_results:
+                        comprehensive_results = cached_results['comprehensive_results']
+                        st.toast(f"📊 Found 'comprehensive_results': {len(comprehensive_results)} items")
+                    elif 'results' in cached_results:
+                        # If results is a list, use it directly
+                        if isinstance(cached_results['results'], list):
+                            comprehensive_results = cached_results['results']
+                            st.toast(f"📊 Found 'results' (list): {len(comprehensive_results)} items")
+                        # If results is a dict, look for nested data
+                        elif isinstance(cached_results['results'], dict):
+                            if 'all_results' in cached_results['results']:
+                                comprehensive_results = cached_results['results']['all_results']
+                                st.toast(f"📊 Found 'results.all_results': {len(comprehensive_results)} items")
+                            elif 'comprehensive_results' in cached_results['results']:
+                                comprehensive_results = cached_results['results']['comprehensive_results']
+                                st.toast(f"📊 Found 'results.comprehensive_results': {len(comprehensive_results)} items")
+                    
+                    # Also update training_results for best_combinations
+                    if comprehensive_results and 'best_combinations' not in training_results:
+                        if 'best_combinations' in cached_results:
+                            training_results['best_combinations'] = cached_results['best_combinations']
+                        elif 'results' in cached_results and 'best_combinations' in cached_results['results']:
+                            training_results['best_combinations'] = cached_results['results']['best_combinations']
+                    
+                    st.toast(f"✅ Loaded cached results: {most_recent_cache.get('cache_name', cache_key)}")
+                    st.toast(f"⏰ Cache age: {most_recent_cache['age_hours']:.1f} hours | Results: {most_recent_cache['results_summary'].get('successful_combinations', 0)} combinations")
+                    
+                    # Debug: Show what we found
+                    if comprehensive_results:
+                        st.toast(f"🎯 Successfully loaded {len(comprehensive_results)} comprehensive results!")
+                    else:
+                        st.toast("⚠️ Cache loaded but no comprehensive results found in expected format")
+                        st.toast("Cache keys available: " + ", ".join(cached_results.keys()))
+        except Exception as e:
+            st.error(f"❌ Error loading cache: {e}")
+            st.exception(e)
+    
+    # If still no results, show helpful message and redirect to Step 4
+    if not comprehensive_results:
+        st.warning("⚠️ No comprehensive results available for comparison.")
+        st.info("💡 This usually means Step 4 hasn't been completed yet or no models were trained successfully.")
+        
+        # Show helpful information
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            <div class="metric-box">
+                <h4>📋 What to do next:</h4>
+                <p>1. Go to Step 4 and train some models</p>
+                <p>2. Make sure training completes successfully</p>
+                <p>3. Check that models are properly evaluated</p>
+                <p>4. Wait for cache to be generated</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            if st.button("🚀 Go to Step 4", type="primary", use_container_width=True):
+                session_manager.set_current_step(4)
+                st.rerun()
+        
+        # Don't show tabs if no data
+        return
+    
+    # Tab System for Step 5
+    # Create tabs for different views
+    tab1, tab2 = st.tabs(["📊 Results Overview", "🔍 Detailed Analysis"])
+    
+    with tab1:
+        # Results Overview Tab
+        st.markdown("**📊 Results Overview**")
+        
+        # Best Model Selection Section
+        best_combinations = training_results.get('best_combinations', {})
+        best_overall = best_combinations.get('best_overall', {})
+        
+        if best_overall:
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                model_name = best_overall.get('combination_key', 'N/A')
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>🥇 TOP PERFORMER</h4>
+                    <p><strong>{model_name}</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                f1_score = best_overall.get('f1_score', 0)
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>📊 F1 Score</h4>
+                    <p><strong>{f1_score:.3f}</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col3:
+                training_time = best_overall.get('training_time', 0)
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>⏱️ Training Time</h4>
+                    <p><strong>{training_time:.1f}s</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Additional metrics
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                test_accuracy = best_overall.get('test_accuracy', 0)
+                st.markdown(f"""
+                <div class="metric-box">
+                    <h4>🎯 Test Accuracy</h4>
+                    <p><strong>{test_accuracy:.3f}</strong></p>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col2:
+                if 'test_metrics' in best_overall:
+                    test_metrics = best_overall['test_metrics']
+                    precision = test_metrics.get('precision', 0)
+                    
+                    st.markdown(f"""
+                    <div class="metric-box">
+                        <h4>📊 Precision</h4>
+                        <p><strong>{precision:.3f}</strong></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+            
+            with col3:
+                if 'test_metrics' in best_overall:
+                    test_metrics = best_overall['test_metrics']
+                    recall = test_metrics.get('recall', 0)
+                    
+                    st.markdown(f"""
+                    <div class="metric-box">
+                        <h4>📈 Recall</h4>
+                        <p><strong>{recall:.3f}</strong></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.warning("⚠️ No best model results found in training data.")
+        
+        # Model Comparison Chart Section
+        st.markdown("**🎯 Model Comparison Chart:**")
+        
         # Create comparison data
         comparison_data = []
         for result in comprehensive_results:
@@ -2757,26 +2895,9 @@ def render_step5_wireframe():
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Show comparison table
-            st.markdown("**📊 Detailed Comparison Table:**")
-            st.dataframe(comparison_df, use_container_width=True, hide_index=True)
-        else:
-            st.warning("⚠️ No valid comparison data available.")
-    else:
-        st.warning("⚠️ No comprehensive results available for comparison.")
     
-    # 🔍 Detailed Model Analysis Section
-    st.markdown("""
-    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🔍 Detailed Model Analysis:</h3>
-    """, unsafe_allow_html=True)
-    
-    # View All Model Results Button
-    if st.button("📊 View All Model Results", type="primary", use_container_width=True):
-        if comprehensive_results:
-            # Create detailed results display
-            st.markdown("**📋 Complete Model Evaluation Results:**")
-            
-            # Group results by model type
+    with tab2:    
+            # Group results by model type for better organization
             model_groups = {}
             for result in comprehensive_results:
                 if result.get('status') == 'success':
@@ -2785,40 +2906,483 @@ def render_step5_wireframe():
                         model_groups[model_name] = []
                     model_groups[model_name].append(result)
             
-            # Display results by model group
+            # Create interactive table for model selection
+            model_table_data = []
+            
             for model_name, results in model_groups.items():
-                with st.expander(f"🔍 {model_name.replace('_', ' ').title()} Results", expanded=False):
-                    # Create results table for this model
-                    model_data = []
-                    for result in results:
-                        embedding_name = result.get('embedding_name', 'Unknown')
-                        accuracy = result.get('f1_score', result.get('test_accuracy', 0))
-                        training_time = result.get('training_time', 0)
-                        
-                        model_data.append({
-                            'Vectorization': embedding_name.replace('_', ' ').title(),
-                            'F1 Score': f"{result.get('f1_score', 0):.3f}",
-                            'Test Accuracy': f"{result.get('test_accuracy', 0):.3f}",
-                            'Precision': f"{result.get('test_metrics', {}).get('precision', 0):.3f}",
-                            'Recall': f"{result.get('test_metrics', {}).get('recall', 0):.3f}",
-                            'Training Time': f"{training_time:.2f}s",
-                            'Overfitting': result.get('overfitting_level', 'N/A')
-                        })
+                for result in results:
+                    embedding_name = result.get('embedding_name', 'Unknown')
+                    f1_score = result.get('f1_score', 0)
+                    test_accuracy = result.get('test_accuracy', 0)
+                    training_time = result.get('training_time', 0)
+                    precision = result.get('test_metrics', {}).get('precision', 0)
+                    recall = result.get('test_metrics', {}).get('recall', 0)
                     
-                    if model_data:
-                        model_df = pd.DataFrame(model_data)
-                        st.dataframe(model_df, use_container_width=True, hide_index=True)
-                    else:
-                        st.info("No results available for this model.")
-        else:
-            st.warning("⚠️ No detailed results available.")
+                    # Create unique key for this model combination
+                    model_key = f"{model_name}_{embedding_name}"
+                    
+                    # Safe formatting for metrics
+                    f1_display = f"{f1_score:.1%}" if f1_score is not None else "N/A"
+                    acc_display = f"{test_accuracy:.1%}" if test_accuracy is not None else "N/A"
+                    prec_display = f"{precision:.1%}" if precision is not None else "N/A"
+                    rec_display = f"{recall:.1%}" if recall is not None else "N/A"
+                    time_display = f"{training_time:.1f}" if training_time is not None else "N/A"
+                    
+                    model_table_data.append({
+                        'Model': model_name.replace('_', ' ').title(),
+                        'Vectorization': embedding_name.replace('_', ' ').title(),
+                        'F1 Score': f1_display,
+                        'Accuracy': acc_display,
+                        'Precision': prec_display,
+                        'Recall': rec_display,
+                        'Training Time (s)': time_display,
+                        'Actions': model_key  # Hidden column for actions
+                    })
+            
+            if model_table_data:
+                # Create DataFrame
+                model_df = pd.DataFrame(model_table_data)
+                             
+                # Use st.data_editor for interactive table
+                edited_df = st.data_editor(
+                    model_df.drop('Actions', axis=1),  # Hide actions column
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="dynamic",
+                    column_config={
+                        "Model": st.column_config.TextColumn("🧠 Model", width="medium"),
+                        "Vectorization": st.column_config.TextColumn("🔤 Vectorization", width="medium"),
+                        "F1 Score": st.column_config.TextColumn("📊 F1 Score", width="small"),
+                        "Accuracy": st.column_config.TextColumn("🎯 Accuracy", width="small"),
+                        "Precision": st.column_config.TextColumn("📈 Precision", width="small"),
+                        "Recall": st.column_config.TextColumn("📉 Recall", width="small"),
+                        "Training Time (s)": st.column_config.NumberColumn("⏱️ Time (s)", format="%.1f", width="small")
+                    }
+                )
+                                
+                # Create selection dropdown
+                model_options = [f"{row['Model']} + {row['Vectorization']}" for row in model_table_data]
+                selected_model_display = st.selectbox(
+                    "Choose a model to analyze:",
+                    options=model_options,
+                    index=0,
+                    help="Select a model to view detailed analysis including confusion matrix"
+                )
+                
+                # Find the selected result
+                selected_result = None
+                for i, row in enumerate(model_table_data):
+                    if f"{row['Model']} + {row['Vectorization']}" == selected_model_display:
+                        # Find the actual result data
+                        for model_name, results in model_groups.items():
+                            for result in results:
+                                if (model_name.replace('_', ' ').title() == row['Model'] and 
+                                    result.get('embedding_name', 'Unknown').replace('_', ' ').title() == row['Vectorization']):
+                                    selected_result = result
+                                    break
+                            if selected_result:
+                                break
+                        break
+                
+                # Button to view details
+                if selected_result and st.button("🔍 View Detailed Analysis", type="primary", use_container_width=True):
+                    # Create unique key for this model combination
+                    model_name = selected_result.get('model_name', 'Unknown')
+                    embedding_name = selected_result.get('embedding_name', 'Unknown')
+                    model_key = f"{model_name}_{embedding_name}"
+                    
+                    st.session_state.selected_model_detail = model_key
+                    st.session_state.selected_model_result = selected_result
+                    st.rerun()
+            else:
+                st.warning("⚠️ No models available for detailed analysis.")
+                   
+            successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
+            if successful_results:
+                # Find best overall model
+                best_model = max(successful_results, key=lambda x: x.get('f1_score', 0))
+                best_accuracy = best_model.get('f1_score', 0)
+                best_model_name = f"{best_model.get('model_name', 'Unknown')} + {best_model.get('embedding_name', 'Unknown')}"
+                
+                # Find fastest training model
+                fastest_model = min(successful_results, key=lambda x: x.get('training_time', float('inf')))
+                fastest_time = fastest_model.get('training_time', 0)
+                fastest_model_name = f"{fastest_model.get('model_name', 'Unknown')} + {fastest_model.get('embedding_name', 'Unknown')}"
+                
+                # Find most memory efficient (assuming smaller models are more efficient)
+                most_efficient = min(successful_results, key=lambda x: x.get('training_time', 0))  # Using training time as proxy
+                efficient_time = most_efficient.get('training_time', 0)
+                efficient_model_name = f"{most_efficient.get('model_name', 'Unknown')} + {most_efficient.get('embedding_name', 'Unknown')}"
     
-    # Export Functionality Section
+            # Individual Model Confusion Matrix Window
+            if st.session_state.get('selected_model_detail') and st.session_state.get('selected_model_result'):
+                selected_result = st.session_state.selected_model_result
+                
+                st.markdown("---")
+                st.markdown(f"""
+                <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🧠 Model: {selected_result.get('model_name', 'Unknown').replace('_', ' ').title()} + {selected_result.get('embedding_name', 'Unknown').replace('_', ' ').title()} - Detailed Analysis</h3>
+                """, unsafe_allow_html=True)
+                
+                # Get available metrics
+                available_metrics = {}
+                if 'test_metrics' in selected_result:
+                    test_metrics = selected_result['test_metrics']
+                    if 'precision' in test_metrics:
+                        available_metrics['Precision'] = test_metrics['precision']
+                    if 'recall' in test_metrics:
+                        available_metrics['Recall'] = test_metrics['recall']
+                
+                # Add accuracy if available
+                if 'test_accuracy' in selected_result:
+                    available_metrics['Accuracy'] = selected_result['test_accuracy']
+                
+                # Add F1 score if available (prioritize overall F1 score)
+                if 'f1_score' in selected_result:
+                    available_metrics['F1 Score'] = selected_result['f1_score']
+                elif 'test_metrics' in selected_result and 'f1_score' in selected_result['test_metrics']:
+                    available_metrics['F1 Score'] = selected_result['test_metrics']['f1_score']
+                
+                # Create metric selection
+                if available_metrics:
+                    selected_metric = st.selectbox(
+                        "Choose metric to highlight in confusion matrix:",
+                        options=list(available_metrics.keys()),
+                        index=0,
+                        help="Select which metric to use for coloring and highlighting the confusion matrix"
+                    )
+                    
+                    # Get the selected metric value
+                    selected_metric_value = available_metrics[selected_metric]
+                    
+                    cm_display_mode = st.radio(
+                        "Choose display format:",
+                        options=["Counts (Raw Numbers)", "Percentages (Normalized)"],
+                        index=0,
+                        help="Counts show actual prediction numbers, Percentages show relative proportions"
+                    )
+                    
+                    
+                else:
+                    selected_metric = "Accuracy"
+                    selected_metric_value = selected_result.get('test_accuracy', 0)
+                    st.warning("⚠️ Limited metrics available, using default accuracy")
+                
+                # Display confusion matrix if available
+                # Sử dụng màu "green royal" làm theme chính cho confusion matrix
+                MAIN_THEME_CMAP = 'YlGn'  # Royal green style
+                MAIN_THEME_TITLE_COLOR = '#006400'  # Dark green (royal green)
+
+                if 'confusion_matrix' in selected_result:
+                    st.markdown("**🎯 Confusion Matrix:**")
+
+                    # Get confusion matrix data
+                    cm = selected_result['confusion_matrix']
+                    if isinstance(cm, (list, np.ndarray)) and len(cm) > 0:
+                        # Create confusion matrix visualization
+                        # Get actual class labels from cache or use default
+                        actual_class_labels = []
+                        if 'unique_labels' in selected_result and 'label_mapping' in selected_result:
+                            unique_labels = selected_result['unique_labels']
+                            label_mapping = selected_result['label_mapping']
+                            
+                            # Use label_mapping to get actual class names
+                            if isinstance(label_mapping, dict):
+                                # Create labels using the mapping from cache
+                                for label_id in unique_labels:
+                                    if label_id in label_mapping:
+                                        actual_class_labels.append(str(label_mapping[label_id]))
+                                    else:
+                                        actual_class_labels.append(f"Class {label_id}")
+                            else:
+                                # Use unique_labels directly
+                                actual_class_labels = [str(label) for label in unique_labels]
+                        else:
+                            # Fallback: use Class 1, Class 2, ...
+                            # FIXED: Use unique_labels if available, otherwise fallback to range
+                            if 'unique_labels' in selected_result:
+                                unique_labels = selected_result['unique_labels']
+                                actual_class_labels = [f"Class {label}" for label in unique_labels]
+                            else:
+                                actual_class_labels = [f"Class {i+1}" for i in range(len(cm))]
+                        
+                        class_labels = actual_class_labels
+
+                        # Create heatmap with project theme color
+                        fig, ax = plt.subplots(figsize=(8, 6))
+                        cmap = MAIN_THEME_CMAP
+                        title_color = MAIN_THEME_TITLE_COLOR
+
+                        # Create heatmap with selected metric value in title
+                        if cm_display_mode == "Percentages (Normalized)":
+                            # Normalize confusion matrix to percentages
+                            cm_arr = np.array(cm)
+                            cm_normalized = cm_arr.astype('float') / np.sum(cm_arr, axis=1)[:, np.newaxis]
+                            cm_normalized = np.nan_to_num(cm_normalized, nan=0.0)
+
+                            # Create heatmap with percentage format
+                            sns.heatmap(
+                                cm_normalized, annot=True, fmt='.1%', cmap=cmap,
+                                xticklabels=class_labels, yticklabels=class_labels,
+                                ax=ax, cbar_kws={'label': f'{selected_metric} Focus (%)'}
+                            )
+
+                            ax.set_title(
+                                f'Confusion Matrix (Normalized %) - {selected_metric}: '
+                                f'{selected_metric_value:.1%}',
+                                color=title_color, fontsize=14, fontweight='bold'
+                            )
+                        else:
+                            # Create heatmap with count format
+                            sns.heatmap(
+                                cm, annot=True, fmt='d', cmap=cmap,
+                                xticklabels=class_labels, yticklabels=class_labels,
+                                ax=ax, cbar_kws={'label': f'{selected_metric} Focus (Counts)'}
+                            )
+
+                            ax.set_title(
+                                f'Confusion Matrix (Counts) - {selected_metric}: '
+                                f'{selected_metric_value:.1%}',
+                                color=title_color, fontsize=14, fontweight='bold'
+                            )
+                        ax.set_xlabel('Predicted', fontsize=12)
+                        ax.set_ylabel('Actual', fontsize=12)
+
+                        st.pyplot(fig)
+                        plt.close(fig)
+                    else:
+                        st.info("📊 Confusion matrix data not available for this model.")
+                elif 'predictions' in selected_result and 'true_labels' in selected_result:
+                    st.markdown("**🎯 Confusion Matrix (generated from predictions):**")
+
+                    try:
+                        from sklearn.metrics import confusion_matrix
+
+                        y_pred = selected_result['predictions']
+                        y_true = selected_result['true_labels']
+
+                        if (
+                            y_pred is not None and y_true is not None
+                            and len(y_pred) > 0 and len(y_true) > 0
+                        ):
+                            # Lấy unique_labels đúng thứ tự xuất hiện nếu có trong cache, nếu không thì tự tính
+                            if 'unique_labels' in selected_result:
+                                unique_labels = selected_result['unique_labels']
+                            else:
+                                unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
+
+                            # Tạo confusion matrix với đúng thứ tự labels
+                            cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
+
+                            # Xử lý hiển thị label đúng
+                            if 'label_mapping' in selected_result and isinstance(selected_result['label_mapping'], dict):
+                                label_mapping = selected_result['label_mapping']
+                                class_labels = [
+                                    str(label_mapping.get(label, f"Class {label}"))
+                                    for label in unique_labels
+                                ]
+                            else:
+                                # Nếu không có mapping thì hiển thị label gốc
+                                class_labels = [str(label) for label in unique_labels]
+                            
+                            # Debug: Show what we found
+                            st.write("🔍 Debug Info (Regular CM):")
+                            st.write(f"unique_labels: {unique_labels}")
+                            st.write(f"label_mapping: {selected_result.get('label_mapping', 'NOT FOUND')}")
+                            st.write(f"selected_result keys: {list(selected_result.keys())}")
+                            st.write(f"Generated class_labels: {class_labels}")
+
+                            # Vẽ heatmap confusion matrix
+                            fig, ax = plt.subplots(figsize=(8, 6))
+                            cmap = MAIN_THEME_CMAP
+                            title_color = MAIN_THEME_TITLE_COLOR
+
+                            if cm_display_mode == "Percentages (Normalized)":
+                                cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+                                cm_normalized = np.nan_to_num(cm_normalized, nan=0.0)
+                                sns.heatmap(
+                                    cm_normalized, annot=True, fmt='.1%', cmap=cmap,
+                                    xticklabels=class_labels, yticklabels=class_labels,
+                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (%)'}
+                                )
+                                ax.set_title(
+                                    f'Confusion Matrix (Generated, Normalized %) - {selected_metric}: '
+                                    f'{selected_metric_value:.1%}',
+                                    color=title_color, fontsize=14, fontweight='bold'
+                                )
+                            else:
+                                sns.heatmap(
+                                    cm, annot=True, fmt='d', cmap=cmap,
+                                    xticklabels=class_labels, yticklabels=class_labels,
+                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (Counts)'}
+                                )
+                                ax.set_title(
+                                    f'Confusion Matrix (Generated, Counts) - {selected_metric}: '
+                                    f'{selected_metric_value:.1%}',
+                                    color=title_color, fontsize=14, fontweight='bold'
+                                )
+                            ax.set_xlabel('Predicted', fontsize=12)
+                            ax.set_ylabel('Actual', fontsize=12)
+
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            # Lưu lại confusion matrix vào selected_result
+                            selected_result['confusion_matrix'] = cm
+                            st.success("✅ Confusion matrix generated successfully from predictions!")
+                        else:
+                            st.warning("⚠️ Predictions or true labels are empty or None")
+                    except Exception as e:
+                        st.error(f"❌ Error generating confusion matrix: {e}")
+                        st.info(
+                            "💡 This might happen if predictions/true_labels are not in the expected format"
+                        )
+                elif selected_result.get('model_name') == 'Ensemble Learning' and 'ensemble_info' in selected_result:
+                    st.markdown("**🎯 Confusion Matrix (generated from ensemble base models):**")
+
+                    try:
+                        from sklearn.metrics import confusion_matrix
+
+                        # Extract data from ensemble base models
+                        ensemble_info = selected_result.get('ensemble_info', {})
+                        individual_results = ensemble_info.get('individual_results', {})
+                        
+                        if not individual_results:
+                            st.warning("⚠️ No individual results found in ensemble")
+                            return
+                        
+                        # Find best base model with complete data
+                        best_model_key = None
+                        best_model_data = None
+                        
+                        for model_key, model_data in individual_results.items():
+                            if (isinstance(model_data, dict) and 
+                                'predictions' in model_data and 
+                                'true_labels' in model_data):
+                                
+                                if best_model_data is None:
+                                    best_model_key = model_key
+                                    best_model_data = model_data
+                                else:
+                                    # Prioritize model with higher accuracy
+                                    if (model_data.get('test_accuracy', 0) > 
+                                        best_model_data.get('test_accuracy', 0)):
+                                        best_model_key = model_key
+                                        best_model_data = model_data
+                        
+                        if best_model_data is None:
+                            st.warning("⚠️ No base model found with complete data")
+                            return
+                        
+                        st.info(f"✅ Using data from base model: {best_model_key}")
+                        
+                        # Get data from best base model
+                        y_pred = best_model_data['predictions']
+                        y_true = best_model_data['true_labels']
+                        
+                        if (
+                            y_pred is not None and y_true is not None
+                            and len(y_pred) > 0 and len(y_true) > 0
+                        ):
+                            # Get unique_labels in correct order if available in cache, otherwise calculate
+                            if 'unique_labels' in best_model_data:
+                                unique_labels = best_model_data['unique_labels']
+                            elif 'unique_labels' in selected_result:
+                                unique_labels = selected_result['unique_labels']
+                            else:
+                                unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
+
+                            # Create confusion matrix with correct label order
+                            cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
+
+                            # Handle label display correctly
+                            if 'label_mapping' in best_model_data and isinstance(best_model_data['label_mapping'], dict):
+                                label_mapping = best_model_data['label_mapping']
+                            elif 'label_mapping' in selected_result and isinstance(selected_result['label_mapping'], dict):
+                                label_mapping = selected_result['label_mapping']
+                            else:
+                                label_mapping = {}
+                            
+                            # Debug: Show what we found
+                            st.write("🔍 Debug Info:")
+                            st.write(f"unique_labels: {unique_labels}")
+                            st.write(f"label_mapping: {label_mapping}")
+                            st.write(f"best_model_data keys: {list(best_model_data.keys())}")
+                            st.write(f"selected_result keys: {list(selected_result.keys())}")
+                            
+                            class_labels = [
+                                str(label_mapping.get(label, f"Class {label}"))
+                                for label in unique_labels
+                            ]
+                            
+                            st.write(f"Generated class_labels: {class_labels}")
+
+                            # Draw confusion matrix heatmap
+                            fig, ax = plt.subplots(figsize=(8, 6))
+                            cmap = MAIN_THEME_CMAP
+                            title_color = MAIN_THEME_TITLE_COLOR
+
+                            if cm_display_mode == "Percentages (Normalized)":
+                                cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+                                cm_normalized = np.nan_to_num(cm_normalized, nan=0.0)
+                                sns.heatmap(
+                                    cm_normalized, annot=True, fmt='.1%', cmap=cmap,
+                                    xticklabels=class_labels, yticklabels=class_labels,
+                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (%)'}
+                                )
+                                ax.set_title(
+                                    f'Ensemble Learning Confusion Matrix (Normalized %) - {selected_metric}: '
+                                    f'{selected_metric_value:.1%}',
+                                    color=title_color, fontsize=14, fontweight='bold'
+                                )
+                            else:
+                                sns.heatmap(
+                                    cm, annot=True, fmt='d', cmap=cmap,
+                                    xticklabels=class_labels, yticklabels=class_labels,
+                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (Counts)'}
+                                )
+                                ax.set_title(
+                                    f'Ensemble Learning Confusion Matrix (Counts) - {selected_metric}: '
+                                    f'{selected_metric_value:.1%}',
+                                    color=title_color, fontsize=14, fontweight='bold'
+                                )
+                            ax.set_xlabel('Predicted', fontsize=12)
+                            ax.set_ylabel('Actual', fontsize=12)
+
+                            st.pyplot(fig)
+                            plt.close(fig)
+
+                            # Save confusion matrix to selected_result
+                            selected_result['confusion_matrix'] = cm
+                            st.success("✅ Ensemble confusion matrix generated successfully from base model data!")
+                        else:
+                            st.warning("⚠️ Base model predictions or true labels are empty or None")
+                    except Exception as e:
+                        st.error(f"❌ Error generating ensemble confusion matrix: {e}")
+                        st.info(
+                            "💡 This might happen if ensemble base model data is not in the expected format"
+                        )
+                        import traceback
+                        st.code(traceback.format_exc())
+                else:
+                    st.info("📊 Confusion matrix not available for this model.")
+                    st.info(
+                        "💡 Available keys: " +
+                        ", ".join([
+                            k for k in selected_result.keys()
+                            if k not in ['predictions', 'true_labels', 'confusion_matrix']
+                        ])
+                    )        
+        
+              
+    # Close results container
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Export Functionality Section - Only in Tab 2
     st.markdown("---")
     st.markdown("""
     <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">📤 Export & Documentation:</h3>
     """, unsafe_allow_html=True)
-    
+        
     col1, col2 = st.columns(2)
     
     with col1:
@@ -2880,16 +3444,13 @@ def render_step5_wireframe():
                 st.warning("⚠️ No successful results for summary.")
         else:
             st.warning("⚠️ No results available for summary.")
-    
-    # Close results container
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Save step 5 configuration
-    step5_config = {
-        'results_analyzed': True,
-        'best_model': best_overall,
-        'total_models': len(comprehensive_results) if comprehensive_results else 0,
-        'export_generated': True,
+        
+        # Save step 5 configuration
+        step5_config = {
+            'results_analyzed': True,
+            'best_model': best_overall,
+            'total_models': len(comprehensive_results) if comprehensive_results else 0,
+            'export_generated': True,
         'completed': True
     }
     session_manager.set_step_config('step5', step5_config)
@@ -2905,7 +3466,7 @@ def render_step5_wireframe():
 if __name__ == "__main__":
     # Initialize session manager and ensure current_step is set
     try:
-        session_manager = SessionManager()
+        # Use global session_manager instance
         if session_manager.get_current_step() is None:
             session_manager.set_current_step(1)
     except Exception:

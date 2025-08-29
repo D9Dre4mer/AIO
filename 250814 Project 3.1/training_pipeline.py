@@ -352,15 +352,36 @@ class StreamlitTrainingPipeline:
     def list_cached_results(self) -> List[Dict]:
         """List all cached results with metadata"""
         cached_results = []
+        orphaned_keys = []
+        
+        # First pass: collect valid results and identify orphaned entries
         for cache_key, metadata in self.cache_metadata.items():
-            cached_results.append({
-                'cache_key': cache_key,
-                'cache_name': metadata.get('cache_name', cache_key),
-                'timestamp': metadata['timestamp'],
-                'age_hours': (time.time() - metadata['timestamp']) / 3600,
-                'results_summary': metadata.get('results_summary', {}),
-                'file_path': metadata['file_path']
-            })
+            # Check if cache file actually exists
+            cache_file = metadata.get('file_path', '')
+            if os.path.exists(cache_file):
+                cached_results.append({
+                    'cache_key': cache_key,
+                    'cache_name': metadata.get('cache_name', cache_key),
+                    'timestamp': metadata['timestamp'],
+                    'age_hours': (time.time() - metadata['timestamp']) / 3600,
+                    'results_summary': metadata.get('results_summary', {}),
+                    'file_path': metadata['file_path']
+                })
+            else:
+                # Cache file doesn't exist, mark for removal
+                orphaned_keys.append(cache_key)
+                print(f"⚠️ Cache file not found, marking for removal: {cache_key}")
+        
+        # Second pass: remove orphaned entries
+        if orphaned_keys:
+            for cache_key in orphaned_keys:
+                if cache_key in self.cache_metadata:
+                    del self.cache_metadata[cache_key]
+            
+            # Save updated metadata
+            self._save_cache_metadata()
+            print(f"✅ Cleaned up {len(orphaned_keys)} orphaned cache entries")
+        
         return cached_results
     
     def execute_training(self, df: pd.DataFrame, step1_data: Dict,
@@ -392,6 +413,11 @@ class StreamlitTrainingPipeline:
                 progress_callback(self.current_phase, "Checking cache for existing results...", 0.02)
             
             cache_key = self._generate_cache_key(step1_data, step2_data, step3_data)
+            
+            # FIXED: Store cache key in instance for fallback sampling
+            self.current_cache_key = cache_key
+            print(f"💾 [PIPELINE] Stored cache key in instance: {self.current_cache_key}")
+            
             cached_results = self._check_cache(cache_key)
             
             if cached_results:
@@ -449,6 +475,8 @@ class StreamlitTrainingPipeline:
             # Apply sampling if configured
             print(f"\n🔍 [PIPELINE] Checking sampling configuration...")
             print(f"📊 [PIPELINE] Step1 data keys: {list(step1_data.keys())}")
+            print(f"📊 [PIPELINE] Step1 data type: {type(step1_data)}")
+            print(f"📊 [PIPELINE] Step1 data content: {step1_data}")
             print(f"📊 [PIPELINE] Original dataset size: {len(df):,}")
             
             sampling_config = step1_data.get('sampling_config', {})
@@ -458,12 +486,101 @@ class StreamlitTrainingPipeline:
             print(f"🔍 [PIPELINE] Has num_samples: {sampling_config.get('num_samples') if sampling_config else 'N/A'}")
             print(f"🔍 [PIPELINE] Condition check: {sampling_config and sampling_config.get('num_samples')}")
             
+            # FIXED: Debug session state issue
+            if not step1_data or not sampling_config:
+                print(f"⚠️ [PIPELINE] WARNING: Session state issue detected!")
+                print(f"   • step1_data empty: {not step1_data}")
+                print(f"   • sampling_config empty: {not sampling_config}")
+                print(f"   • This suggests session state was lost or not properly initialized")
+                print(f"   • Will try to extract sampling info from step1_data keys")
+                
+                # FIXED: Try to extract sampling info from step1_data keys first
+                if step1_data:
+                    # Look for any key that might contain sample count
+                    for key, value in step1_data.items():
+                        if isinstance(value, dict) and 'num_samples' in value:
+                            print(f"🔍 [PIPELINE] Found num_samples in {key}: {value['num_samples']}")
+                            sampling_config = value
+                            break
+                        elif key == 'num_samples':
+                            print(f"🔍 [PIPELINE] Found num_samples directly: {value}")
+                            sampling_config = {'num_samples': value, 'sampling_strategy': 'Stratified (Recommended)'}
+                            break
+                
+                # FIXED: If still no config, try to extract from cache key if available
+                if not sampling_config and hasattr(self, 'current_cache_key') and self.current_cache_key:
+                    import re
+                    sample_match = re.search(r'(\d+)samples', self.current_cache_key)
+                    if sample_match:
+                        extracted_samples = int(sample_match.group(1))
+                        print(f"🔍 [PIPELINE] Extracted samples from cache key: {extracted_samples:,}")
+                        
+                        # Create fallback sampling config
+                        fallback_config = {
+                            'num_samples': extracted_samples,
+                            'sampling_strategy': 'Stratified (Recommended)'
+                        }
+                        print(f"🔄 [PIPELINE] Using fallback sampling config: {fallback_config}")
+                        sampling_config = fallback_config
+                    else:
+                        print(f"❌ [PIPELINE] Could not extract sample count from cache key")
+                
+                # FIXED: Final fallback - check if there are any recent cache files
+                if not sampling_config:
+                    print(f"🔍 [PIPELINE] Trying to extract from recent cache files...")
+                    try:
+                        import os
+                        import pickle
+                        import re
+                        
+                        cache_dir = "cache/training_results"
+                        if os.path.exists(cache_dir):
+                            cache_files = [f for f in os.listdir(cache_dir) if f.endswith('.pkl')]
+                            if cache_files:
+                                # Get most recent cache file
+                                cache_files.sort(key=lambda x: os.path.getmtime(os.path.join(cache_dir, x)), reverse=True)
+                                recent_cache = os.path.join(cache_dir, cache_files[0])
+                                
+                                with open(recent_cache, 'rb') as f:
+                                    cached_data = pickle.load(f)
+                                
+                                cache_key = cached_data.get('cache_key', '')
+                                if 'samples' in cache_key:
+                                    sample_match = re.search(r'(\d+)samples', cache_key)
+                                    if sample_match:
+                                        extracted_samples = int(sample_match.group(1))
+                                        print(f"🔍 [PIPELINE] Extracted samples from recent cache: {extracted_samples:,}")
+                                        
+                                        fallback_config = {
+                                            'num_samples': extracted_samples,
+                                            'sampling_strategy': 'Stratified (Recommended)'
+                                        }
+                                        print(f"🔄 [PIPELINE] Using fallback sampling config from cache: {fallback_config}")
+                                        sampling_config = fallback_config
+                    except Exception as e:
+                        print(f"⚠️ [PIPELINE] Failed to extract from cache files: {e}")
+                
+                if not sampling_config:
+                    print(f"❌ [PIPELINE] No fallback sampling config found, sampling will be skipped")
+            
             if sampling_config and sampling_config.get('num_samples'):
                 print(f"✅ [PIPELINE] Sampling will be applied: {sampling_config}")
                 original_size = len(df)
                 df = self._apply_sampling(df, sampling_config, label_column)
                 sampled_size = len(df)
                 print(f"✅ [PIPELINE] Sampling result: {original_size:,} → {sampled_size:,} samples")
+                
+                # FIXED: Verify sampling was actually applied
+                if sampled_size == original_size:
+                    print(f"⚠️ [PIPELINE] WARNING: Sampling did not reduce dataset size!")
+                    print(f"   This suggests sampling logic may have failed")
+                else:
+                    print(f"✅ [PIPELINE] Sampling verified: {original_size:,} → {sampled_size:,}")
+                
+                # FIXED: Update step1_data with sampled dataframe to ensure consistency
+                if sampling_config and sampling_config.get('num_samples'):
+                    print(f"🎯 [TRAINING_PIPELINE] Updating step1_data with sampled dataframe: {len(df):,} samples")
+                    step1_data['dataframe'] = df.copy()  # Use the already sampled dataframe
             else:
                 print(f"❌ [PIPELINE] No sampling applied, using full dataset ({len(df):,} samples)")
                 print(f"   Reason: sampling_config={sampling_config}, num_samples={sampling_config.get('num_samples') if sampling_config else 'N/A'}")
@@ -524,37 +641,10 @@ class StreamlitTrainingPipeline:
                 selected_models = step3_data.get('selected_models', [])
                 selected_vectorization = step3_data.get('selected_vectorization', [])
                 
-                # CRITICAL: Apply sampling to step1_data dataframe BEFORE passing to evaluator
-                if step1_data and 'dataframe' in step1_data and sampling_config and sampling_config.get('num_samples'):
-                    original_size = len(step1_data['dataframe'])
-                    requested_samples = sampling_config['num_samples']
-                    
-                    if original_size > requested_samples:
-                        print(f"🎯 [TRAINING_PIPELINE] Applying sampling to step1_data: {original_size:,} → {requested_samples:,}")
-                        
-                        # Apply the same sampling logic that was used in the pipeline
-                        df = step1_data['dataframe']
-                        text_col = step2_data.get('text_column', 'text') if step2_data else 'text'
-                        label_col = step2_data.get('label_column', 'label') if step2_data else 'label'
-                        
-                        if sampling_config.get('sampling_strategy') == 'Stratified (Recommended)':
-                            # Stratified sampling
-                            from sklearn.model_selection import train_test_split
-                            df_sampled, _ = train_test_split(
-                                df, 
-                                train_size=requested_samples,
-                                stratify=df[label_col],
-                                random_state=42
-                            )
-                        else:
-                            # Random sampling
-                            df_sampled = df.sample(n=requested_samples, random_state=42)
-                        
-                        # Update step1_data with sampled dataframe
-                        step1_data['dataframe'] = df_sampled
-                        print(f"✅ [TRAINING_PIPELINE] Sampling applied: {original_size:,} → {len(df_sampled):,}")
-                    else:
-                        print(f"ℹ️ [TRAINING_PIPELINE] No sampling needed: {original_size:,} ≤ {requested_samples:,}")
+                # FIXED: Update step1_data with sampled dataframe to ensure consistency
+                if sampling_config and sampling_config.get('num_samples'):
+                    print(f"🎯 [TRAINING_PIPELINE] Updating step1_data with sampled dataframe: {len(df):,} samples")
+                    step1_data['dataframe'] = df.copy()  # Use the already sampled dataframe
                 
                 # Debug: Check what we're passing to evaluator
                 print(f"🔍 [TRAINING_PIPELINE] Debug - Data being passed to evaluator:")
@@ -579,7 +669,7 @@ class StreamlitTrainingPipeline:
                     print(f"   • Base Models: KNN + Decision Tree + Naive Bayes")
                 
                 # Run comprehensive evaluation with selected models and embeddings
-                # Pass sampling config to respect user choice and stop callback
+                # FIXED: Pass the already sampled dataframe to evaluator
                 evaluation_results = evaluator.run_comprehensive_evaluation(
                     max_samples=None,  # Sampling already handled in pipeline
                     skip_csv_prompt=True,
@@ -589,7 +679,7 @@ class StreamlitTrainingPipeline:
                     stop_callback=self.is_training_stopped,  # Pass stop callback
                     step3_data=step3_data,  # Pass Step 3 configuration for KNN
                     preprocessing_config=self.preprocessing_config,  # Pass preprocessing config from instance
-                    step1_data=step1_data,  # Pass Step 1 data to avoid reloading dataset
+                    step1_data=step1_data,  # Pass Step 1 data with sampled dataframe
                     step2_data=step2_data,  # Pass Step 2 data with column configuration
                     ensemble_config=ensemble_config  # Pass ensemble learning configuration
                 )
@@ -1370,23 +1460,27 @@ class StreamlitTrainingPipeline:
                 # Get unique numeric labels from data
                 unique_numeric_labels = sorted(list(set(y_test)))
                 
-                # Create text labels mapping (same approach as main.py)
+                # Create text labels mapping (sử dụng label mapping động từ data_loader)
                 sorted_labels = []
-                for i in unique_numeric_labels:
-                    if i == 0:
-                        sorted_labels.append("astro-ph")
-                    elif i == 1:
-                        sorted_labels.append("cond-mat") 
-                    elif i == 2:
-                        sorted_labels.append("cs")
-                    elif i == 3:
-                        sorted_labels.append("math")
-                    elif i == 4:
-                        sorted_labels.append("physics")
+                try:
+                    # Sử dụng label mapping động từ data_loader nếu có
+                    if hasattr(self, 'data_loader') and hasattr(self.data_loader, 'id_to_label') and self.data_loader.id_to_label:
+                        for label_id in unique_numeric_labels:
+                            if label_id in self.data_loader.id_to_label:
+                                sorted_labels.append(self.data_loader.id_to_label[label_id])
+                            else:
+                                sorted_labels.append(f"Class_{label_id}")
+                        print(f"✅ Sử dụng label mapping động từ data_loader: {sorted_labels}")
                     else:
-                        sorted_labels.append(f"Class_{i}")
-                
-                print(f"✅ Using sorted_labels for visualizations: {sorted_labels}")
+                        # Fallback: sử dụng numeric labels
+                        sorted_labels = [f"Class_{i}" for i in unique_numeric_labels]
+                        print(f"⚠️  Sử dụng fallback labels: {sorted_labels}")
+                        
+                except Exception as e:
+                    print(f"Warning: Label mapping failed: {e}")
+                    # Fallback: use numeric labels
+                    sorted_labels = [f"Class_{i}" for i in unique_numeric_labels]
+                    print(f"⚠️  Using fallback labels: {sorted_labels}")
                 
             except Exception as e:
                 print(f"Warning: Label mapping failed: {e}")
@@ -1486,24 +1580,28 @@ class StreamlitTrainingPipeline:
                 # Get unique numeric labels from data
                 unique_numeric_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
                 
-                # Create text labels mapping (same approach as main.py)
+                # Create text labels mapping (sử dụng label từ data_loader)
                 # Since we don't have data_loader here, we'll create meaningful text labels
                 class_names = []
-                for i in unique_numeric_labels:
-                    if i == 0:
-                        class_names.append("astro-ph")
-                    elif i == 1:
-                        class_names.append("cond-mat") 
-                    elif i == 2:
-                        class_names.append("cs")
-                    elif i == 3:
-                        class_names.append("math")
-                    elif i == 4:
-                        class_names.append("physics")
+                try:
+                    # Sử dụng label mapping động từ data_loader nếu có
+                    if hasattr(self, 'data_loader') and hasattr(self.data_loader, 'id_to_label') and self.data_loader.id_to_label:
+                        for label_id in unique_numeric_labels:
+                            if label_id in self.data_loader.id_to_label:
+                                class_names.append(self.data_loader.id_to_label[label_id])
+                            else:
+                                class_names.append(f"Class_{label_id}")
+                        print(f"✅ Sử dụng label mapping động từ data_loader: {class_names}")
                     else:
-                        class_names.append(f"Class_{i}")
-                
-                print(f"✅ Mapped numeric labels {unique_numeric_labels} to text labels: {class_names}")
+                        # Fallback: sử dụng numeric labels
+                        class_names = [f"Class_{i}" for i in unique_numeric_labels]
+                        print(f"⚠️  Sử dụng fallback labels: {class_names}")
+                        
+                except Exception as e:
+                    print(f"Warning: Label mapping failed: {e}")
+                    # Fallback: use numeric labels
+                    class_names = [f"Class_{i}" for i in unique_numeric_labels]
+                    print(f"⚠️  Using fallback labels: {class_names}")
                 
             except Exception as e:
                 print(f"Warning: Label mapping failed: {e}")
@@ -1640,6 +1738,11 @@ class StreamlitTrainingPipeline:
                         true_labels, predictions, label_mapping,
                         model_name, embedding_name
                     )
+                elif model_name == 'Ensemble Learning' and 'ensemble_info' in result:
+                    # Xử lý đặc biệt cho Ensemble Learning
+                    print(f"      🎯 Xử lý Ensemble Learning - tạo confusion matrix từ base models")
+                    print(f"      🔍 Ensemble info keys: {list(result.get('ensemble_info', {}).keys())}")
+                    self._create_ensemble_confusion_matrix_from_cache(result)
                 else:
                     print(f"      ⚠️  Thiếu dữ liệu cho {model_name} + {embedding_name}")
                     print(f"         Có: {list(result.keys())}")
@@ -1715,6 +1818,66 @@ class StreamlitTrainingPipeline:
             
         except Exception as e:
             print(f"      ❌ Lỗi khi tạo confusion matrix: {e}")
+    
+    def _create_ensemble_confusion_matrix_from_cache(self, ensemble_result: Dict):
+        """
+        Tạo confusion matrix cho Ensemble Learning từ dữ liệu base models
+        """
+        try:
+            print(f"         🔍 Tạo confusion matrix cho Ensemble Learning...")
+            print(f"         🔍 Ensemble result keys: {list(ensemble_result.keys())}")
+            
+            ensemble_info = ensemble_result.get('ensemble_info', {})
+            print(f"         🔍 Ensemble info: {ensemble_info}")
+            individual_results = ensemble_info.get('individual_results', {})
+            print(f"         🔍 Individual results type: {type(individual_results)}")
+            print(f"         🔍 Individual results: {individual_results}")
+            
+            if not individual_results:
+                print(f"         ❌ Không có individual results trong ensemble")
+                return
+            
+            # Tìm base model có dữ liệu đầy đủ nhất
+            best_model_key = None
+            best_model_data = None
+            
+            for model_key, model_data in individual_results.items():
+                if (isinstance(model_data, dict) and 
+                    'predictions' in model_data and 
+                    'true_labels' in model_data):
+                    
+                    if best_model_data is None:
+                        best_model_key = model_key
+                        best_model_data = model_data
+                    else:
+                        # Ưu tiên model có accuracy cao hơn
+                        if (model_data.get('test_accuracy', 0) > 
+                            best_model_data.get('test_accuracy', 0)):
+                            best_model_key = model_key
+                            best_model_data = model_data
+            
+            if best_model_data is None:
+                print(f"         ❌ Không tìm thấy base model nào có đủ dữ liệu")
+                return
+            
+            print(f"         ✅ Sử dụng dữ liệu từ base model: {best_model_key}")
+            
+            # Lấy dữ liệu từ base model
+            predictions = best_model_data['predictions']
+            true_labels = best_model_data['true_labels']
+            label_mapping = best_model_data.get('label_mapping', {})
+            
+            # Tạo confusion matrix cho ensemble
+            embedding_name = ensemble_result.get('embedding_name', 'Unknown')
+            self._create_confusion_matrix_from_cache(
+                true_labels, predictions, label_mapping,
+                'Ensemble Learning', embedding_name
+            )
+            
+        except Exception as e:
+            print(f"         ❌ Lỗi khi tạo ensemble confusion matrix: {e}")
+            import traceback
+            traceback.print_exc()
     
     def get_training_status(self) -> Dict:
         """Get current training status"""

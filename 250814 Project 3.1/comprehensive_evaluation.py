@@ -766,7 +766,7 @@ class ComprehensiveEvaluator:
                             cv_f1_based_accuracy = (cv_train_acc + cv_val_acc) / 2.0
                             cv_f1_based_std = abs(cv_train_acc - cv_val_acc) / 2.0
                             
-                            print(f"     📊 CV vs Test Overfitting: CV Acc={cv_mean_accuracy:.3f}, Test Acc={test_acc:.3f}, Score={overfitting_score:+.3f}")
+                            print(f"     📊 Train vs Val Overfitting: Train Mean={train_mean:.3f}, Val Mean={val_mean:.3f}, Test Acc={test_acc:.3f}, Score={overfitting_score:+.3f}")
                             print(f"     📊 ML Standard CV (CV Fold): CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
                             print(f"     🔍 DEBUG: overfitting_score = {overfitting_score}, overfitting_level = {overfitting_level}")
                         else:
@@ -884,28 +884,41 @@ class ComprehensiveEvaluator:
     def _get_label_mapping(self, y_train: np.ndarray) -> Dict[int, str]:
         """
         Tạo mapping từ numeric labels sang text labels theo pipeline
-        Sử dụng cùng logic như main.py để đảm bảo consistency
         """
         try:
             # Lấy unique labels đã được sắp xếp
             unique_labels = sorted(list(set(y_train)))
             
-            # Tạo mapping theo logic của main.py
-            label_mapping = {}
-            for i, label_id in enumerate(unique_labels):
-                if label_id == 0:
-                    label_mapping[label_id] = "astro-ph"
-                elif label_id == 1:
-                    label_mapping[label_id] = "cond-mat"
-                elif label_id == 2:
-                    label_mapping[label_id] = "cs"
-                elif label_id == 3:
-                    label_mapping[label_id] = "math"
-                elif label_id == 4:
-                    label_mapping[label_id] = "physics"
-                else:
-                    label_mapping[label_id] = f"Class_{label_id}"
+            # Sử dụng label mapping động từ data_loader nếu có
+            if hasattr(self.data_loader, 'id_to_label') and self.data_loader.id_to_label:
+                label_mapping = {}
+                for label_id in unique_labels:
+                    if label_id in self.data_loader.id_to_label:
+                        label_mapping[label_id] = self.data_loader.id_to_label[label_id]
+                    else:
+                        label_mapping[label_id] = f"Class_{label_id}"
+                
+                print(f"✅ Sử dụng label mapping động từ data_loader: {label_mapping}")
+                return label_mapping
             
+            # CRITICAL FIX: Nếu không có id_to_label, tạo meaningful labels từ preprocessed_samples
+            if hasattr(self.data_loader, 'preprocessed_samples') and self.data_loader.preprocessed_samples:
+                # Extract actual labels from preprocessed samples
+                actual_labels = set()
+                for sample in self.data_loader.preprocessed_samples:
+                    if 'label' in sample:
+                        actual_labels.add(sample['label'])
+                
+                if actual_labels:
+                    # Create mapping using actual labels
+                    sorted_actual_labels = sorted(list(actual_labels))
+                    label_mapping = {i: label for i, label in enumerate(sorted_actual_labels)}
+                    print(f"✅ Sử dụng labels từ preprocessed_samples: {label_mapping}")
+                    return label_mapping
+            
+            # Fallback: tạo mapping đơn giản nếu không có gì khác
+            label_mapping = {label_id: f"Class_{label_id}" for label_id in unique_labels}
+            print(f"⚠️  Sử dụng fallback label mapping: {label_mapping}")
             return label_mapping
             
         except Exception as e:
