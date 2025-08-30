@@ -2728,12 +2728,7 @@ def _get_consistent_labels(unique_labels, label_mapping_dict):
     if not unique_labels:
         return []
     
-    # DEBUG: Print what we received
-    print(f"🔍 _get_consistent_labels DEBUG:")
-    print(f"  - unique_labels: {unique_labels}")
-    print(f"  - label_mapping_dict: {label_mapping_dict}")
-    print(f"  - label_mapping_dict type: {type(label_mapping_dict)}")
-    
+
     # CRITICAL FIX: PRIORITIZE label_mapping_dict over session state
     # This ensures we use the actual labels from cache/results
     if label_mapping_dict and isinstance(label_mapping_dict, dict):
@@ -2847,10 +2842,7 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
             label_mapping = fallback_data['label_mapping']
     
     # CRITICAL FIX: Check if label_mapping has numeric strings instead of text labels
-    if label_mapping and unique_labels:
-        # Debug: Show what we're checking
-        print(f"🔍 Debug - Checking label mapping: {label_mapping}")
-        print(f"🔍 Debug - Unique labels: {unique_labels}")
+
         
         # Check if mapping values are just string versions of the keys (indicating bad mapping)
         is_bad_mapping = all(
@@ -2863,8 +2855,6 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
             str(value).startswith('Class_') or str(value).startswith('Class ') for value in label_mapping.values()
         )
         
-        print(f"🔍 Debug - Is bad mapping (numeric): {is_bad_mapping}")
-        print(f"🔍 Debug - Is generic class mapping: {is_generic_class_mapping}")
         
         # Force fix for 5-class arxiv pattern regardless of current mapping
         if len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
@@ -2894,8 +2884,6 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
                 # For other cases, use generic class names
                 label_mapping = {label_id: f"Class {label_id}" for label_id in unique_labels}
                 print(f"🔧 Fixed bad label mapping to generic: {label_mapping}")
-        
-        print(f"🔍 Debug - Final label mapping: {label_mapping}")
     
     return unique_labels, label_mapping
 
@@ -3334,49 +3322,20 @@ def render_step5_wireframe():
                 <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🧠 Model: {selected_result.get('model_name', 'Unknown').replace('_', ' ').title()} + {selected_result.get('embedding_name', 'Unknown').replace('_', ' ').title()} - Detailed Analysis</h3>
                 """, unsafe_allow_html=True)
                 
-                # Get available metrics
-                available_metrics = {}
-                if 'test_metrics' in selected_result:
-                    test_metrics = selected_result['test_metrics']
-                    if 'precision' in test_metrics:
-                        available_metrics['Precision'] = test_metrics['precision']
-                    if 'recall' in test_metrics:
-                        available_metrics['Recall'] = test_metrics['recall']
+                # Set default metric (Accuracy)
+                selected_metric = "Accuracy"
+                selected_metric_value = selected_result.get('test_accuracy', 0)
                 
-                # Add accuracy if available
-                if 'test_accuracy' in selected_result:
-                    available_metrics['Accuracy'] = selected_result['test_accuracy']
+                # Set default display mode
+                cm_display_mode = "Percentages (Normalized)"
                 
-                # Add F1 score if available (prioritize overall F1 score)
-                if 'f1_score' in selected_result:
-                    available_metrics['F1 Score'] = selected_result['f1_score']
-                elif 'test_metrics' in selected_result and 'f1_score' in selected_result['test_metrics']:
-                    available_metrics['F1 Score'] = selected_result['test_metrics']['f1_score']
-                
-                # Create metric selection
-                if available_metrics:
-                    selected_metric = st.selectbox(
-                        "Choose metric to highlight in confusion matrix:",
-                        options=list(available_metrics.keys()),
-                        index=0,
-                        help="Select which metric to use for coloring and highlighting the confusion matrix"
-                    )
-                    
-                    # Get the selected metric value
-                    selected_metric_value = available_metrics[selected_metric]
-                    
-                    cm_display_mode = st.radio(
-                        "Choose display format:",
-                        options=["Counts (Raw Numbers)", "Percentages (Normalized)"],
-                        index=0,
-                        help="Counts show actual prediction numbers, Percentages show relative proportions"
-                    )
-                    
-                    
-                else:
-                    selected_metric = "Accuracy"
-                    selected_metric_value = selected_result.get('test_accuracy', 0)
-                    st.warning("⚠️ Limited metrics available, using default accuracy")
+                # Add display format selection
+                cm_display_mode = st.radio(
+                    "Choose display format:",
+                    options=["Percentages (Normalized)", "Counts (Raw Numbers)"],
+                    index=0,
+                    help="Percentages show relative proportions, Counts show actual prediction numbers"
+                )
                 
                 # Display confusion matrix if available
                 # Sử dụng màu "green royal" làm theme chính cho confusion matrix
@@ -3474,9 +3433,7 @@ def render_step5_wireframe():
                             # Pass cache_data to prioritize top-level labels over individual result labels
                             cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
                             
-                            # DEBUG: Show what cache_data contains for generated CM
-                            if cache_data and 'label_mapping' in cache_data:
-                                st.write("🔍 DEBUG (Generated CM): Found label_mapping in cache_data")
+
                             
                             unique_labels, label_mapping = _get_unique_labels_and_mapping(
                                 selected_result, 
@@ -3495,12 +3452,7 @@ def render_step5_wireframe():
                             # Get consistent class labels
                             class_labels = _get_consistent_labels(unique_labels, label_mapping)
                             
-                            # Debug: Show what we found
-                            st.write("🔍 Debug Info (Generated CM):")
-                            st.write(f"unique_labels: {unique_labels}")
-                            st.write(f"label_mapping: {label_mapping}")
-                            st.write(f"selected_result keys: {list(selected_result.keys())}")
-                            st.write(f"Generated class_labels: {class_labels}")
+
 
                             # Vẽ heatmap confusion matrix
                             fig, ax = plt.subplots(figsize=(8, 6))
@@ -3598,9 +3550,6 @@ def render_step5_wireframe():
                             # Pass cache_data to prioritize top-level labels over individual result labels
                             cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
                             
-                            # DEBUG: Show what cache_data contains for ensemble CM
-                            if cache_data and 'label_mapping' in cache_data:
-                                st.write("🔍 DEBUG (Ensemble CM): Found label_mapping in cache_data")
                             
                             unique_labels, label_mapping = _get_unique_labels_and_mapping(
                                 selected_result, 
