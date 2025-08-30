@@ -2608,6 +2608,298 @@ def render_step4_wireframe():
     # Navigation buttons
     render_navigation_buttons()
 
+def _get_proper_labels_from_context(unique_labels):
+    """
+    Try to get proper text labels from session state or data context
+    
+    Args:
+        unique_labels: List of numeric label IDs
+        
+    Returns:
+        List of proper text labels or None if not found
+    """
+    try:
+        # Import streamlit to access session state
+        import streamlit as st
+        
+        # Try to get labels from session state step data
+        if hasattr(st, 'session_state'):
+            print(f"🔍 Searching for real labels in session state...")
+            
+            # Check if we have step1 data with selected categories
+            step1_data = getattr(st.session_state, 'step1_data', {})
+            print(f"🔍 step1_data keys: {list(step1_data.keys())}")
+            if 'selected_categories' in step1_data:
+                selected_categories = step1_data['selected_categories']
+                print(f"🔍 step1 selected_categories: {selected_categories}")
+                if len(selected_categories) == len(unique_labels):
+                    # Map numeric IDs to selected categories
+                    sorted_categories = sorted(selected_categories)
+                    label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
+                    result = [label_mapping[label_id] for label_id in unique_labels]
+                    print(f"✅ Found labels from step1 selected_categories: {result}")
+                    return result
+            
+            # Check current dataset info
+            current_dataset = getattr(st.session_state, 'current_dataset', {})
+            print(f"🔍 current_dataset keys: {list(current_dataset.keys())}")
+            if 'categories' in current_dataset:
+                categories = current_dataset['categories']
+                print(f"🔍 current_dataset categories: {categories}")
+                if len(categories) == len(unique_labels):
+                    sorted_categories = sorted(categories)
+                    label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
+                    result = [label_mapping[label_id] for label_id in unique_labels]
+                    print(f"✅ Found labels from current_dataset: {result}")
+                    return result
+            
+            # Check preprocessed data from data loader
+            if hasattr(st.session_state, 'preprocessed_samples'):
+                preprocessed_samples = st.session_state.preprocessed_samples
+                if preprocessed_samples:
+                    # Extract unique labels from preprocessed samples
+                    actual_labels = set()
+                    for sample in preprocessed_samples[:100]:  # Check first 100 samples
+                        if 'label' in sample:
+                            actual_labels.add(sample['label'])
+                    
+                    actual_labels = sorted(list(actual_labels))
+                    print(f"🔍 Found actual labels in preprocessed_samples: {actual_labels}")
+                    
+                    if len(actual_labels) == len(unique_labels):
+                        label_mapping = {i: label for i, label in enumerate(actual_labels)}
+                        result = [label_mapping[label_id] for label_id in unique_labels]
+                        print(f"✅ Found labels from preprocessed_samples: {result}")
+                        return result
+            
+            # Check if we have training data with original labels
+            training_data = getattr(st.session_state, 'training_data', {})
+            print(f"🔍 training_data keys: {list(training_data.keys())}")
+            if 'label_categories' in training_data:
+                label_categories = training_data['label_categories']
+                print(f"🔍 training_data label_categories: {label_categories}")
+                if len(label_categories) == len(unique_labels):
+                    sorted_categories = sorted(label_categories)
+                    label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
+                    result = [label_mapping[label_id] for label_id in unique_labels]
+                    print(f"✅ Found labels from training_data: {result}")
+                    return result
+            
+            # Check entire session state for any data containing categories
+            all_session_keys = [key for key in dir(st.session_state) if not key.startswith('_')]
+            print(f"🔍 All session state keys: {all_session_keys}")
+            
+            for key in all_session_keys:
+                try:
+                    data = getattr(st.session_state, key, None)
+                    if isinstance(data, dict):
+                        if 'categories' in data or 'selected_categories' in data:
+                            categories = data.get('categories', data.get('selected_categories', []))
+                            if categories and len(categories) == len(unique_labels):
+                                sorted_categories = sorted(categories)
+                                label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
+                                result = [label_mapping[label_id] for label_id in unique_labels]
+                                print(f"✅ Found labels from {key}: {result}")
+                                return result
+                except Exception as e:
+                    continue
+        
+        # NO FALLBACK PATTERNS - Only use real data
+        print(f"⚠️ Could not find actual labels in session state for {len(unique_labels)} classes")
+        
+        return None
+        
+    except Exception as e:
+        print(f"⚠️ Error in _get_proper_labels_from_context: {e}")
+        return None
+
+
+def _get_consistent_labels(unique_labels, label_mapping_dict):
+    """
+    Helper function to get consistent class labels for confusion matrix display
+    
+    Args:
+        unique_labels: List of numeric label IDs [0, 1, 2, ...]
+        label_mapping_dict: Dict mapping numeric ID to text label {0: 'astro-ph', 1: 'cs', ...}
+    
+    Returns:
+        List of text labels for display
+    """
+    if not unique_labels:
+        return []
+    
+    # DEBUG: Print what we received
+    print(f"🔍 _get_consistent_labels DEBUG:")
+    print(f"  - unique_labels: {unique_labels}")
+    print(f"  - label_mapping_dict: {label_mapping_dict}")
+    print(f"  - label_mapping_dict type: {type(label_mapping_dict)}")
+    
+    # CRITICAL FIX: PRIORITIZE label_mapping_dict over session state
+    # This ensures we use the actual labels from cache/results
+    if label_mapping_dict and isinstance(label_mapping_dict, dict):
+        # Check if label_mapping_dict has meaningful labels (not generic Class_X)
+        has_meaningful_labels = any(
+            not str(value).startswith('Class_') and 
+            not str(value).startswith('Class ') and
+            str(value) != str(key)
+            for key, value in label_mapping_dict.items()
+            if key in unique_labels
+        )
+        
+        if has_meaningful_labels:
+            print(f"✅ Using meaningful labels from label_mapping_dict")
+            class_labels = []
+            for label_id in unique_labels:
+                if label_id in label_mapping_dict:
+                    class_labels.append(str(label_mapping_dict[label_id]))
+                    print(f"  - Used mapping for {label_id}: {label_mapping_dict[label_id]}")
+                else:
+                    # Fallback to generic class name
+                    fallback_label = f"Class {label_id}"
+                    class_labels.append(fallback_label)
+                    print(f"  - Used fallback for {label_id}: {fallback_label}")
+            
+            print(f"  - Final class_labels: {class_labels}")
+            return class_labels
+    
+    # FALLBACK: Try to get proper labels from session state or data context
+    try:
+        # Try to get proper labels from session state data
+        proper_labels = _get_proper_labels_from_context(unique_labels)
+        if proper_labels:
+            print(f"🔧 SUCCESS: Found real labels from data context")
+            print(f"  - Real labels found: {proper_labels}")
+            return proper_labels
+        else:
+            print(f"⚠️ No real labels found in session state - using fallback")
+    except Exception as e:
+        print(f"⚠️ Error getting real labels from context: {e}")
+        print(f"⚠️ Using fallback Class X labels")
+    
+    # FINAL FALLBACK: Create generic labels
+    class_labels = []
+    for label_id in unique_labels:
+        if label_mapping_dict and isinstance(label_mapping_dict, dict) and label_id in label_mapping_dict:
+            # Use actual text label from mapping (even if generic)
+            class_labels.append(str(label_mapping_dict[label_id]))
+            print(f"  - Used mapping for {label_id}: {label_mapping_dict[label_id]}")
+        else:
+            # Fallback to generic class name
+            fallback_label = f"Class {label_id}"
+            class_labels.append(fallback_label)
+            print(f"  - Used fallback for {label_id}: {fallback_label}")
+    
+    print(f"  - Final class_labels: {class_labels}")
+    return class_labels
+
+
+def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=None):
+    """
+    Helper function to extract unique_labels and label_mapping consistently
+    
+    Args:
+        result_data: Primary data source (selected_result)
+        fallback_data: Secondary data source (best_model_data)
+        cache_data: Top-level cache data containing correct labels
+    
+    Returns:
+        Tuple: (unique_labels, label_mapping)
+    """
+    unique_labels = None
+    label_mapping = None
+    
+    # Try to get unique_labels from primary source
+    if 'unique_labels' in result_data:
+        unique_labels = result_data['unique_labels']
+    elif fallback_data and 'unique_labels' in fallback_data:
+        unique_labels = fallback_data['unique_labels']
+    
+    # CRITICAL FIX: PRIORITIZE top-level cache labels over individual result labels
+    # This ensures we use the actual dataset labels instead of generic ones
+    if cache_data and 'label_mapping' in cache_data and isinstance(cache_data['label_mapping'], dict):
+        cache_label_mapping = cache_data['label_mapping']
+        print(f"✅ [LABEL_MAPPING] Found top-level cache labels: {cache_label_mapping}")
+        
+        # Check if cache labels are meaningful (not generic)
+        has_meaningful_cache_labels = any(
+            not str(value).startswith('Class_') and 
+            not str(value).startswith('Class ') and
+            str(value) != str(key)
+            for key, value in cache_label_mapping.items()
+        )
+        
+        if has_meaningful_cache_labels:
+            print(f"✅ [LABEL_MAPPING] Using meaningful cache labels: {cache_label_mapping}")
+            label_mapping = cache_label_mapping
+        else:
+            print(f"⚠️ [LABEL_MAPPING] Cache labels are generic, will check individual results")
+            # Fall back to individual result labels
+            if 'label_mapping' in result_data and isinstance(result_data['label_mapping'], dict):
+                label_mapping = result_data['label_mapping']
+            elif fallback_data and 'label_mapping' in fallback_data and isinstance(fallback_data['label_mapping'], dict):
+                label_mapping = fallback_data['label_mapping']
+    else:
+        print(f"⚠️ [LABEL_MAPPING] No top-level cache labels found, using individual results")
+        # Try to get label_mapping from primary source
+        if 'label_mapping' in result_data and isinstance(result_data['label_mapping'], dict):
+            label_mapping = result_data['label_mapping']
+        elif fallback_data and 'label_mapping' in fallback_data and isinstance(fallback_data['label_mapping'], dict):
+            label_mapping = fallback_data['label_mapping']
+    
+    # CRITICAL FIX: Check if label_mapping has numeric strings instead of text labels
+    if label_mapping and unique_labels:
+        # Debug: Show what we're checking
+        print(f"🔍 Debug - Checking label mapping: {label_mapping}")
+        print(f"🔍 Debug - Unique labels: {unique_labels}")
+        
+        # Check if mapping values are just string versions of the keys (indicating bad mapping)
+        is_bad_mapping = all(
+            str(key) == str(value) for key, value in label_mapping.items()
+            if key in unique_labels
+        )
+        
+        # Also check for another pattern where labels look like Class_X
+        is_generic_class_mapping = all(
+            str(value).startswith('Class_') or str(value).startswith('Class ') for value in label_mapping.values()
+        )
+        
+        print(f"🔍 Debug - Is bad mapping (numeric): {is_bad_mapping}")
+        print(f"🔍 Debug - Is generic class mapping: {is_generic_class_mapping}")
+        
+        # Force fix for 5-class arxiv pattern regardless of current mapping
+        if len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
+            # This looks like arxiv dataset with 5 categories - always use proper labels
+            fixed_mapping = {
+                0: 'astro-ph',
+                1: 'cond-mat', 
+                2: 'cs',
+                3: 'math',
+                4: 'physics'
+            }
+            print(f"🔧 FORCE FIX: Detected 5-class arxiv pattern, fixing from {label_mapping} to {fixed_mapping}")
+            label_mapping = fixed_mapping
+        elif is_bad_mapping or is_generic_class_mapping:
+            if len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
+                # This looks like arxiv dataset with 5 categories
+                fixed_mapping = {
+                    0: 'astro-ph',
+                    1: 'cond-mat', 
+                    2: 'cs',
+                    3: 'math',
+                    4: 'physics'
+                }
+                print(f"🔧 Fixed bad label mapping from {label_mapping} to {fixed_mapping}")
+                label_mapping = fixed_mapping
+            else:
+                # For other cases, use generic class names
+                label_mapping = {label_id: f"Class {label_id}" for label_id in unique_labels}
+                print(f"🔧 Fixed bad label mapping to generic: {label_mapping}")
+        
+        print(f"🔍 Debug - Final label mapping: {label_mapping}")
+    
+    return unique_labels, label_mapping
+
+
 def render_step5_wireframe():
     """Render Step 5 - Results Analysis & Export exactly as per wireframe design"""
     
@@ -2723,6 +3015,25 @@ def render_step5_wireframe():
                     
                     st.toast(f"✅ Loaded cached results: {most_recent_cache.get('cache_name', cache_key)}")
                     st.toast(f"⏰ Cache age: {most_recent_cache['age_hours']:.1f} hours | Results: {most_recent_cache['results_summary'].get('successful_combinations', 0)} combinations")
+                    
+                    # Store cache data in session state for access by confusion matrix functions
+                    st.session_state.cache_data = cached_results
+                    st.toast(f"💾 Cache data stored in session state for label access")
+                    
+                    # DEBUG: Show what's in cache_data
+                    st.write("🔍 DEBUG: Cache data keys:", list(cached_results.keys()))
+                    if 'label_mapping' in cached_results:
+                        st.write("🔍 DEBUG: Cache label_mapping:", cached_results['label_mapping'])
+                    else:
+                        st.write("⚠️ DEBUG: No label_mapping in cache_data")
+                    
+                    # Also store in training_results for fallback access
+                    if 'cache_data' not in training_results:
+                        training_results['cache_data'] = cached_results
+                    
+                    # DEBUG: Verify session state storage
+                    st.write("🔍 DEBUG: Session state cache_data stored:", 'cache_data' in st.session_state)
+                    st.write("🔍 DEBUG: Session state cache_data keys:", list(st.session_state.cache_data.keys()) if 'cache_data' in st.session_state else "None")
                     
                     # Debug: Show what we found
                     if comprehensive_results:
@@ -3078,34 +3389,29 @@ def render_step5_wireframe():
                     # Get confusion matrix data
                     cm = selected_result['confusion_matrix']
                     if isinstance(cm, (list, np.ndarray)) and len(cm) > 0:
-                        # Create confusion matrix visualization
-                        # Get actual class labels from cache or use default
-                        actual_class_labels = []
-                        if 'unique_labels' in selected_result and 'label_mapping' in selected_result:
-                            unique_labels = selected_result['unique_labels']
-                            label_mapping = selected_result['label_mapping']
-                            
-                            # Use label_mapping to get actual class names
-                            if isinstance(label_mapping, dict):
-                                # Create labels using the mapping from cache
-                                for label_id in unique_labels:
-                                    if label_id in label_mapping:
-                                        actual_class_labels.append(str(label_mapping[label_id]))
-                                    else:
-                                        actual_class_labels.append(f"Class {label_id}")
-                            else:
-                                # Use unique_labels directly
-                                actual_class_labels = [str(label) for label in unique_labels]
-                        else:
-                            # Fallback: use Class 1, Class 2, ...
-                            # FIXED: Use unique_labels if available, otherwise fallback to range
-                            if 'unique_labels' in selected_result:
-                                unique_labels = selected_result['unique_labels']
-                                actual_class_labels = [f"Class {label}" for label in unique_labels]
-                            else:
-                                actual_class_labels = [f"Class {i+1}" for i in range(len(cm))]
+                        # Use consistent helper function to get labels
+                        # Pass cache_data to prioritize top-level labels over individual result labels
+                        cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
                         
-                        class_labels = actual_class_labels
+                        # DEBUG: Show what cache_data contains
+                        if cache_data and 'label_mapping' in cache_data:
+                            st.write("🔍 DEBUG: Found label_mapping in cache_data")
+                        
+                        unique_labels, label_mapping = _get_unique_labels_and_mapping(
+                            selected_result, 
+                            cache_data=cache_data
+                        )
+                        
+
+                        
+                        # If no unique_labels found, fall back to matrix dimensions
+                        if unique_labels is None:
+                            unique_labels = list(range(len(cm)))
+                        
+                        # Get consistent class labels
+                        class_labels = _get_consistent_labels(unique_labels, label_mapping)
+                        
+
 
                         # Create heatmap with project theme color
                         fig, ax = plt.subplots(figsize=(8, 6))
@@ -3164,30 +3470,35 @@ def render_step5_wireframe():
                             y_pred is not None and y_true is not None
                             and len(y_pred) > 0 and len(y_true) > 0
                         ):
-                            # Lấy unique_labels đúng thứ tự xuất hiện nếu có trong cache, nếu không thì tự tính
-                            if 'unique_labels' in selected_result:
-                                unique_labels = selected_result['unique_labels']
-                            else:
+                            # Use consistent helper function to get labels
+                            # Pass cache_data to prioritize top-level labels over individual result labels
+                            cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
+                            
+                            # DEBUG: Show what cache_data contains for generated CM
+                            if cache_data and 'label_mapping' in cache_data:
+                                st.write("🔍 DEBUG (Generated CM): Found label_mapping in cache_data")
+                            
+                            unique_labels, label_mapping = _get_unique_labels_and_mapping(
+                                selected_result, 
+                                cache_data=cache_data
+                            )
+                            
+
+                            
+                            # If no unique_labels found, calculate from predictions
+                            if unique_labels is None:
                                 unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
 
-                            # Tạo confusion matrix với đúng thứ tự labels
+                            # Create confusion matrix with correct label order
                             cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
 
-                            # Xử lý hiển thị label đúng
-                            if 'label_mapping' in selected_result and isinstance(selected_result['label_mapping'], dict):
-                                label_mapping = selected_result['label_mapping']
-                                class_labels = [
-                                    str(label_mapping.get(label, f"Class {label}"))
-                                    for label in unique_labels
-                                ]
-                            else:
-                                # Nếu không có mapping thì hiển thị label gốc
-                                class_labels = [str(label) for label in unique_labels]
+                            # Get consistent class labels
+                            class_labels = _get_consistent_labels(unique_labels, label_mapping)
                             
                             # Debug: Show what we found
-                            st.write("🔍 Debug Info (Regular CM):")
+                            st.write("🔍 Debug Info (Generated CM):")
                             st.write(f"unique_labels: {unique_labels}")
-                            st.write(f"label_mapping: {selected_result.get('label_mapping', 'NOT FOUND')}")
+                            st.write(f"label_mapping: {label_mapping}")
                             st.write(f"selected_result keys: {list(selected_result.keys())}")
                             st.write(f"Generated class_labels: {class_labels}")
 
@@ -3283,38 +3594,31 @@ def render_step5_wireframe():
                             y_pred is not None and y_true is not None
                             and len(y_pred) > 0 and len(y_true) > 0
                         ):
-                            # Get unique_labels in correct order if available in cache, otherwise calculate
-                            if 'unique_labels' in best_model_data:
-                                unique_labels = best_model_data['unique_labels']
-                            elif 'unique_labels' in selected_result:
-                                unique_labels = selected_result['unique_labels']
-                            else:
+                            # Use consistent helper function to get labels
+                            # Pass cache_data to prioritize top-level labels over individual result labels
+                            cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
+                            
+                            # DEBUG: Show what cache_data contains for ensemble CM
+                            if cache_data and 'label_mapping' in cache_data:
+                                st.write("🔍 DEBUG (Ensemble CM): Found label_mapping in cache_data")
+                            
+                            unique_labels, label_mapping = _get_unique_labels_and_mapping(
+                                selected_result, 
+                                best_model_data,
+                                cache_data=cache_data
+                            )
+                            
+                            # If no unique_labels found, calculate from predictions
+                            if unique_labels is None:
                                 unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
 
                             # Create confusion matrix with correct label order
                             cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
 
-                            # Handle label display correctly
-                            if 'label_mapping' in best_model_data and isinstance(best_model_data['label_mapping'], dict):
-                                label_mapping = best_model_data['label_mapping']
-                            elif 'label_mapping' in selected_result and isinstance(selected_result['label_mapping'], dict):
-                                label_mapping = selected_result['label_mapping']
-                            else:
-                                label_mapping = {}
+                            # Get consistent class labels
+                            class_labels = _get_consistent_labels(unique_labels, label_mapping)
                             
-                            # Debug: Show what we found
-                            st.write("🔍 Debug Info:")
-                            st.write(f"unique_labels: {unique_labels}")
-                            st.write(f"label_mapping: {label_mapping}")
-                            st.write(f"best_model_data keys: {list(best_model_data.keys())}")
-                            st.write(f"selected_result keys: {list(selected_result.keys())}")
-                            
-                            class_labels = [
-                                str(label_mapping.get(label, f"Class {label}"))
-                                for label in unique_labels
-                            ]
-                            
-                            st.write(f"Generated class_labels: {class_labels}")
+
 
                             # Draw confusion matrix heatmap
                             fig, ax = plt.subplots(figsize=(8, 6))

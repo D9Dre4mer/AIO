@@ -657,20 +657,41 @@ class DataLoader:
                         # Download WordNet if not available
                         nltk.data.find('corpora/wordnet')
                     except LookupError:
+                        print("⚠️ [DATALOADER] WordNet not found, downloading...")
                         nltk.download('wordnet', quiet=True)
+                    
+                    try:
+                        # Download POS tagger if not available
+                        nltk.data.find('taggers/averaged_perceptron_tagger')
+                    except LookupError:
+                        print("⚠️ [DATALOADER] POS tagger not found, downloading...")
                         nltk.download('averaged_perceptron_tagger', quiet=True)
+                    
+                    # Verify all required data is available
+                    try:
+                        nltk.data.find('taggers/averaged_perceptron_tagger')
+                        nltk.data.find('corpora/wordnet')
+                        print("✅ [DATALOADER] All required NLTK data verified")
+                    except LookupError as e:
+                        print(f"❌ [DATALOADER] NLTK data verification failed: {e}")
+                        raise ImportError("Required NLTK data not available")
                     
                     from nltk.stem import WordNetLemmatizer
                     from nltk.corpus import wordnet
                     
                     def get_wordnet_pos(word):
                         """Map POS tag to first character lemmatize() accepts"""
-                        tag = nltk.pos_tag([word])[0][1][0].upper()
-                        tag_dict = {"J": wordnet.ADJ,
-                                  "N": wordnet.NOUN,
-                                  "V": wordnet.VERB,
-                                  "R": wordnet.ADV}
-                        return tag_dict.get(tag, wordnet.NOUN)
+                        try:
+                            tag = nltk.pos_tag([word])[0][1][0].upper()
+                            tag_dict = {"J": wordnet.ADJ,
+                                      "N": wordnet.NOUN,
+                                      "V": wordnet.VERB,
+                                      "R": wordnet.ADV}
+                            return tag_dict.get(tag, wordnet.NOUN)
+                        except Exception as pos_error:
+                            print(f"⚠️ [DATALOADER] POS tagging failed for word '{word}': {pos_error}")
+                            # Fallback to noun
+                            return wordnet.NOUN
                     
                     lemmatizer = WordNetLemmatizer()
                     words = abstract.split()

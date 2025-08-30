@@ -186,6 +186,57 @@ class StreamlitTrainingPipeline:
         text_column = step2_data.get('text_column', 'text')
         label_column = step2_data.get('label_column', 'label')
         
+        # CRITICAL FIX: Include dataset information in cache key
+        dataset_name = "unknown_dataset"
+        dataset_hash = "no_hash"
+        
+        # Get dataset name from step1_data
+        if 'uploaded_file' in step1_data and step1_data['uploaded_file']:
+            uploaded_file = step1_data['uploaded_file']
+            if isinstance(uploaded_file, dict) and 'name' in uploaded_file:
+                dataset_name = uploaded_file['name'].replace('.csv', '').replace('.xlsx', '').replace('.json', '').replace('.txt', '')
+            elif hasattr(uploaded_file, 'name'):
+                dataset_name = uploaded_file.name.replace('.csv', '').replace('.xlsx', '').replace('.json', '').replace('.txt', '')
+        
+        # Get dataset content hash from dataframe
+        if 'dataframe' in step1_data and step1_data['dataframe'] is not None:
+            df = step1_data['dataframe']
+            try:
+                # Create hash from dataset content (first 100 rows + column names)
+                import hashlib
+                content_str = str(list(df.columns)) + str(df.head(100).values.tolist())
+                dataset_hash = hashlib.md5(content_str.encode()).hexdigest()[:8]
+            except Exception as e:
+                print(f"⚠️ [CACHE_KEY] Error creating dataset hash: {e}")
+                dataset_hash = "hash_err"
+        
+        # Get selected categories for label differentiation
+        selected_categories = step1_data.get('selected_categories', [])
+        
+        # CRITICAL FIX: Try to extract categories from dataframe if not provided
+        if not selected_categories and 'dataframe' in step1_data and step1_data['dataframe'] is not None:
+            df = step1_data['dataframe']
+            label_column = step2_data.get('label_column', 'label')
+            
+            # Try to find label column
+            for col in ['Category', 'label', 'category', 'class', 'target', 'y']:
+                if col in df.columns:
+                    label_column = col
+                    break
+            
+            if label_column in df.columns:
+                try:
+                    # Get unique labels from dataframe
+                    unique_labels = df[label_column].unique()
+                    selected_categories = sorted(unique_labels.tolist())
+                    print(f"✅ [CACHE_KEY] Extracted categories from dataframe: {selected_categories}")
+                except Exception as e:
+                    print(f"⚠️ [CACHE_KEY] Error extracting categories: {e}")
+        
+        categories_str = "_".join(str(cat)[:10] for cat in selected_categories[:3]) if selected_categories else "no_cats"
+        if len(categories_str) > 20:
+            categories_str = categories_str[:20] + "..."
+        
         # Create human-readable cache name
         sample_count = sampling_config.get('num_samples', 'full')
         if sample_count == 'full':
@@ -198,16 +249,22 @@ class StreamlitTrainingPipeline:
         vector_str = "_".join(selected_vectorization[:2])  # First 2 vectorization methods
         
         # Truncate if too long
-        if len(model_str) > 30:
-            model_str = model_str[:30] + "..."
-        if len(vector_str) > 20:
-            vector_str = vector_str[:20] + "..."
+        if len(model_str) > 20:
+            model_str = model_str[:20] + "..."
+        if len(vector_str) > 15:
+            vector_str = vector_str[:15] + "..."
         
-        # Create human-readable name
-        human_name = f"{model_str}_{vector_str}_{sample_str}_{text_column}_{label_column}"
+        # Create human-readable name with dataset info
+        human_name = f"{model_str}_{vector_str}_{sample_str}_{dataset_name}_{categories_str}"
         
         # Also create hash for uniqueness
         config_hash = {
+            'dataset': {
+                'name': dataset_name,
+                'hash': dataset_hash,
+                'categories': selected_categories,
+                'columns': list(df.columns) if 'dataframe' in step1_data and step1_data['dataframe'] is not None else []
+            },
             'sampling': sampling_config,
             'preprocessing': {
                 'text_column': text_column,
@@ -268,6 +325,23 @@ class StreamlitTrainingPipeline:
         """Save results to cache with human-readable information"""
         try:
             cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
+            
+            # CRITICAL FIX: Ensure label mapping is included in results
+            if hasattr(self, 'original_label_mapping') and self.original_label_mapping:
+                # Add label mapping to results if not already present
+                if 'label_mapping' not in results:
+                    results['label_mapping'] = self.original_label_mapping
+                    print(f"✅ [CACHE] Added label mapping to results: {self.original_label_mapping}")
+                
+                # Add original label values if available
+                if hasattr(self, 'original_label_values') and self.original_label_values:
+                    results['original_label_values'] = self.original_label_values
+                    print(f"✅ [CACHE] Added original label values: {self.original_label_values}")
+                
+                # Add label encoder info if available
+                if hasattr(self, 'label_encoder') and self.label_encoder:
+                    results['label_encoder_classes'] = self.label_encoder.classes_.tolist()
+                    print(f"✅ [CACHE] Added label encoder classes: {self.label_encoder.classes_.tolist()}")
             
             # Save results
             with open(cache_file, 'wb') as f:
@@ -466,6 +540,35 @@ class StreamlitTrainingPipeline:
             test_size = data_split.get('test', 20) / 100.0
             # No separate validation size - CV will handle it
             validation_size = 0.0
+            
+            # CRITICAL: Preserve original label mapping before any data processing
+            # This ensures we can restore meaningful labels later
+            if label_column in df.columns:
+                unique_labels = sorted(df[label_column].unique().tolist())
+                
+                # Check if labels are already numeric (processed data)
+                if all(str(label).isdigit() for label in unique_labels):
+                    print(f"⚠️ [PIPELINE] Labels are already numeric - original names may be lost")
+                    print(f"   - Found numeric labels: {unique_labels}")
+                    
+                    # Try to find original labels in step1_data
+                    if step1_data and 'selected_categories' in step1_data:
+                        original_categories = step1_data['selected_categories']
+                        if len(original_categories) == len(unique_labels):
+                            # Create mapping from original categories
+                            self.original_label_mapping = {i: cat for i, cat in enumerate(sorted(original_categories))}
+                            print(f"✅ [PIPELINE] Preserved original label mapping: {self.original_label_mapping}")
+                        else:
+                            print(f"⚠️ [PIPELINE] Mismatch: {len(original_categories)} categories vs {len(unique_labels)} labels")
+                    else:
+                        print(f"⚠️ [PIPELINE] No selected_categories found - will use generic labels as fallback")
+                else:
+                    # Labels are still text - preserve them
+                    self.original_label_mapping = {i: label for i, label in enumerate(unique_labels)}
+                    print(f"✅ [PIPELINE] Preserved original text labels: {self.original_label_mapping}")
+            else:
+                print(f"⚠️ [PIPELINE] Label column '{label_column}' not found in dataframe")
+                print(f"   - Available columns: {list(df.columns)}")
 
             # Prepare data for comprehensive evaluation
             self.current_phase = "data_preparation"
@@ -601,12 +704,33 @@ class StreamlitTrainingPipeline:
                 progress_callback(self.current_phase, "Setting up comprehensive evaluator...", 0.2)
 
             try:
+                # CRITICAL FIX: Create DataLoader with labels before passing to ComprehensiveEvaluator
+                from data_loader import DataLoader
+                
+                # Create DataLoader instance with labels from step1_data
+                data_loader = DataLoader()
+                
+                # Set up label mapping if we have selected_categories
+                if step1_data and 'selected_categories' in step1_data:
+                    selected_categories = step1_data['selected_categories']
+                    sorted_categories = sorted(selected_categories)
+                    
+                    # Create label mappings
+                    data_loader.label_to_id = {label: i for i, label in enumerate(sorted_categories)}
+                    data_loader.id_to_label = {i: label for i, label in enumerate(sorted_categories)}
+                    
+                    print(f"✅ [TRAINING_PIPELINE] Created DataLoader with labels: {data_loader.id_to_label}")
+                else:
+                    print(f"⚠️ [TRAINING_PIPELINE] No selected_categories - creating empty DataLoader")
+                
                 # Create evaluator with proper model factory and validation manager
+                # CRITICAL FIX: Pass DataLoader with labels to ComprehensiveEvaluator
                 evaluator = ComprehensiveEvaluator(
                     cv_folds=cv_folds,
                     validation_size=validation_size,
                     test_size=test_size,
-                    random_state=cv_config.get('random_state', 42)
+                    random_state=cv_config.get('random_state', 42),
+                    data_loader=data_loader  # Pass the DataLoader with labels!
                 )
                 
                 # Ensure evaluator has access to model factory and validation manager
@@ -621,6 +745,107 @@ class StreamlitTrainingPipeline:
                 # Set text and label columns
                 evaluator.data_loader.text_column = text_column
                 evaluator.data_loader.label_column = label_column
+                
+                # CRITICAL FIX: Transfer actual label mapping from step data
+                # This ensures ComprehensiveEvaluator has the real labels from data processing
+                original_labels_found = False
+                
+                # Source 1: Check if we have original label mapping from preprocessing
+                if hasattr(self, 'original_label_mapping') and self.original_label_mapping:
+                    print(f"✅ [TRAINING_PIPELINE] Found original label mapping from preprocessing")
+                    evaluator.data_loader.id_to_label = self.original_label_mapping.copy()
+                    evaluator.data_loader.label_to_id = {v: k for k, v in self.original_label_mapping.items()}
+                    original_labels_found = True
+                    
+                    print(f"✅ [TRAINING_PIPELINE] Using original labels from preprocessing:")
+                    print(f"   - ID to Label: {evaluator.data_loader.id_to_label}")
+                    print(f"   - Original values: {getattr(self, 'original_label_values', 'N/A')}")
+                
+                # Source 2: Try to use selected_categories from step1_data
+                elif step1_data and 'selected_categories' in step1_data:
+                    selected_categories = step1_data['selected_categories']
+                    sorted_categories = sorted(selected_categories)
+                    
+                    # Create the same mapping as DataLoader.create_label_mappings()
+                    evaluator.data_loader.label_to_id = {label: i for i, label in enumerate(sorted_categories)}
+                    evaluator.data_loader.id_to_label = {i: label for i, label in enumerate(sorted_categories)}
+                    original_labels_found = True
+                    
+                    print(f"✅ [TRAINING_PIPELINE] Transferred label mapping from step1_data:")
+                    print(f"   - Categories: {sorted_categories}")
+                    print(f"   - ID to Label: {evaluator.data_loader.id_to_label}")
+                
+                # Source 3: Fallback - create generic labels
+                if not original_labels_found:
+                    print(f"⚠️ [TRAINING_PIPELINE] No original labels found, creating generic labels")
+                    print(f"   - step1_data: {step1_data}")
+                    print(f"   - step1_data keys: {list(step1_data.keys()) if step1_data else 'None'}")
+                    
+                    # Create generic labels based on unique values in dataframe
+                    if 'dataframe' in step1_data and step1_data['dataframe'] is not None:
+                        df_temp = step1_data['dataframe']
+                        if label_column in df_temp.columns:
+                            unique_labels = sorted(df_temp[label_column].unique())
+                            generic_mapping = {i: f"Category_{label}" for i, label in enumerate(unique_labels)}
+                            
+                            evaluator.data_loader.id_to_label = generic_mapping
+                            evaluator.data_loader.label_to_id = {v: k for k, v in generic_mapping.items()}
+                            
+                            print(f"✅ [TRAINING_PIPELINE] Created generic labels from dataframe:")
+                            print(f"   - Unique values: {unique_labels}")
+                            print(f"   - Generic mapping: {generic_mapping}")
+                        else:
+                            print(f"❌ [TRAINING_PIPELINE] Label column '{label_column}' not found in dataframe")
+                    else:
+                        print(f"❌ [TRAINING_PIPELINE] No dataframe available for generic label creation")
+                    
+                    # Source 4: Check if we have preprocessed samples with original labels
+                    if not original_labels_found and hasattr(self, 'preprocessed_samples') and self.preprocessed_samples:
+                        # Extract original labels from preprocessed samples
+                        original_labels = set()
+                        for sample in self.preprocessed_samples:
+                            if 'label' in sample and not str(sample['label']).isdigit():
+                                original_labels.add(sample['label'])
+                        
+                        if original_labels:
+                            sorted_original_labels = sorted(list(original_labels))
+                            evaluator.data_loader.id_to_label = {i: label for i, label in enumerate(sorted_original_labels)}
+                            evaluator.data_loader.label_to_id = {label: i for i, label in enumerate(sorted_original_labels)}
+                            original_labels_found = True
+                            
+                            print(f"✅ [TRAINING_PIPELINE] Extracted labels from preprocessed samples:")
+                            print(f"   - ID to Label: {evaluator.data_loader.id_to_label}")
+                    
+                    # Source 5: Extract categories from the processed dataframe
+                    if not original_labels_found and label_column in df.columns:
+                        unique_categories = sorted(df[label_column].unique().tolist())
+                        print(f"🔍 [TRAINING_PIPELINE] Found unique categories in dataframe: {unique_categories}")
+                        
+                        # Check if categories are numeric strings (indicating processed data)
+                        if all(str(cat).isdigit() for cat in unique_categories):
+                            print(f"⚠️ [TRAINING_PIPELINE] Categories are numeric strings - data already processed")
+                            print(f"   - This means real category names were lost during preprocessing")
+                            print(f"   - Will use generic Class_X labels")
+                            
+                            # Create generic meaningful labels
+                            evaluator.data_loader.label_to_id = {f"Class_{cat}": cat for cat in unique_categories}
+                            evaluator.data_loader.id_to_label = {cat: f"Class_{cat}" for cat in unique_categories}
+                        else:
+                            print(f"✅ [TRAINING_PIPELINE] Categories are text labels - using as-is")
+                            # Create normal mapping
+                            evaluator.data_loader.label_to_id = {label: i for i, label in enumerate(unique_categories)}
+                            evaluator.data_loader.id_to_label = {i: label for i, label in enumerate(unique_categories)}
+                        
+                        print(f"✅ [TRAINING_PIPELINE] Final label mapping:")
+                        print(f"   - ID to Label: {evaluator.data_loader.id_to_label}")
+                    
+                    # Final check - if still no labels found
+                    if not original_labels_found:
+                        print(f"❌ [TRAINING_PIPELINE] Could not find any label mapping, using fallback")
+                        # Create simple numeric labels
+                        evaluator.data_loader.id_to_label = {0: 'Class_0', 1: 'Class_1'}
+                        evaluator.data_loader.label_to_id = {'Class_0': 0, 'Class_1': 1}
+                        print(f"⚠️ [TRAINING_PIPELINE] Using fallback labels: {evaluator.data_loader.id_to_label}")
 
                 # Run comprehensive evaluation
                 self.current_phase = "comprehensive_evaluation"
@@ -720,7 +945,8 @@ class StreamlitTrainingPipeline:
                     progress_callback(self.current_phase, "Saving results to cache...", 0.95)
                 
                 try:
-                    # Prepare results for caching
+                    # CRITICAL FIX: Include step data and label mapping in cache
+                    # This ensures cache contains all necessary information for label mapping
                     cache_results = {
                         'status': 'success',
                         'message': 'Comprehensive evaluation completed successfully',
@@ -736,7 +962,15 @@ class StreamlitTrainingPipeline:
                         'data_info': evaluation_results.get('data_info', {}),
                         'embedding_info': evaluation_results.get('embedding_info', {}),
                         'from_cache': False,
-                        'cache_key': cache_key
+                        'cache_key': cache_key,
+                        # CRITICAL: Include step data for label mapping
+                        'step1_data': step1_data,
+                        'step2_data': step2_data,
+                        'step3_data': step3_data,
+                        # CRITICAL: Include label mapping at top level
+                        # Use self.original_label_mapping if available, otherwise fallback to evaluator
+                        'labels': self.original_label_mapping if hasattr(self, 'original_label_mapping') and self.original_label_mapping else (evaluator.data_loader.id_to_label if hasattr(evaluator, 'data_loader') and evaluator.data_loader else {}),
+                        'label_mapping': self.original_label_mapping if hasattr(self, 'original_label_mapping') and self.original_label_mapping else (evaluator.data_loader.id_to_label if hasattr(evaluator, 'data_loader') and evaluator.data_loader else {})
                     }
                     
                     # Save to cache
@@ -831,7 +1065,26 @@ class StreamlitTrainingPipeline:
             if step2_data.get('category_mapping', True):
                 from sklearn.preprocessing import LabelEncoder
                 le = LabelEncoder()
+                
+                # Lưu trữ labels gốc trước khi encode
+                original_labels = df[label_column].unique()
+                self.original_label_values = original_labels.tolist()
+                self.label_encoder = le
+                
+                # Encode labels
                 df[label_column] = le.fit_transform(df[label_column])
+                
+                # CRITICAL FIX: Only set original_label_mapping if not already set
+                # This prevents overwriting labels from step1_data
+                if not hasattr(self, 'original_label_mapping') or not self.original_label_mapping:
+                    self.original_label_mapping = {i: label for i, label in enumerate(le.classes_)}
+                    print(f"✅ [PREPROCESSING] Set original label mapping: {self.original_label_mapping}")
+                else:
+                    print(f"✅ [PREPROCESSING] Preserved existing label mapping: {self.original_label_mapping}")
+                    print(f"   - Labels from step1_data preserved, not overwritten")
+                
+                print(f"   - Original labels: {self.original_label_values}")
+                print(f"   - Encoded labels: {list(le.classes_)}")
             
             # Memory optimization
             if step2_data.get('memory_optimization', True):
@@ -1926,6 +2179,71 @@ def execute_streamlit_training(df: pd.DataFrame, step1_data: Dict,
     print(f"📊 [TRAINING] Step1 data keys: {list(step1_data.keys())}")
     print(f"📊 [TRAINING] Step2 data keys: {list(step2_data.keys())}")
     print(f"📊 [TRAINING] Step3 data keys: {list(step3_data.keys())}")
+    
+    # CRITICAL FIX: Ensure step1_data contains all necessary data
+    # This ensures cache has complete information for label mapping
+    if 'uploaded_file' not in step1_data:
+        print(f"⚠️ [TRAINING] WARNING: step1_data missing 'uploaded_file'")
+        print(f"   - This will cause cache key to show 'unknown_dataset'")
+        print(f"   - Available keys: {list(step1_data.keys())}")
+    
+    if 'selected_categories' not in step1_data:
+        print(f"⚠️ [TRAINING] WARNING: step1_data missing 'selected_categories'")
+        print(f"   - This will cause cache key to show 'no_cats'")
+        print(f"   - Available keys: {list(step1_data.keys())}")
+        
+        # Try to extract categories from dataframe if available
+        if 'dataframe' in step1_data and step1_data['dataframe'] is not None:
+            df_step1 = step1_data['dataframe']
+            print(f"🔍 [TRAINING] Attempting to extract categories from dataframe...")
+            
+            # Look for label column (try multiple possible names)
+            label_col = None
+            for col in ['Category', 'label', 'category', 'class', 'target', 'y']:
+                if col in df_step1.columns:
+                    label_col = col
+                    break
+            
+            if label_col:
+                try:
+                    unique_categories = sorted(df_step1[label_col].unique().tolist())
+                    step1_data['selected_categories'] = unique_categories
+                    print(f"✅ [TRAINING] Extracted categories from '{label_col}': {unique_categories}")
+                    
+                    # Also try to extract from the main dataframe if different
+                    if df is not None and len(df) > 0:
+                        main_label_col = None
+                        for col in ['Category', 'label', 'category', 'class', 'target', 'y']:
+                            if col in df.columns:
+                                main_label_col = col
+                                break
+                        
+                        if main_label_col and main_label_col != label_col:
+                            main_categories = sorted(df[main_label_col].unique().tolist())
+                            if main_categories != unique_categories:
+                                print(f"⚠️ [TRAINING] Categories mismatch between step1_data and main dataframe")
+                                print(f"   - Step1 categories: {unique_categories}")
+                                print(f"   - Main dataframe categories: {main_categories}")
+                                # Use main dataframe categories as they're more current
+                                step1_data['selected_categories'] = main_categories
+                                print(f"✅ [TRAINING] Updated to main dataframe categories: {main_categories}")
+                except Exception as e:
+                    print(f"⚠️ [TRAINING] Error extracting categories: {e}")
+            else:
+                print(f"⚠️ [TRAINING] No label column found in dataframe")
+                print(f"   - Available columns: {list(df_step1.columns)}")
+                
+                # Try to extract from main dataframe as fallback
+                if df is not None and len(df) > 0:
+                    for col in ['Category', 'label', 'category', 'class', 'target', 'y']:
+                        if col in df.columns:
+                            try:
+                                main_categories = sorted(df[col].unique().tolist())
+                                step1_data['selected_categories'] = main_categories
+                                print(f"✅ [TRAINING] Extracted categories from main dataframe '{col}': {main_categories}")
+                                break
+                            except Exception as e:
+                                print(f"⚠️ [TRAINING] Error extracting from main dataframe: {e}")
     
     # Check sampling config specifically
     if 'sampling_config' in step1_data:

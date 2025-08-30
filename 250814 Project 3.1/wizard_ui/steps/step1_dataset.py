@@ -72,11 +72,19 @@ class DatasetSelectionStep:
             df = self.file_uploader.get_file_data(uploaded_file)
             
             if df is not None:
+                # CRITICAL FIX: Automatically create selected_categories for ALL datasets
+                selected_categories = self._extract_categories_from_dataframe(df)
+                
                 self.session_manager.update_step_data(1, 'dataframe', df)
+                self.session_manager.update_step_data(1, 'selected_categories', selected_categories)
                 summary = self.dataset_preview.get_dataset_summary(df)
                 self.session_manager.update_step_data(1, 'dataset_summary', summary)
                 
                 st.success("✅ Dataset processed successfully!")
+                
+                # Display extracted categories
+                if selected_categories:
+                    st.info(f"🏷️ Detected {len(selected_categories)} categories: {', '.join(selected_categories[:5])}{'...' if len(selected_categories) > 5 else ''}")
                 
                 self.dataset_preview.render_dataset_info(df)
                 self.dataset_preview.render_data_types_summary(df)
@@ -86,6 +94,58 @@ class DatasetSelectionStep:
             else:
                 st.error("❌ Failed to process dataset")
                 self.session_manager.update_step_data(1, 'dataframe', None)
+    
+    def _extract_categories_from_dataframe(self, df):
+        """
+        Extract categories from dataframe for ANY dataset type
+        
+        Args:
+            df: Pandas DataFrame
+            
+        Returns:
+            List[str]: List of unique category labels
+        """
+        try:
+            # Strategy 1: Look for common label column names
+            label_column_candidates = [
+                'label', 'category', 'class', 'target', 'y', 'output',
+                'categories', 'labels', 'classes', 'targets'
+            ]
+            
+            # Find the label column (usually the last column or one with few unique values)
+            label_column = None
+            
+            # Check if any column name matches our candidates
+            for col in df.columns:
+                if col.lower() in [c.lower() for c in label_column_candidates]:
+                    label_column = col
+                    break
+            
+            # If no match found, use the last column (common convention)
+            if label_column is None:
+                label_column = df.columns[-1]
+            
+            # Extract unique categories
+            unique_categories = sorted(df[label_column].unique().tolist())
+            
+            # Clean and validate categories
+            cleaned_categories = []
+            for cat in unique_categories:
+                if cat is not None and str(cat).strip():
+                    # Convert to string and clean
+                    clean_cat = str(cat).strip()
+                    if clean_cat and clean_cat not in cleaned_categories:
+                        cleaned_categories.append(clean_cat)
+            
+            print(f"✅ [STEP1] Extracted categories from column '{label_column}': {len(cleaned_categories)} categories")
+            print(f"   - Sample categories: {cleaned_categories[:5]}")
+            
+            return cleaned_categories
+            
+        except Exception as e:
+            print(f"⚠️ [STEP1] Error extracting categories: {e}")
+            # Fallback: return empty list
+            return []
     
     def _render_data_quality_check(self, df):
         """Render data quality assessment"""

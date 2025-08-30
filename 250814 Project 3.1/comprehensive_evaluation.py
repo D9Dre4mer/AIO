@@ -34,7 +34,8 @@ class ComprehensiveEvaluator:
                  cv_folds: int = 5,
                  validation_size: float = 0.2,
                  test_size: float = 0.2,
-                 random_state: int = 42):
+                 random_state: int = 42,
+                 data_loader: DataLoader = None):
         """
         Initialize the comprehensive evaluator
         
@@ -43,14 +44,21 @@ class ComprehensiveEvaluator:
             validation_size: Size of validation set (for overfitting detection)
             test_size: Size of test set
             random_state: Random seed for reproducibility
+            data_loader: Optional DataLoader instance with pre-configured labels
         """
         self.cv_folds = cv_folds
         self.validation_size = validation_size
         self.test_size = test_size
         self.random_state = random_state
         
-        # Initialize components
-        self.data_loader = DataLoader()
+        # Initialize components - Use provided DataLoader or create new one
+        if data_loader is not None:
+            self.data_loader = data_loader
+            print(f"✅ [COMPREHENSIVE_EVALUATOR] Using provided DataLoader with labels: {getattr(data_loader, 'id_to_label', {})}")
+        else:
+            self.data_loader = DataLoader()
+            print(f"⚠️ [COMPREHENSIVE_EVALUATOR] Created new DataLoader (no labels transferred)")
+        
         self.text_vectorizer = TextVectorizer()
         
         # Import model components
@@ -771,7 +779,7 @@ class ComprehensiveEvaluator:
                             print(f"     🔍 DEBUG: overfitting_score = {overfitting_score}, overfitting_level = {overfitting_level}")
                         else:
                             cv_f1_based_accuracy = None
-                            cv_f1_based_std = None
+                            cv_f1_based_std = None 
                             # Set default values when CV fold data is incomplete
                             overfitting_score = None
                             overfitting_status = "cv_data_incomplete"
@@ -889,7 +897,7 @@ class ComprehensiveEvaluator:
             # Lấy unique labels đã được sắp xếp
             unique_labels = sorted(list(set(y_train)))
             
-            # Sử dụng label mapping động từ data_loader nếu có
+            # PRIORITY: Sử dụng label mapping động từ data_loader nếu có (transferred from training pipeline)
             if hasattr(self.data_loader, 'id_to_label') and self.data_loader.id_to_label:
                 label_mapping = {}
                 for label_id in unique_labels:
@@ -898,7 +906,9 @@ class ComprehensiveEvaluator:
                     else:
                         label_mapping[label_id] = f"Class_{label_id}"
                 
-                print(f"✅ Sử dụng label mapping động từ data_loader: {label_mapping}")
+                print(f"✅ [COMPREHENSIVE_EVALUATOR] Using transferred label mapping from data_loader:")
+                print(f"   - Full id_to_label: {self.data_loader.id_to_label}")
+                print(f"   - Applied mapping: {label_mapping}")
                 return label_mapping
             
             # CRITICAL FIX: Nếu không có id_to_label, tạo meaningful labels từ preprocessed_samples
@@ -916,7 +926,38 @@ class ComprehensiveEvaluator:
                     print(f"✅ Sử dụng labels từ preprocessed_samples: {label_mapping}")
                     return label_mapping
             
-            # Fallback: tạo mapping đơn giản nếu không có gì khác
+            # IMPROVED FALLBACK: Cố gắng đoán text labels từ tên cột và dataset pattern
+            try:
+                # Check if this looks like arxiv dataset pattern
+                if hasattr(self.data_loader, 'label_column') and self.data_loader.label_column:
+                    # Common arxiv categories
+                    common_arxiv_labels = ['astro-ph', 'cond-mat', 'cs', 'math', 'physics']
+                    if len(unique_labels) == len(common_arxiv_labels):
+                        label_mapping = {i: label for i, label in enumerate(common_arxiv_labels)}
+                        print(f"✅ Sử dụng arxiv pattern labels: {label_mapping}")
+                        return label_mapping
+                
+                # Try to load data and create mapping if data_loader has file_path
+                if hasattr(self.data_loader, 'file_path') and self.data_loader.file_path:
+                    try:
+                        # Try to discover and load categories
+                        if hasattr(self.data_loader, 'discover_categories'):
+                            self.data_loader.discover_categories()
+                        
+                        # Try to get recommended categories
+                        if hasattr(self.data_loader, 'get_category_recommendations'):
+                            recommended = self.data_loader.get_category_recommendations(max_categories=len(unique_labels))
+                            if len(recommended) == len(unique_labels):
+                                label_mapping = {i: label for i, label in enumerate(sorted(recommended))}
+                                print(f"✅ Sử dụng recommended labels từ data: {label_mapping}")
+                                return label_mapping
+                    except Exception as load_error:
+                        print(f"⚠️ Không thể load data cho label mapping: {load_error}")
+                        
+            except Exception as fallback_error:
+                print(f"⚠️ Enhanced fallback failed: {fallback_error}")
+            
+            # Final fallback: tạo mapping đơn giản
             label_mapping = {label_id: f"Class_{label_id}" for label_id in unique_labels}
             print(f"⚠️  Sử dụng fallback label mapping: {label_mapping}")
             return label_mapping
