@@ -378,7 +378,7 @@ def render_step1_wireframe():
     # Step title - simplified without big container
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 1/6: Dataset Selection & Upload
+        📍 STEP 1/5: Dataset Selection & Upload
     </h2>
     """, unsafe_allow_html=True)
     
@@ -872,15 +872,6 @@ def render_navigation_buttons():
                 else:
                     st.warning("⚠️ Please complete Step 4 first")
             elif current_step == 5:
-                step_data = session_manager.get_step_data(5)
-                if step_data and step_data.get('completed', False):
-                    st.success("✅ Step 5 completed! Moving to Step 6...")
-                    # Move to step 6
-                    session_manager.set_current_step(6)
-                    st.rerun()
-                else:
-                    st.warning("⚠️ Please complete Step 5 first")
-            elif current_step == 6:
                 st.info("ℹ️ You're already at the last step.")
             else:
                 st.info("ℹ️ This step is not yet implemented.")
@@ -899,8 +890,7 @@ def render_sidebar():
         "Column Selection & Preprocessing",
         "Model Configuration",
         "Training Execution",
-        "Results Analysis",
-        "Text Classification"
+        "Results Analysis"
     ]
     
     current_step_name = step_names[current_step - 1] if current_step <= len(step_names) else "Unknown"
@@ -913,8 +903,7 @@ def render_sidebar():
         "Column Selection & Preprocessing",
         "Model Configuration",
         "Training Execution",
-        "Results Analysis",
-        "Text Classification"
+        "Results Analysis"
     ]
     
     # Create clickable step status buttons
@@ -979,7 +968,7 @@ def get_current_step(session_manager):
         current_step = session_manager.get_current_step()
         if current_step is None:
             # Check which step has data to determine current step
-            for step_num in range(1, 7):  # 6 steps total
+            for step_num in range(1, 6):  # 5 steps total
                 step_data = session_manager.get_step_data(step_num)
                 if step_data and len(step_data) > 0:
                     if step_num == 1 and 'dataframe' in step_data:
@@ -1015,7 +1004,7 @@ def render_step2_wireframe():
     # Step title
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 2/6: Column Selection & Preprocessing
+        📍 STEP 2/5: Column Selection & Preprocessing
     </h2>
     """, unsafe_allow_html=True)
     
@@ -1457,7 +1446,7 @@ def render_step3_wireframe():
     # Step title
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 3/6: Model Configuration & Vectorization
+        📍 STEP 3/5: Model Configuration & Vectorization
     </h2>
     """, unsafe_allow_html=True)
     
@@ -2255,7 +2244,7 @@ def render_step4_wireframe():
     # Step title
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 4/6: Training Execution & Monitoring
+        📍 STEP 4/5: Training Execution & Monitoring
     </h2>
     """, unsafe_allow_html=True)
     
@@ -2895,7 +2884,7 @@ def render_step5_wireframe():
     # Step title
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 5/6: Results Analysis & Export
+        📍 STEP 5/5: Results Analysis & Export
     </h2>
     """, unsafe_allow_html=True)
     
@@ -3711,7 +3700,7 @@ def render_step5_wireframe():
     
     # Show completion message
     st.toast("✅ Step 5 completed successfully!")
-    st.toast("Click 'Next ▶' button to proceed to Step 6.")
+    st.toast("Click 'Next ▶' button to proceed to Step 5.")
     
     # Navigation buttons
     render_navigation_buttons()
