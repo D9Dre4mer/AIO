@@ -252,11 +252,16 @@ class ValidationManager:
             fold_result = {
                 'fold': fold,
                 'accuracy': fold_scores['accuracy'][fold-1] if fold_scores['accuracy'] else 0,
-                'n_train': len(fold_data['y_train']),
-                'n_val': len(fold_data['y_val']),
+                'n_train': fold_data['y_train'].shape[0] if hasattr(fold_data['y_train'], 'shape') else len(fold_data['y_train']),
+                'n_val': fold_data['y_val'].shape[0] if hasattr(fold_data['y_val'], 'shape') else len(fold_data['y_val']),
+                'n_test': fold_data['y_test'].shape[0] if 'y_test' in fold_data and fold_data['y_test'] is not None and hasattr(fold_data['y_test'], 'shape') else (len(fold_data['y_test']) if 'y_test' in fold_data and fold_data['y_test'] is not None else 0),  # ← THÊM SỐ SAMPLE TEST
                 # Use real training vs validation accuracy for overfitting detection
                 'train_accuracy': fold_scores['train_accuracy'][fold-1] if 'train_accuracy' in fold_scores and fold_scores['train_accuracy'] else 0,
-                'validation_accuracy': fold_scores['validation_accuracy'][fold-1] if 'validation_accuracy' in fold_scores and fold_scores['validation_accuracy'] else 0
+                'validation_accuracy': fold_scores['validation_accuracy'][fold-1] if 'validation_accuracy' in fold_scores and fold_scores['validation_accuracy'] else 0,
+                # Add sample counts for debugging and analysis
+                'n_train_samples': fold_data.get('n_train_samples', fold_data['y_train'].shape[0] if hasattr(fold_data['y_train'], 'shape') else len(fold_data['y_train'])),
+                'n_val_samples': fold_data.get('n_val_samples', fold_data['y_val'].shape[0] if hasattr(fold_data['y_val'], 'shape') else len(fold_data['y_val'])),
+                'n_test_samples': fold_data.get('n_test_samples', fold_data['y_test'].shape[0] if 'y_test' in fold_data and fold_data['y_test'] is not None and hasattr(fold_data['y_test'], 'shape') else (len(fold_data['y_test']) if 'y_test' in fold_data and fold_data['y_test'] is not None else 0))
             }
             cv_results['fold_results'].append(fold_result)
         
@@ -271,6 +276,67 @@ class ValidationManager:
                 cv_results['overall_results'][f'{metric}_max'] = np.max(scores)
         
         return cv_results
+    
+    def evaluate_test_data_from_cv_cache(self, model, cv_embeddings: Dict[str, Any], 
+                                       metrics: List[str] = None) -> Dict[str, Any]:
+        """
+        Evaluate model on test data using pre-computed CV embeddings cache
+        
+        Args:
+            model: Trained model to evaluate
+            cv_embeddings: CV embeddings cache containing test data
+            metrics: List of metrics to compute
+            
+        Returns:
+            Dictionary with test evaluation results
+        """
+        if metrics is None:
+            metrics = ['accuracy', 'precision', 'recall', 'f1']
+        
+        print(f"🔍 Evaluating {model.__class__.__name__} on test data from CV cache...")
+        
+        # Get test data from first fold (all folds should have same test data)
+        first_fold = cv_embeddings[f'fold_1']
+        if 'X_test' not in first_fold or 'y_test' not in first_fold:
+            print("⚠️ Test data not found in CV cache")
+            return {}
+        
+        X_test = first_fold['X_test']
+        y_test = first_fold['y_test']
+        
+        if X_test is None or y_test is None:
+            print("⚠️ Test data is None in CV cache")
+            return {}
+        
+        print(f"  📊 Test data: {X_test.shape if hasattr(X_test, 'shape') else len(X_test)} samples")
+        
+        # Make predictions on test data
+        y_test_pred = model.predict(X_test)
+        
+        # Calculate test metrics
+        test_results = {}
+        for metric in metrics:
+            if metric == 'accuracy':
+                score = accuracy_score(y_test, y_test_pred)
+            elif metric == 'precision':
+                score = precision_score(y_test, y_test_pred, average='weighted', zero_division=0)
+            elif metric == 'recall':
+                score = recall_score(y_test, y_test_pred, average='weighted', zero_division=0)
+            elif metric == 'f1':
+                score = f1_score(y_test, y_test_pred, average='weighted', zero_division=0)
+            else:
+                print(f"⚠️ Unknown metric: {metric}")
+                continue
+            
+            test_results[f'test_{metric}'] = score
+        
+        # Add additional information
+        test_results['test_samples'] = len(y_test)
+        test_results['test_predictions'] = y_test_pred
+        test_results['test_true_labels'] = y_test
+        
+        print(f"✅ Test evaluation completed: {test_results}")
+        return test_results
 
     def cross_validate_model(
         self,

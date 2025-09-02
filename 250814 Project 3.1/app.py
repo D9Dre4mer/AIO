@@ -2542,11 +2542,11 @@ def render_step4_wireframe():
                             # Safe formatting function to handle None values
                             def safe_format(value, format_spec, default=0):
                                 if value is None:
-                                    return f"{default}{format_spec}"
+                                    return f"{default:{format_spec}}"
                                 try:
-                                    return f"{value}{format_spec}"
+                                    return f"{value:{format_spec}}"
                                 except (ValueError, TypeError):
-                                    return f"{default}{format_spec}"
+                                    return f"{default:{format_spec}}"
                             
                             # Safe string processing
                             def safe_string_process(value, default="N/A"):
@@ -2889,6 +2889,7 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
 
 
 def render_step5_wireframe():
+
     """Render Step 5 - Results Analysis & Export exactly as per wireframe design"""
     
     # Step title

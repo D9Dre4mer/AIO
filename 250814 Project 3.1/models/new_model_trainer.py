@@ -271,11 +271,11 @@ class NewModelTrainer:
         """Train, validate and test a specific model with 3-way split"""
         
         # Use provided split data or create new split
-        if X_val is not None and y_val is not None and X_test is not None and y_test is not None:
-            # Use provided split data
+        if X_test is not None and y_test is not None:
+            # Use provided split data (X_val can be None for empty validation set)
             X_train, y_train = X, y
             print(f"📊 Using provided data split:")
-            print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Val: {X_val.shape[0] if hasattr(X_val, 'shape') else len(X_val)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
+            print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Val: {X_val.shape[0] if hasattr(X_val, 'shape') and len(X_val) > 0 else 0} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
         else:
             # Split data into train/test only (validation handled by CV)
             if not self.validation_manager:
@@ -370,7 +370,7 @@ class NewModelTrainer:
             model.fit(X_train, y_train)
         
         # Validate model (only if validation set exists)
-        if len(X_val) > 0 and len(y_val) > 0:
+        if X_val is not None and y_val is not None and len(X_val) > 0 and len(y_val) > 0:
             print(f"🔍 Validating {model_name} model...")
             y_val_pred = model.predict(X_val)
             val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)

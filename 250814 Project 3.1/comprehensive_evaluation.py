@@ -90,7 +90,8 @@ class ComprehensiveEvaluator:
         print(f"   • Test Size: {test_size:.1%}")
         print(f"   • Random State: {random_state}")
 
-    def precompute_cv_embeddings(self, texts: List[str], labels: List[str], stop_callback=None) -> Dict[str, Any]:
+    def precompute_cv_embeddings(self, texts: List[str], labels: List[str], stop_callback=None, 
+                                test_texts: List[str] = None, test_labels: List[str] = None) -> Dict[str, Any]:
         """Pre-compute embeddings for all CV folds to ensure fair comparison across models
         
         Args:
@@ -99,9 +100,9 @@ class ComprehensiveEvaluator:
             stop_callback: Optional callback to check for stop signal
             
         Returns:
-            Dictionary containing pre-computed embeddings for each fold
+            Dictionary containing pre-computed embeddings for each fold + test data
         """
-        print("🔧 Pre-computing CV embeddings for all folds...")
+        print("🔧 Pre-computing CV embeddings for all folds + test data...")
         
         # Get CV splits using same strategy as ValidationManager
         from sklearn.model_selection import StratifiedKFold
@@ -124,6 +125,31 @@ class ComprehensiveEvaluator:
             
         precomputed_embeddings = self.embeddings['embeddings']['X_train']
         
+        # Get test data embeddings if available
+        test_embeddings = None
+        test_labels = None
+        
+        # Priority 1: Use test data passed as parameters
+        if test_texts is not None and test_labels is not None:
+            # Get test embeddings from embeddings cache
+            if 'X_test' in self.embeddings['embeddings']:
+                test_embeddings = self.embeddings['embeddings']['X_test']
+                test_labels = test_labels
+                print(f"  ✅ Using test data from parameters: {len(test_texts)} texts, {len(test_labels)} labels")
+                print(f"  ✅ Test embeddings shape: {test_embeddings.shape if hasattr(test_embeddings, 'shape') else len(test_embeddings)}")
+            else:
+                print(f"  ⚠️ Test texts provided but no test embeddings found in embeddings cache")
+        
+        # Priority 2: Fallback to embeddings cache
+        elif 'X_test' in self.embeddings['embeddings']:
+            test_embeddings = self.embeddings['embeddings']['X_test']
+            # Get test labels from data_dict if available
+            if hasattr(self, 'data_dict') and 'y_test' in self.data_dict:
+                test_labels = self.data_dict['y_test']
+            print(f"  ✅ Found test embeddings in cache: {test_embeddings.shape if hasattr(test_embeddings, 'shape') else len(test_embeddings)} samples")
+        else:
+            print(f"  ⚠️ No test data available, will use validation data for final evaluation")
+        
         # Create embeddings for each fold by splitting pre-computed embeddings
         for fold, (train_idx, val_idx) in enumerate(kf.split(texts, labels), 1):
             if stop_callback and stop_callback():
@@ -140,26 +166,34 @@ class ComprehensiveEvaluator:
             y_train_fold = np.array([labels[i] for i in train_idx])
             y_val_fold = np.array([labels[i] for i in val_idx])
             
-            # Store fold data
+            # Store fold data with test data included
             cv_embeddings[f'fold_{fold}'] = {
                 'X_train': X_train_emb,
                 'X_val': X_val_emb, 
+                'X_test': test_embeddings,  # ← THÊM TEST DATA
                 'y_train': y_train_fold,
                 'y_val': y_val_fold,
+                'y_test': test_labels,      # ← THÊM TEST LABELS
                 'train_idx': train_idx,
-                'val_idx': val_idx
+                'val_idx': val_idx,
+                            'n_train_samples': X_train_emb.shape[0] if hasattr(X_train_emb, 'shape') else len(X_train_emb),    # ← THÊM SỐ SAMPLE
+            'n_val_samples': X_val_emb.shape[0] if hasattr(X_val_emb, 'shape') else len(X_val_emb),        # ← THÊM SỐ SAMPLE
+                'n_test_samples': len(test_embeddings) if test_embeddings is not None else 0  # ← THÊM SỐ SAMPLE TEST
             }
         
         if stop_callback and stop_callback():
             return {}
             
-        print(f"✅ Pre-computed embeddings for {self.cv_folds} folds")
+        print(f"✅ Pre-computed embeddings for {self.cv_folds} folds + test data")
+        print(f"   📊 Each fold contains: Training, Validation, and Test data")
         self.cv_embeddings_cache = cv_embeddings  # Cache for reuse
         return cv_embeddings
     
     def create_cv_folds_for_sparse_embeddings(self, X_train: Union[np.ndarray, sparse.csr_matrix], 
                                              y_train: np.ndarray, 
-                                             embedding_type: str) -> Dict[str, Any]:
+                                             embedding_type: str,
+                                             X_test: Union[np.ndarray, sparse.csr_matrix] = None,
+                                             y_test: np.ndarray = None) -> Dict[str, Any]:
         """
         Create CV folds for BoW/TF-IDF (sparse matrices) - REUSES existing logic
         
@@ -169,9 +203,9 @@ class ComprehensiveEvaluator:
             embedding_type: 'bow' or 'tfidf'
         
         Returns:
-            Dictionary with CV folds data compatible with existing structure
+            Dictionary with CV folds data compatible with existing structure + test data
         """
-        print(f"🔄 Creating CV folds for {embedding_type.upper()}...")
+        print(f"🔄 Creating CV folds for {embedding_type.upper()} + test data...")
         
         # Import sklearn for CV splitting
         from sklearn.model_selection import StratifiedKFold
@@ -184,6 +218,29 @@ class ComprehensiveEvaluator:
         )
         
         cv_folds = {}
+        
+        # Get test data if available from embeddings
+        test_data = None
+        test_labels = None
+        
+        # Priority 1: Use test data passed as parameters
+        if X_test is not None and y_test is not None:
+            test_data = X_test
+            test_labels = y_test
+            print(f"  ✅ Using test data from parameters for {embedding_type}: {test_data.shape if hasattr(test_data, 'shape') else len(test_data)} samples")
+        
+        # Priority 2: Fallback to embeddings cache
+        elif hasattr(self, 'embeddings') and embedding_type in self.embeddings:
+            if 'X_test' in self.embeddings[embedding_type]:
+                test_data = self.embeddings[embedding_type]['X_test']
+                # Get test labels from data_dict if available
+                if hasattr(self, 'data_dict') and 'y_test' in self.data_dict:
+                    test_labels = self.data_dict['y_test']
+                print(f"  ✅ Found test data in cache for {embedding_type}: {test_data.shape if hasattr(test_data, 'shape') else len(test_data)} samples")
+            else:
+                print(f"  ⚠️ Test data not found in cache for {embedding_type}, will use validation data for final evaluation")
+        else:
+            print(f"  ⚠️ No test data available for {embedding_type}, will use validation data for final evaluation")
         
         # Create folds using same strategy as precompute_cv_embeddings
         for fold, (train_idx, val_idx) in enumerate(kf.split(X_train, y_train), 1):
@@ -201,17 +258,23 @@ class ComprehensiveEvaluator:
             y_train_fold = np.array([y_train[i] for i in train_idx])
             y_val_fold = np.array([y_train[i] for i in val_idx])
             
-            # Store fold data - compatible with existing structure
+            # Store fold data - compatible with existing structure + test data
             cv_folds[f'fold_{fold}'] = {
                 'X_train': X_train_fold,
                 'X_val': X_val_fold,
+                'X_test': test_data,        # ← THÊM TEST DATA
                 'y_train': y_train_fold,
                 'y_val': y_val_fold,
+                'y_test': test_labels,      # ← THÊM TEST LABELS
                 'train_idx': train_idx,
-                'val_idx': val_idx
+                'val_idx': val_idx,
+                            'n_train_samples': X_train_fold.shape[0] if hasattr(X_train_fold, 'shape') else len(X_train_fold),    # ← THÊM SỐ SAMPLE
+            'n_val_samples': X_val_fold.shape[0] if hasattr(X_val_fold, 'shape') else len(X_val_fold),        # ← THÊM SỐ SAMPLE
+                'n_test_samples': test_data.shape[0] if test_data is not None and hasattr(test_data, 'shape') else (len(test_data) if test_data is not None else 0)  # ← THÊM SỐ SAMPLE TEST
             }
         
-        print(f"✅ Created CV folds for {embedding_type.upper()}: {self.cv_folds} folds")
+        print(f"✅ Created CV folds for {embedding_type.upper()}: {self.cv_folds} folds + test data")
+        print(f"   📊 Each fold contains: Training, Validation, and Test data")
         return cv_folds
     
     def load_and_prepare_data(self, max_samples: int = None, skip_csv_prompt: bool = False, sampling_config: Dict = None, preprocessing_config: Dict = None) -> Tuple[Dict[str, Any], List[str]]:
@@ -407,7 +470,24 @@ class ComprehensiveEvaluator:
             raise ValueError("No preprocessed samples available for train/test split")
         
         # Prepare train/test data (no separate validation set)
-        X_train, X_test, y_train, y_test = self.data_loader.prepare_train_test_data()
+        # Get requested samples from Step 1
+        requested_samples = None
+        if hasattr(self, 'step1_data') and self.step1_data and 'sampling_config' in self.step1_data:
+            requested_samples = self.step1_data['sampling_config'].get('num_samples')
+            print(f"📊 Using requested samples from Step 1: {requested_samples}")
+            
+            # Update test_size in model_trainer if requested_samples is provided
+            if requested_samples and hasattr(self, 'model_trainer'):
+                total_samples = len(self.data_loader.preprocessed_samples)
+                if total_samples > 0:
+                    # Calculate test_size to get 20% of requested samples
+                    target_test_samples = int(requested_samples * 0.2)
+                    if total_samples >= requested_samples:
+                        dynamic_test_size = target_test_samples / total_samples
+                        print(f"📊 Updating model_trainer.test_size: {self.model_trainer.test_size:.3f} → {dynamic_test_size:.3f}")
+                        self.model_trainer.test_size = dynamic_test_size
+        
+        X_train, X_test, y_train, y_test = self.data_loader.prepare_train_test_data(requested_samples)
         sorted_labels = self.data_loader.get_sorted_labels()
         
         # Use train/test split directly (validation handled by CV)
@@ -416,13 +496,13 @@ class ComprehensiveEvaluator:
         
         # Verify split consistency
         print(f"🔍 Split verification:")
-        print(f"   • Total: {len(X_train_full) + len(X_test)}")
-        print(f"   • Train: {len(X_train_full)} | Test: {len(X_test)}")
+        print(f"   • Total: {(X_train_full.shape[0] if hasattr(X_train_full, 'shape') else len(X_train_full)) + (X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test))}")
+        print(f"   • Train: {X_train_full.shape[0] if hasattr(X_train_full, 'shape') else len(X_train_full)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
         
         print(f"✅ Data prepared:")
-        print(f"   • Training: {len(X_train_full)} samples (for CV)")
+        print(f"   • Training: {X_train_full.shape[0] if hasattr(X_train_full, 'shape') else len(X_train_full)} samples (for CV)")
         print(f"   • Validation: Handled by CV folds")
-        print(f"   • Test: {len(X_test)} samples")
+        print(f"   • Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)} samples")
         print(f"   • Labels: {len(sorted_labels)} classes")
         
         # Store data
@@ -541,7 +621,7 @@ class ComprehensiveEvaluator:
                 return {}
             
             # Transform test data using fitted model (no data leakage)
-            print(f"🔧 Transforming {len(X_test):,} test samples using fitted model...")
+            print(f"🔧 Transforming {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test):,} test samples using fitted model...")
             X_test_emb = self.text_vectorizer.transform_embeddings(X_test, stop_callback=actual_stop_callback)
             
             # Check if stopped during test embeddings
@@ -704,8 +784,12 @@ class ComprehensiveEvaluator:
                 # For BoW and TF-IDF, use optimized CV with sparse matrix handling
                 print(f"     🔧 CV using optimized sparse {embedding_name} data for {model_name} (no data leakage)")
                 
-                # Create CV folds specifically for sparse embeddings
-                cv_folds = self.create_cv_folds_for_sparse_embeddings(X_train, y_train, embedding_name)
+                # Create CV folds specifically for sparse embeddings with test data
+                cv_folds = self.create_cv_folds_for_sparse_embeddings(
+                    X_train, y_train, embedding_name, 
+                    X_test=self.data_dict.get('X_test') if hasattr(self, 'data_dict') else None, 
+                    y_test=self.data_dict.get('y_test') if hasattr(self, 'data_dict') else None
+                )
                 
                 # Use CV folds for evaluation
                 cv_results = self.model_trainer.cross_validate_with_precomputed_embeddings(
@@ -725,6 +809,20 @@ class ComprehensiveEvaluator:
                     cv_results = self.model_trainer.cross_validate_with_precomputed_embeddings(
                         model_name, self.cv_embeddings_cache, ['accuracy', 'precision', 'recall', 'f1']
                     )
+                    
+                    # ENHANCED: Also evaluate on test data from CV cache
+                    if cv_results and 'fold_results' in cv_results:
+                        print(f"     🔍 CV cache contains test data, evaluating on test set...")
+                        # Get test evaluation from CV cache
+                        test_eval = self.model_trainer.validation_manager.evaluate_test_data_from_cv_cache(
+                            temp_model, self.cv_embeddings_cache, ['accuracy', 'precision', 'recall', 'f1']
+                        )
+                        if test_eval:
+                            # Update cv_results with test evaluation
+                            cv_results['test_evaluation'] = test_eval
+                            print(f"     ✅ Test evaluation from CV cache: {test_eval}")
+                        else:
+                            print(f"     ⚠️ Test evaluation from CV cache failed")
                 else:
                     # Fallback to old method if cache not available
                     print(f"     ⚠️  Fallback: CV embeddings cache not found, using standard CV")
@@ -1127,8 +1225,12 @@ class ComprehensiveEvaluator:
                 all_train_texts = data_dict['X_train']
                 all_train_labels = data_dict['y_train']
             
-            # Pre-compute CV embeddings
-            cv_embeddings = self.precompute_cv_embeddings(all_train_texts, all_train_labels, stop_callback)
+            # Pre-compute CV embeddings with test data
+            cv_embeddings = self.precompute_cv_embeddings(
+                all_train_texts, all_train_labels, stop_callback, 
+                test_texts=self.data_dict.get('X_test') if hasattr(self, 'data_dict') else None, 
+                test_labels=self.data_dict.get('y_test') if hasattr(self, 'data_dict') else None
+            )
             
             if not cv_embeddings:  # Empty dict means stopped
                 print("🛑 Training stopped during CV embeddings pre-computation")

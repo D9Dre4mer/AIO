@@ -257,6 +257,11 @@ class StreamlitTrainingPipeline:
         # Create human-readable name with dataset info
         human_name = f"{model_str}_{vector_str}_{sample_str}_{dataset_name}_{categories_str}"
         
+        # Add test data information to cache name if available
+        if hasattr(self, 'data_dict') and 'y_test' in self.data_dict:
+            test_samples = len(self.data_dict['y_test'])
+            human_name += f"_test{test_samples}"
+        
         # Also create hash for uniqueness
         config_hash = {
             'dataset': {

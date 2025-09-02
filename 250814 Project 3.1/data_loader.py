@@ -835,16 +835,28 @@ class DataLoader:
             
         # Apply additional preprocessing options
         if preprocessing_config.get('data_validation', True):
-            # Remove samples with empty text or labels
+            # Clean samples but preserve count - don't remove any samples
             original_count = len(self.preprocessed_samples)
-            self.preprocessed_samples = [
-                sample for sample in self.preprocessed_samples
-                if sample['text'].strip() and sample['label'].strip()
-            ]
-            removed_count = original_count - len(self.preprocessed_samples)
-            if removed_count > 0:
-                print(f"🧹 [DATALOADER] Data validation removed "
-                      f"{removed_count} invalid samples")
+            cleaned_samples = []
+            
+            for sample in self.preprocessed_samples:
+                # Clean text and label
+                text = sample['text'].strip() if sample['text'] else ""
+                label = sample['label'].strip() if sample['label'] else ""
+                
+                # Always keep the sample, fill empty fields with defaults
+                if not text:
+                    text = "No text available"
+                if not label:
+                    label = "Unknown"
+                
+                cleaned_samples.append({
+                    'text': text,
+                    'label': label
+                })
+            
+            self.preprocessed_samples = cleaned_samples
+            print(f"🧹 [DATALOADER] Data validation cleaned all {len(self.preprocessed_samples)} samples (preserved count)")
         
         if preprocessing_config.get('memory_optimization', True):
             # Convert text to category for memory efficiency
@@ -877,20 +889,46 @@ class DataLoader:
         for label, id_ in self.label_to_id.items():
             print(f"{label} --> {id_}")
             
-    def prepare_train_test_data(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Prepare training and testing data"""
+    def prepare_train_test_data(self, requested_samples: int = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Prepare training and testing data with dynamic split based on requested samples"""
         X_full = [sample['text'] for sample in self.preprocessed_samples]
         y_full = [self.label_to_id[sample['label']] for sample in self.preprocessed_samples]
         
+        total_samples = len(X_full)
+        
+        # Use dynamic split based on requested samples from Step 1
+        if requested_samples and requested_samples > 0:
+            # Calculate test size to get 20% of requested samples for test
+            target_test_samples = int(requested_samples * 0.2)  # 20% for test
+            target_cv_samples = requested_samples - target_test_samples  # 80% for CV
+            
+            print(f"📊 Total samples: {total_samples}")
+            print(f"📊 Requested samples: {requested_samples}")
+            print(f"📊 Target: {target_test_samples} test samples, {target_cv_samples} CV samples")
+            
+            if total_samples >= requested_samples:
+                # Use requested samples with 20/80 split
+                test_size = target_test_samples / total_samples
+                print(f"📊 Using dynamic split: test_size={test_size:.3f} ({test_size*100:.1f}%)")
+            else:
+                # Not enough samples, use what we have with 20/80 split
+                test_size = TEST_SIZE
+                print(f"⚠️ Not enough samples ({total_samples} < {requested_samples}), using default test_size: {test_size}")
+        else:
+            # Fallback to original TEST_SIZE if no requested samples
+            test_size = TEST_SIZE
+            print(f"📊 No requested samples, using default test_size: {test_size}")
+        
         X_train, X_test, y_train, y_test = train_test_split(
             X_full, y_full, 
-            test_size=TEST_SIZE, 
+            test_size=test_size, 
             random_state=RANDOM_STATE, 
             stratify=y_full
         )
         
-        print(f"Training samples: {len(X_train)}")
-        print(f"Test samples: {len(X_test)}")
+        print(f"✅ CV samples: {len(X_train)} (for 5-fold CV)")
+        print(f"✅ Test samples: {len(X_test)}")
+        print(f"✅ Validation samples per fold: {len(X_train) // 5}")
         
         return X_train, X_test, y_train, y_test
         
