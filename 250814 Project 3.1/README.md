@@ -459,7 +459,7 @@ We welcome contributions to improve the platform:
 
 ## 📄 License
 
-This project is for educational and research purposes. Feel free to use, modify, and distribute according to your needs.
+This project is licensed under the MIT License by Group GrID034. Feel free to use, modify, and distribute according to your needs.
 
 ## 🙏 Acknowledgments
 
