@@ -40,8 +40,7 @@ class DataLoader:
         csv_backup_path = Path(self.cache_dir) / "arxiv_dataset_backup.csv"
         
         if dataset_cache_path.exists():
-            print(f"✅ Dataset found in cache: {dataset_cache_path}")
-            print("📁 Loading from cache (no download needed)...")
+                    print(f"✅ Dataset found in cache: {dataset_cache_path}")
         else:
             print(f"📥 Dataset not found in cache: {dataset_cache_path}")
             print("🌐 Will download dataset to cache...")
@@ -51,7 +50,6 @@ class DataLoader:
                                    cache_dir=self.cache_dir)
         
         print(f"🎉 Dataset loaded successfully!")
-        print(f"📊 Dataset info: {self.dataset}")
         
         # Skip CSV backup prompt if requested (for Streamlit usage)
         if skip_csv_prompt:

@@ -35,8 +35,7 @@ class EmbeddingVectorizer:
         self.model_name = model_name  # Store model name for later access
         self.normalize = normalize
         
-        # Print device info for confirmation
-        print(f"🚀 EmbeddingVectorizer initialized on device: {self.device}")
+        # Initialize device
 
     def _format_inputs(
         self,
@@ -106,7 +105,7 @@ class EmbeddingVectorizer:
         import time
         
         total_texts = len(texts)
-        print(f"🔧 Processing {total_texts:,} texts for embeddings...")
+        # Process texts for embeddings
         
         if mode == 'raw':
             inputs = texts
@@ -239,13 +238,13 @@ class TextVectorizer:
         
     def fit_transform_embeddings(self, texts: List[str], stop_callback=None) -> np.ndarray:
         """Fit embedding model on training data and transform to embeddings"""
-        print(f"🔧 Fitting embedding model on {len(texts):,} training samples...")
+        # Fit embedding model
         self.embedding_vectorizer.fit(texts)
         return np.array(self.embedding_vectorizer.transform_with_progress(texts, stop_callback=stop_callback))
         
     def fit_embeddings_only(self, texts: List[str]) -> 'EmbeddingVectorizer':
         """Fit embedding model on training data without transforming (for CV)"""
-        print(f"🔧 Creating new embedding vectorizer for CV fold ({len(texts):,} samples)...")
+        # Create new embedding vectorizer for CV fold
         # Create a NEW instance to prevent data leakage
         new_embedding_vectorizer = EmbeddingVectorizer(
             model_name=self.embedding_vectorizer.model_name,

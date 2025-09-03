@@ -230,7 +230,13 @@ class SessionManager:
         Returns:
             Configuration value or default
         """
-        return st.session_state.wizard_config.get(key, default)
+        try:
+            if 'wizard_config' not in st.session_state:
+                return default
+            return st.session_state.wizard_config.get(key, default)
+        except (AttributeError, KeyError):
+            # Fallback if session state is not properly initialized
+            return default
     
     def set_config(self, key: str, value: Any) -> None:
         """
@@ -240,8 +246,14 @@ class SessionManager:
             key: Configuration key
             value: Configuration value
         """
-        st.session_state.wizard_config[key] = value
-        logger.debug(f"Configuration set: {key} = {value}")
+        try:
+            if 'wizard_config' not in st.session_state:
+                st.session_state.wizard_config = {}
+            st.session_state.wizard_config[key] = value
+            logger.debug(f"Configuration set: {key} = {value}")
+        except (AttributeError, KeyError) as e:
+            logger.warning(f"Failed to set config {key}: {e}")
+            # Silently fail to avoid breaking the app
     
     def get_user_preference(self, key: str, default: Any = None) -> Any:
         """
@@ -496,17 +508,33 @@ class SessionManager:
     
     def auto_save_enabled(self) -> bool:
         """Check if auto-save is enabled"""
-        return st.session_state.wizard_config.get('auto_save', True)
+        try:
+            if 'wizard_config' not in st.session_state:
+                return True  # Default to enabled if not initialized
+            return st.session_state.wizard_config.get('auto_save', True)
+        except (AttributeError, KeyError):
+            # Fallback if session state is not properly initialized
+            return True
     
     def enable_auto_save(self) -> None:
         """Enable auto-save functionality"""
-        st.session_state.wizard_config['auto_save'] = True
-        logger.info("Auto-save enabled")
+        try:
+            if 'wizard_config' not in st.session_state:
+                st.session_state.wizard_config = {}
+            st.session_state.wizard_config['auto_save'] = True
+            logger.info("Auto-save enabled")
+        except (AttributeError, KeyError) as e:
+            logger.warning(f"Failed to enable auto-save: {e}")
     
     def disable_auto_save(self) -> None:
         """Disable auto-save functionality"""
-        st.session_state.wizard_config['auto_save'] = False
-        logger.info("Auto-save disabled")
+        try:
+            if 'wizard_config' not in st.session_state:
+                st.session_state.wizard_config = {}
+            st.session_state.wizard_config['auto_save'] = False
+            logger.info("Auto-save disabled")
+        except (AttributeError, KeyError) as e:
+            logger.warning(f"Failed to disable auto-save: {e}")
     
     def auto_save_session(self) -> None:
         """Auto-save session state if enabled"""
@@ -588,7 +616,7 @@ class SessionManager:
             'total_data_keys': len(st.session_state.wizard_data),
             'total_progress_keys': len(st.session_state.wizard_progress),
             'total_errors': len(st.session_state.wizard_errors),
-            'config_keys': list(st.session_state.wizard_config.keys()),
+            'config_keys': list(st.session_state.wizard_config.keys()) if 'wizard_config' in st.session_state else [],
             'user_preferences': list(st.session_state.user_preferences.keys()),
             'step_data_summary': {
                 'step1_dataset': len(st.session_state.step1_dataset),

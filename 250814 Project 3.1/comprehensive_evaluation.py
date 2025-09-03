@@ -24,6 +24,9 @@ from models import NewModelTrainer, validation_manager, ModelMetrics
 # Import visualization
 from visualization import create_output_directories
 
+# Import progress tracking
+from utils.progress_tracker import create_training_progress, create_embedding_progress
+
 
 class ComprehensiveEvaluator:
     """
@@ -241,6 +244,10 @@ class ComprehensiveEvaluator:
                 print(f"  ⚠️ Test data not found in cache for {embedding_type}, will use validation data for final evaluation")
         else:
             print(f"  ⚠️ No test data available for {embedding_type}, will use validation data for final evaluation")
+            print(f"     🔍 Debug: hasattr(self, 'embeddings') = {hasattr(self, 'embeddings')}")
+            if hasattr(self, 'embeddings'):
+                print(f"     🔍 Debug: embedding_type '{embedding_type}' in embeddings = {embedding_type in self.embeddings}")
+                print(f"     🔍 Debug: available embeddings = {list(self.embeddings.keys()) if self.embeddings else 'None'}")
         
         # Create folds using same strategy as precompute_cv_embeddings
         for fold, (train_idx, val_idx) in enumerate(kf.split(X_train, y_train), 1):
@@ -262,10 +269,10 @@ class ComprehensiveEvaluator:
             cv_folds[f'fold_{fold}'] = {
                 'X_train': X_train_fold,
                 'X_val': X_val_fold,
-                'X_test': test_data,        # ← THÊM TEST DATA
+                'X_test': test_data if test_data is not None else None,        # ← THÊM TEST DATA
                 'y_train': y_train_fold,
                 'y_val': y_val_fold,
-                'y_test': test_labels,      # ← THÊM TEST LABELS
+                'y_test': test_labels if test_labels is not None else None,      # ← THÊM TEST LABELS
                 'train_idx': train_idx,
                 'val_idx': val_idx,
                             'n_train_samples': X_train_fold.shape[0] if hasattr(X_train_fold, 'shape') else len(X_train_fold),    # ← THÊM SỐ SAMPLE
@@ -294,14 +301,6 @@ class ComprehensiveEvaluator:
         print("=" * 50)
         
         # Check if we already have sampled data from Step 1
-        print(f"🔍 [DEBUG] Checking for Step 1 data:")
-        print(f"   • hasattr(self, 'step1_data'): {hasattr(self, 'step1_data')}")
-        if hasattr(self, 'step1_data'):
-            print(f"   • self.step1_data: {self.step1_data}")
-            if self.step1_data:
-                print(f"   • 'dataframe' in step1_data: {'dataframe' in self.step1_data}")
-                if 'dataframe' in self.step1_data:
-                    print(f"   • step1_data keys: {list(self.step1_data.keys())}")
         
         if hasattr(self, 'step1_data') and self.step1_data and 'dataframe' in self.step1_data:
             print("🚀 Using pre-sampled data from Step 1...")
@@ -367,9 +366,6 @@ class ComprehensiveEvaluator:
             
         else:
             # Fallback: Load dataset from scratch (for non-Streamlit usage)
-            print("📥 [DEBUG] Falling back to loading dataset from scratch...")
-            print(f"   • Reason: No valid step1_data found")
-            print(f"   • step1_data exists: {hasattr(self, 'step1_data')}")
             if hasattr(self, 'step1_data'):
                 print(f"   • step1_data value: {self.step1_data}")
                 if self.step1_data:
@@ -457,12 +453,7 @@ class ComprehensiveEvaluator:
         self.data_loader.preprocess_samples(full_preprocessing_config)
         self.data_loader.create_label_mappings()
         
-        # CRITICAL: Debug data state before train/test split
-        print(f"🔍 [DEBUG] Data state before train/test split:")
-        print(f"   • samples count: {len(self.data_loader.samples)}")
-        print(f"   • preprocessed_samples count: {len(self.data_loader.preprocessed_samples)}")
-        print(f"   • available_categories: {len(self.data_loader.available_categories)}")
-        print(f"   • selected_categories: {len(self.data_loader.selected_categories)}")
+        # Validate data state before train/test split
         
         if not self.data_loader.preprocessed_samples:
             print("❌ ERROR: No preprocessed samples available!")
@@ -604,6 +595,10 @@ class ComprehensiveEvaluator:
             print("🧠 Processing Word Embeddings...")
             start_time = time.time()
             
+            # Create progress tracker for embeddings
+            total_samples = len(X_train) + len(X_test) + (len(X_val) if X_val else 0)
+            embedding_progress = create_embedding_progress(total_samples, "Word Embeddings")
+            
             # FIXED: Fit embedding model on TRAINING DATA ONLY to prevent data leakage
             print(f"🔧 Fitting embedding model on {len(X_train):,} training samples...")
             # Import global stop check if available
@@ -615,6 +610,9 @@ class ComprehensiveEvaluator:
                 
             X_train_emb = self.text_vectorizer.fit_transform_embeddings(X_train, stop_callback=actual_stop_callback)
             
+            # Update progress after training embeddings
+            embedding_progress.update_batch(len(X_train))
+            
             # Check if stopped during training embeddings
             if actual_stop_callback and actual_stop_callback():
                 print("🛑 Embedding creation stopped by user request")
@@ -623,6 +621,9 @@ class ComprehensiveEvaluator:
             # Transform test data using fitted model (no data leakage)
             print(f"🔧 Transforming {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test):,} test samples using fitted model...")
             X_test_emb = self.text_vectorizer.transform_embeddings(X_test, stop_callback=actual_stop_callback)
+            
+            # Update progress after test embeddings
+            embedding_progress.update_batch(len(X_test))
             
             # Check if stopped during test embeddings
             if actual_stop_callback and actual_stop_callback():
@@ -635,10 +636,16 @@ class ComprehensiveEvaluator:
                 print(f"🔧 Transforming {len(X_val):,} validation samples...")
                 X_val_emb = self.text_vectorizer.transform_embeddings(X_val, stop_callback=actual_stop_callback)
                 
+                # Update progress after validation embeddings
+                embedding_progress.update_batch(len(X_val))
+                
                 # Check if stopped during validation embeddings
                 if actual_stop_callback and actual_stop_callback():
                     print("🛑 Embedding creation stopped by user request")
                     return {}
+            
+            # Finish embedding progress
+            embedding_progress.finish()
             
             emb_time = time.time() - start_time
             
@@ -692,14 +699,39 @@ class ComprehensiveEvaluator:
                 if knn_config.get('best_score'):
                     print(f"        • Best Score: {knn_config.get('best_score', 'N/A'):.4f}")
             
-            # Training
+            # MEMORY OPTIMIZATION: Keep sparse matrices as-is for memory efficiency
+            if hasattr(X_train, 'toarray'):  # Sparse matrix
+                print(f"     📊 Using sparse matrix format for memory efficiency")
+                # Keep sparse matrices - modern models can handle them efficiently
+                # No conversion to dense to prevent memory overflow
+            
+            # Training with memory management
             start_time = time.time()
+            
+            # Clear GPU cache before training to prevent memory issues
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    print(f"     🧹 GPU cache cleared before training")
+            except ImportError:
+                pass  # PyTorch not available
+            
             y_test_pred, y_val_pred, y_test, val_acc, test_acc, test_metrics = \
                 self.model_trainer.train_validate_test_model(
                     model_name, X_train, y_train, 
                     X_val, y_val, X_test, y_test, step3_data
                 )
             training_time = time.time() - start_time
+            
+            # Clear GPU cache after training
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    print(f"     🧹 GPU cache cleared after training")
+            except ImportError:
+                pass  # PyTorch not available
             
             # Validation metrics (only if validation set exists)
             if len(y_val) > 0 and y_val_pred is not None:
@@ -766,9 +798,9 @@ class ComprehensiveEvaluator:
                     overfitting_status = None
                     overfitting_level = None
                     
-                    print(f"     ⚠️ No validation set: Will calculate overfitting from CV fold after CV completes")
+                    print(f"     💡 No separate validation set: Using CV folds for overfitting analysis")
                     print(f"     📊 Overfitting Level: Will be calculated from CV fold")
-                    print(f"     💡 Note: Using CV fold data for overfitting detection")
+                    print(f"     💡 This is the standard ML approach for overfitting detection")
                     
             except Exception as e:
                 # Cannot calculate overfitting if ML standard fails
@@ -785,10 +817,22 @@ class ComprehensiveEvaluator:
                 print(f"     🔧 CV using optimized sparse {embedding_name} data for {model_name} (no data leakage)")
                 
                 # Create CV folds specifically for sparse embeddings with test data
+                test_data = self.data_dict.get('X_test') if hasattr(self, 'data_dict') else None
+                test_labels = self.data_dict.get('y_test') if hasattr(self, 'data_dict') else None
+                
+                # Convert test data to numpy array if it's a list
+                if test_data is not None and isinstance(test_data, list):
+                    test_data = np.array(test_data)
+                if test_labels is not None and isinstance(test_labels, list):
+                    test_labels = np.array(test_labels)
+                
+                print(f"     🔍 Debug: test_data = {test_data.shape if test_data is not None and hasattr(test_data, 'shape') else f'list({len(test_data)})' if test_data is not None else 'None'}")
+                print(f"     🔍 Debug: test_labels = {test_labels.shape if test_labels is not None and hasattr(test_labels, 'shape') else f'list({len(test_labels)})' if test_labels is not None else 'None'}")
+                
                 cv_folds = self.create_cv_folds_for_sparse_embeddings(
                     X_train, y_train, embedding_name, 
-                    X_test=self.data_dict.get('X_test') if hasattr(self, 'data_dict') else None, 
-                    y_test=self.data_dict.get('y_test') if hasattr(self, 'data_dict') else None
+                    X_test=test_data, 
+                    y_test=test_labels
                 )
                 
                 # Use CV folds for evaluation
@@ -856,9 +900,7 @@ class ComprehensiveEvaluator:
                             cv_train_acc = first_fold['train_accuracy']
                             cv_val_acc = first_fold['validation_accuracy']
                             
-                            # DEBUG: Show CV fold data structure
-                            print(f"     🔍 DEBUG: First CV fold data = {first_fold}")
-                            print(f"     🔍 DEBUG: cv_train_acc = {cv_train_acc}, cv_val_acc = {cv_val_acc}")
+                            # Calculate overfitting metrics
                             
                             # Calculate overfitting using mean(train_accuracy_folds) − mean(val_accuracy_folds)
                             train_mean = np.mean([fold['train_accuracy'] for fold in cv_results['fold_results']])
@@ -874,7 +916,7 @@ class ComprehensiveEvaluator:
                             
                             print(f"     📊 Train vs Val Overfitting: Train Mean={train_mean:.3f}, Val Mean={val_mean:.3f}, Test Acc={test_acc:.3f}, Score={overfitting_score:+.3f}")
                             print(f"     📊 ML Standard CV (CV Fold): CV={cv_f1_based_accuracy:.3f}±{cv_f1_based_std:.3f}")
-                            print(f"     🔍 DEBUG: overfitting_score = {overfitting_score}, overfitting_level = {overfitting_level}")
+
                         else:
                             cv_f1_based_accuracy = None
                             cv_f1_based_std = None 
@@ -1116,6 +1158,244 @@ class ComprehensiveEvaluator:
         except:
             return 0.0
     
+    def _generate_embedding_cache_key(self, data_dict: Dict, selected_embeddings: List[str], 
+                                     step1_data: Dict, step2_data: Dict, sampling_config: Dict) -> str:
+        """Generate a unique cache key for embeddings based on data characteristics"""
+        import hashlib
+        
+        # Create a string representation of the data characteristics
+        cache_components = []
+        
+        # Add data size info
+        cache_components.append(f"train_{len(data_dict['X_train'])}")
+        cache_components.append(f"val_{len(data_dict['X_val']) if data_dict['X_val'] else 0}")
+        cache_components.append(f"test_{len(data_dict['X_test'])}")
+        
+        # Add selected embeddings
+        if selected_embeddings:
+            cache_components.append(f"emb_{'_'.join(sorted(selected_embeddings))}")
+        else:
+            cache_components.append("emb_all")
+        
+        # Add sampling info
+        if sampling_config and sampling_config.get('num_samples'):
+            cache_components.append(f"samples_{sampling_config['num_samples']}")
+        
+        # Add column info from step2_data
+        if step2_data and 'text_column' in step2_data and 'label_column' in step2_data:
+            cache_components.append(f"cols_{step2_data['text_column']}_{step2_data['label_column']}")
+        
+        # Add categories info from step1_data
+        if step1_data and 'selected_categories' in step1_data:
+            categories = step1_data['selected_categories']
+            if categories:
+                # Use first 3 categories for cache key
+                cat_str = '_'.join(sorted(categories)[:3])
+                cache_components.append(f"cats_{cat_str}")
+        
+        # CRITICAL FIX: Add data content hash to distinguish different files
+        try:
+            # Create content hash from actual data
+            content_samples = []
+            
+            # Sample from train data (first 100 samples for efficiency)
+            train_samples = data_dict['X_train'][:100] if len(data_dict['X_train']) > 100 else data_dict['X_train']
+            content_samples.extend([str(sample) for sample in train_samples])
+            
+            # Sample from test data (first 50 samples)
+            test_samples = data_dict['X_test'][:50] if len(data_dict['X_test']) > 50 else data_dict['X_test']
+            content_samples.extend([str(sample) for sample in test_samples])
+            
+            # Create content hash
+            content_string = '|'.join(content_samples)
+            content_hash = hashlib.md5(content_string.encode()).hexdigest()[:8]
+            cache_components.append(f"content_{content_hash}")
+            
+        except Exception as e:
+            # Fallback: use timestamp if content hashing fails
+            import time
+            fallback_hash = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
+            cache_components.append(f"fallback_{fallback_hash}")
+            print(f"⚠️ Warning: Could not create content hash, using fallback: {e}")
+        
+        # Create hash from components
+        cache_string = '_'.join(cache_components)
+        cache_hash = hashlib.md5(cache_string.encode()).hexdigest()[:12]
+        
+        return f"embeddings_{cache_hash}"
+    
+    def _save_embeddings_to_cache(self, cache_key: str, embeddings: Dict):
+        """Save embeddings to persistent cache"""
+        try:
+            import os
+            import pickle
+            from config import CACHE_DIR
+            
+            # Create embeddings cache directory
+            embeddings_cache_dir = os.path.join(CACHE_DIR, "embeddings")
+            os.makedirs(embeddings_cache_dir, exist_ok=True)
+            
+            cache_file = os.path.join(embeddings_cache_dir, f"{cache_key}.pkl")
+            
+            # Save embeddings
+            with open(cache_file, 'wb') as f:
+                pickle.dump(embeddings, f)
+            
+            print(f"💾 Embeddings cached to: {cache_file}")
+            return True
+            
+        except Exception as e:
+            print(f"⚠️ Warning: Could not save embeddings to cache: {e}")
+            return False
+    
+    def _load_embeddings_from_cache(self, cache_key: str) -> Dict:
+        """Load embeddings from persistent cache"""
+        try:
+            import os
+            import pickle
+            from config import CACHE_DIR
+            
+            embeddings_cache_dir = os.path.join(CACHE_DIR, "embeddings")
+            cache_file = os.path.join(embeddings_cache_dir, f"{cache_key}.pkl")
+            
+            if os.path.exists(cache_file):
+                with open(cache_file, 'rb') as f:
+                    embeddings = pickle.load(f)
+                print(f"📂 Loaded embeddings from cache: {cache_file}")
+                return embeddings
+            else:
+                return None
+                
+        except Exception as e:
+            print(f"⚠️ Warning: Could not load embeddings from cache: {e}")
+            return None
+    
+    def _get_or_create_embeddings(self, data_dict: Dict, selected_embeddings: List[str], 
+                                 stop_callback, step1_data: Dict, step2_data: Dict, 
+                                 sampling_config: Dict) -> Dict:
+        """Get embeddings from cache or create new ones"""
+        
+        # First check if we have embeddings in memory
+        if hasattr(self, 'embeddings') and self.embeddings is not None:
+            print(f"\n🔄 Reusing embeddings from memory...")
+            return self.embeddings
+        
+        # Generate cache key
+        cache_key = self._generate_embedding_cache_key(
+            data_dict, selected_embeddings, step1_data, step2_data, sampling_config
+        )
+        
+        # Try to load from persistent cache
+        embeddings = self._load_embeddings_from_cache(cache_key)
+        
+        if embeddings is not None:
+            print(f"\n✅ Loaded embeddings from persistent cache!")
+            # Store in memory for reuse
+            self.embeddings = embeddings
+            return embeddings
+        
+        # Create new embeddings
+        print(f"\n🔤 Creating new embeddings (will be cached for future use)...")
+        
+        # Check if stopped before creating embeddings
+        try:
+            from training_pipeline import global_stop_check
+            if global_stop_check():
+                print("🛑 Training stopped before embedding creation")
+                return None
+        except ImportError:
+            if stop_callback and stop_callback():
+                print("🛑 Training stopped before embedding creation")
+                return None
+        
+        embeddings = self.create_all_embeddings(
+            data_dict['X_train'], 
+            data_dict['X_val'], 
+            data_dict['X_test'],
+            selected_embeddings,
+            stop_callback
+        )
+        
+        if embeddings is not None:
+            # Store in memory for reuse
+            self.embeddings = embeddings
+            
+            # Save to persistent cache
+            self._save_embeddings_to_cache(cache_key, embeddings)
+        
+        return embeddings
+    
+    def show_embedding_cache_status(self):
+        """Show status of embedding cache"""
+        try:
+            import os
+            from config import CACHE_DIR
+            
+            embeddings_cache_dir = os.path.join(CACHE_DIR, "embeddings")
+            
+            if not os.path.exists(embeddings_cache_dir):
+                print("📭 No embedding cache directory found")
+                return
+            
+            cache_files = [f for f in os.listdir(embeddings_cache_dir) if f.endswith('.pkl')]
+            
+            if not cache_files:
+                print("📭 No cached embeddings found")
+                return
+            
+            print("\n" + "="*70)
+            print("📊 EMBEDDING CACHE STATUS")
+            print("="*70)
+            print(f"📍 Cache Directory: {embeddings_cache_dir}")
+            print(f"📁 Total Cached Embeddings: {len(cache_files)}")
+            print("-"*70)
+            
+            for i, cache_file in enumerate(cache_files, 1):
+                file_path = os.path.join(embeddings_cache_dir, cache_file)
+                file_size = os.path.getsize(file_path) / (1024*1024)  # MB
+                mod_time = os.path.getmtime(file_path)
+                import time
+                age_hours = (time.time() - mod_time) / 3600
+                
+                print(f"{i:2d}. {cache_file}")
+                print(f"    Size: {file_size:.1f} MB | Age: {age_hours:.1f}h")
+                print()
+            
+            print("="*70)
+            
+        except Exception as e:
+            print(f"⚠️ Error checking embedding cache status: {e}")
+    
+    def clear_embedding_cache(self, cache_key: str = None):
+        """Clear embedding cache"""
+        try:
+            import os
+            from config import CACHE_DIR
+            
+            embeddings_cache_dir = os.path.join(CACHE_DIR, "embeddings")
+            
+            if not os.path.exists(embeddings_cache_dir):
+                print("📭 No embedding cache directory found")
+                return
+            
+            if cache_key:
+                # Clear specific cache
+                cache_file = os.path.join(embeddings_cache_dir, f"{cache_key}.pkl")
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)
+                    print(f"✅ Cleared embedding cache: {cache_key}")
+                else:
+                    print(f"⚠️ Cache file not found: {cache_key}")
+            else:
+                # Clear all cache
+                cache_files = [f for f in os.listdir(embeddings_cache_dir) if f.endswith('.pkl')]
+                for cache_file in cache_files:
+                    os.remove(os.path.join(embeddings_cache_dir, cache_file))
+                print(f"✅ Cleared {len(cache_files)} embedding cache files")
+            
+        except Exception as e:
+            print(f"⚠️ Error clearing embedding cache: {e}")
+
     def run_comprehensive_evaluation(self, max_samples: int = None, skip_csv_prompt: bool = False, 
                                    sampling_config: Dict = None, selected_models: List[str] = None, selected_embeddings: List[str] = None, stop_callback=None, step3_data: Dict = None, preprocessing_config: Dict = None, step1_data: Dict = None, step2_data: Dict = None, ensemble_config: Dict = None) -> Dict[str, Any]:
         """
@@ -1151,33 +1431,18 @@ class ComprehensiveEvaluator:
         
         data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt, sampling_config, preprocessing_config)
         
-        # 2. Create selected embeddings (only once)
-        if not hasattr(self, 'embeddings') or self.embeddings is None:
-            print(f"\n🔤 Creating Embeddings for Data...")
-            
-            # Check if stopped before creating embeddings
-            try:
-                from training_pipeline import global_stop_check
-                if global_stop_check():
-                    print("🛑 Training stopped before embedding creation")
-                    return {'status': 'stopped', 'message': 'Training stopped before embedding creation'}
-            except ImportError:
-                if stop_callback and stop_callback():
-                    print("🛑 Training stopped before embedding creation")
-                    return {'status': 'stopped', 'message': 'Training stopped before embedding creation'}
-            
-            embeddings = self.create_all_embeddings(
-                data_dict['X_train'], 
-                data_dict['X_val'], 
-                data_dict['X_test'],
-                selected_embeddings,
-                stop_callback
-            )
-            # Store embeddings in the evaluator for reuse
-            self.embeddings = embeddings
-        else:
-            print(f"\n🔄 Reusing cached embeddings...")
-            embeddings = self.embeddings
+        # Store data_dict for later use
+        self.data_dict = data_dict
+        
+        # 2. Create selected embeddings (only once) with persistent cache
+        embeddings = self._get_or_create_embeddings(
+            data_dict, selected_embeddings, stop_callback, 
+            step1_data, step2_data, sampling_config
+        )
+        
+        if embeddings is None:
+            print("🛑 Failed to create or load embeddings")
+            return {'status': 'error', 'message': 'Failed to create or load embeddings'}
         
         # 2.5. Pre-compute CV embeddings for fair comparison (only for embeddings, not BoW/TF-IDF)
         # Map Streamlit embedding names to internal names for pre-computation check
@@ -1287,6 +1552,9 @@ class ComprehensiveEvaluator:
         if ensemble_config and ensemble_config.get('enabled', False):
             total_combinations += len(embeddings_to_evaluate)  # Add ensemble for each embedding
         
+        # Create progress tracker
+        progress = create_training_progress(models_to_evaluate, embeddings_to_evaluate)
+        
         for model_name in models_to_evaluate:
             # Check if training should stop (outer loop)
             try:
@@ -1314,7 +1582,8 @@ class ComprehensiveEvaluator:
                 if embedding_name in embeddings:
                     embedding_data = embeddings[embedding_name]
                     
-                    print(f"🚀 Training {model_name} with {embedding_name}...")
+                    # Start progress tracking for this combination
+                    progress.start_combination(model_name, embedding_name)
                     
                     result = self.evaluate_single_combination(
                         model_name=model_name,
@@ -1327,6 +1596,9 @@ class ComprehensiveEvaluator:
                         y_test=data_dict['y_test'],
                         step3_data=step3_data
                     )
+                    
+                    # End progress tracking for this combination
+                    progress.end_combination()
                     
                     all_results.append(result)
                     if result['status'] == 'success':
@@ -1353,6 +1625,9 @@ class ComprehensiveEvaluator:
         print(f"   • Successful individual combinations: {successful_combinations}/{individual_combinations}")
         if individual_combinations - successful_combinations > 0:
             print(f"   • Failed individual combinations: {individual_combinations - successful_combinations}")
+        
+        # Finish progress tracking for individual models
+        progress.finish()
         
         # 6. 🚀 ENSEMBLE LEARNING - Train ensemble model with ALL selected embeddings
         if ensemble_config and ensemble_config.get('enabled', False):
@@ -1804,12 +2079,8 @@ class ComprehensiveEvaluator:
             # Debug: Check ensemble_eval structure
             print(f"🔍 Debug: ensemble_eval keys: {list(ensemble_eval.keys())}")
             if 'classification_report' in ensemble_eval:
-                print(f"🔍 Debug: classification_report keys: {list(ensemble_eval['classification_report'].keys())}")
-                if 'weighted avg' in ensemble_eval['classification_report']:
-                    print(f"🔍 Debug: weighted avg keys: {list(ensemble_eval['classification_report']['weighted avg'].keys())}")
-                    print(f"🔍 Debug: precision = {ensemble_eval['classification_report']['weighted avg'].get('precision', 'NOT_FOUND')}")
-                    print(f"🔍 Debug: recall = {ensemble_eval['classification_report']['weighted avg'].get('recall', 'NOT_FOUND')}")
-                    print(f"🔍 Debug: f1-score = {ensemble_eval['classification_report']['weighted avg'].get('f1-score', 'NOT_FOUND')}")
+                # Extract metrics from classification report
+                pass  # Metrics already extracted above
             else:
                 print(f"🔍 Debug: No classification_report found in ensemble_eval")
             
@@ -1857,10 +2128,7 @@ class ComprehensiveEvaluator:
                 }
             }
             
-            # Debug: Check final ensemble_result values
-            print(f"🔍 Debug: Final ensemble_result precision = {ensemble_result['precision']}")
-            print(f"🔍 Debug: Final ensemble_result recall = {ensemble_result['recall']}")
-            print(f"🔍 Debug: Final ensemble_result f1_score = {ensemble_result['f1_score']}")
+            # Final ensemble result ready
             
             print(f"✅ Ensemble Learning completed successfully!")
             print(f"   • Test Accuracy: {ensemble_result['test_accuracy']:.4f}")

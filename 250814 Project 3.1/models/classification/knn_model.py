@@ -34,49 +34,34 @@ class KNNModel(BaseModel):
         self.metric = metric
         
     def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
-            y: np.ndarray, use_gpu: bool = True) -> 'KNNModel':
-        """Fit KNN model to training data with optional GPU acceleration"""
+            y: np.ndarray, use_gpu: bool = False) -> 'KNNModel':
+        """Fit KNN model to training data using CPU (optimized for performance)"""
         
-        # Check if we can use GPU acceleration
-        if (use_gpu and TORCH_AVAILABLE and torch.cuda.is_available() 
-            and not sparse.issparse(X)):
-            # Use GPU acceleration
-            self._gpu_knn_fit(X, y)
-            self.use_gpu = True
-        else:
-            # Fallback to scikit-learn
-            if use_gpu:
-                print(f"⚠️ GPU acceleration not available, using CPU")
-            else:
-                print(f"🔄 Using CPU-based KNN")
-            
-            # Choose algorithm based on data type
-            algorithm = 'brute' if sparse.issparse(X) else 'auto'
-            
-            self.model = KNeighborsClassifier(
-                n_neighbors=self.n_neighbors,
-                weights=self.weights,
-                metric=self.metric,
-                algorithm=algorithm
-            )
-            self.model.fit(X, y)
-            self.use_gpu = False
-            self.is_fitted = True  # Set fitted flag for CPU mode
+        # Use CPU-based KNN (faster than GPU for most cases)
+        print(f"🖥️ Using CPU-based KNN (optimized for performance)")
+        
+        # Choose algorithm based on data type
+        algorithm = 'brute' if sparse.issparse(X) else 'auto'
+        
+        self.model = KNeighborsClassifier(
+            n_neighbors=self.n_neighbors,
+            weights=self.weights,
+            metric=self.metric,
+            algorithm=algorithm
+        )
+        self.model.fit(X, y)
+        self.use_gpu = False
+        self.is_fitted = True
         
         return self
     
     def predict(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
-        """Make predictions on new data with GPU acceleration if available"""
+        """Make predictions on new data using CPU (optimized for performance)"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
         
-        # Use GPU acceleration if available and data is dense
-        if (hasattr(self, 'use_gpu') and self.use_gpu 
-            and not sparse.issparse(X)):
-            return self._gpu_knn_predict(X)
-        else:
-            # Fallback to scikit-learn
-            return self.model.predict(X)
+        # Use CPU-based prediction (faster and more reliable)
+        return self.model.predict(X)
     
     def predict_proba(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
         """Get prediction probabilities"""
@@ -117,88 +102,7 @@ class KNNModel(BaseModel):
         
         return y_pred, metrics['accuracy'], metrics['classification_report']
     
-    def _gpu_knn_predict(self, X: np.ndarray, k: int = None, 
-                         weights: str = None, metric: str = None) -> np.ndarray:
-        """GPU-accelerated KNN prediction using PyTorch"""
-        if not TORCH_AVAILABLE:
-            raise ValueError("PyTorch not available for GPU acceleration")
-        
-        if not torch.cuda.is_available():
-            raise ValueError("CUDA GPU not available")
-        
-        # Use instance values if not specified
-        k = k or self.n_neighbors
-        weights = weights or self.weights
-        metric = metric or self.metric
-        
-        # Move data to GPU
-        X_gpu = torch.tensor(X, dtype=torch.float32, device='cuda')
-        X_train_gpu = torch.tensor(self.X_train, dtype=torch.float32, device='cuda')
-        y_train_gpu = torch.tensor(self.y_train, dtype=torch.long, device='cuda')
-        
-        # Calculate distances on GPU
-        if metric == 'cosine':
-            # Normalize for cosine similarity
-            X_norm = torch.nn.functional.normalize(X_gpu, p=2, dim=1)
-            X_train_norm = torch.nn.functional.normalize(X_train_gpu, p=2, dim=1)
-            # Cosine similarity = dot product of normalized vectors
-            distances = 1 - torch.mm(X_norm, X_train_norm.t())
-        elif metric == 'euclidean':
-            # Euclidean distance using matrix operations
-            distances = torch.cdist(X_gpu, X_train_gpu, p=2)
-        else:
-            # Manhattan distance
-            distances = torch.cdist(X_gpu, X_train_gpu, p=1)
-        
-        # Get k nearest neighbors
-        _, indices = torch.topk(distances, k=k, dim=1, largest=False)
-        
-        # Get labels of k nearest neighbors
-        neighbor_labels = y_train_gpu[indices]
-        
-        # Apply weights if needed
-        if weights == 'uniform':
-            # Simple majority vote
-            predictions = torch.mode(neighbor_labels, dim=1)[0]
-        else:  # distance weights
-            # Get distances for the k nearest neighbors
-            k_distances = torch.gather(distances, 1, indices)
-            # Convert distances to weights (closer = higher weight)
-            weights_tensor = 1.0 / (k_distances + 1e-8)  # Avoid division by zero
-            
-            # Weighted voting
-            predictions = torch.zeros(X.shape[0], dtype=torch.long, device='cuda')
-            for i in range(X.shape[0]):
-                # Count weighted votes for each class
-                unique_labels, inverse_indices = torch.unique(neighbor_labels[i], return_inverse=True)
-                weighted_counts = torch.zeros(len(unique_labels), device='cuda')
-                
-                for j, label in enumerate(neighbor_labels[i]):
-                    label_idx = torch.where(unique_labels == label)[0][0]
-                    weighted_counts[label_idx] += weights_tensor[i, j]
-                
-                # Predict class with highest weighted count
-                predictions[i] = unique_labels[torch.argmax(weighted_counts)]
-        
-        return predictions.cpu().numpy()
-    
-    def _gpu_knn_fit(self, X: np.ndarray, y: np.ndarray) -> None:
-        """Store training data for GPU KNN"""
-        if not TORCH_AVAILABLE:
-            raise ValueError("PyTorch not available for GPU acceleration")
-        
-        # Store training data (will be moved to GPU during prediction)
-        self.X_train = X
-        self.y_train = y
-        self.is_fitted = True
-        
-        self.training_history.append({
-            'action': 'gpu_fit',
-            'n_samples': X.shape[0],
-            'n_features': X.shape[1],
-            'n_neighbors': self.n_neighbors,
-            'algorithm': 'gpu_pytorch'
-        })
+    # GPU methods removed - using CPU-only for better performance
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get detailed model information"""
@@ -225,7 +129,7 @@ class KNNModel(BaseModel):
         n_jobs: int = -1,
         verbose: int = 1,
         plot_results: bool = False,
-        use_gpu: bool = True
+        use_gpu: bool = False
     ) -> Dict[str, Any]:
         """
         Tune KNN hyperparameters using GridSearchCV
@@ -490,7 +394,7 @@ class KNNModel(BaseModel):
         n_jobs: int = -1,
         verbose: int = 1,
         plot_results: bool = True,
-        use_gpu: bool = True
+        use_gpu: bool = False
     ) -> Dict[str, Any]:
         """
         Determine optimal K value for KNN using GridSearchCV with cosine metric

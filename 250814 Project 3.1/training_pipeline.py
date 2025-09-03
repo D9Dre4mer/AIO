@@ -229,7 +229,7 @@ class StreamlitTrainingPipeline:
                     # Get unique labels from dataframe
                     unique_labels = df[label_column].unique()
                     selected_categories = sorted(unique_labels.tolist())
-                    print(f"✅ [CACHE_KEY] Extracted categories from dataframe: {selected_categories}")
+    
                 except Exception as e:
                     print(f"⚠️ [CACHE_KEY] Error extracting categories: {e}")
         
@@ -336,17 +336,17 @@ class StreamlitTrainingPipeline:
                 # Add label mapping to results if not already present
                 if 'label_mapping' not in results:
                     results['label_mapping'] = self.original_label_mapping
-                    print(f"✅ [CACHE] Added label mapping to results: {self.original_label_mapping}")
+
                 
                 # Add original label values if available
                 if hasattr(self, 'original_label_values') and self.original_label_values:
                     results['original_label_values'] = self.original_label_values
-                    print(f"✅ [CACHE] Added original label values: {self.original_label_values}")
+
                 
                 # Add label encoder info if available
                 if hasattr(self, 'label_encoder') and self.label_encoder:
                     results['label_encoder_classes'] = self.label_encoder.classes_.tolist()
-                    print(f"✅ [CACHE] Added label encoder classes: {self.label_encoder.classes_.tolist()}")
+
             
             # Save results
             with open(cache_file, 'wb') as f:
@@ -495,7 +495,7 @@ class StreamlitTrainingPipeline:
             
             # FIXED: Store cache key in instance for fallback sampling
             self.current_cache_key = cache_key
-            print(f"💾 [PIPELINE] Stored cache key in instance: {self.current_cache_key}")
+
             
             cached_results = self._check_cache(cache_key)
             
@@ -562,7 +562,7 @@ class StreamlitTrainingPipeline:
                         if len(original_categories) == len(unique_labels):
                             # Create mapping from original categories
                             self.original_label_mapping = {i: cat for i, cat in enumerate(sorted(original_categories))}
-                            print(f"✅ [PIPELINE] Preserved original label mapping: {self.original_label_mapping}")
+        
                         else:
                             print(f"⚠️ [PIPELINE] Mismatch: {len(original_categories)} categories vs {len(unique_labels)} labels")
                     else:
@@ -570,7 +570,7 @@ class StreamlitTrainingPipeline:
                 else:
                     # Labels are still text - preserve them
                     self.original_label_mapping = {i: label for i, label in enumerate(unique_labels)}
-                    print(f"✅ [PIPELINE] Preserved original text labels: {self.original_label_mapping}")
+
             else:
                 print(f"⚠️ [PIPELINE] Label column '{label_column}' not found in dataframe")
                 print(f"   - Available columns: {list(df.columns)}")
@@ -581,37 +581,22 @@ class StreamlitTrainingPipeline:
                 progress_callback(self.current_phase, "Preparing data for evaluation...", 0.1)
 
             # Apply sampling if configured
-            print(f"\n🔍 [PIPELINE] Checking sampling configuration...")
-            print(f"📊 [PIPELINE] Step1 data keys: {list(step1_data.keys())}")
-            print(f"📊 [PIPELINE] Step1 data type: {type(step1_data)}")
-            print(f"📊 [PIPELINE] Step1 data content: {step1_data}")
-            print(f"📊 [PIPELINE] Original dataset size: {len(df):,}")
-            
             sampling_config = step1_data.get('sampling_config', {})
-            print(f"💾 [PIPELINE] Raw sampling config: {sampling_config}")
-            print(f"🔍 [PIPELINE] Sampling config type: {type(sampling_config)}")
-            print(f"🔍 [PIPELINE] Sampling config truthy: {bool(sampling_config)}")
-            print(f"🔍 [PIPELINE] Has num_samples: {sampling_config.get('num_samples') if sampling_config else 'N/A'}")
-            print(f"🔍 [PIPELINE] Condition check: {sampling_config and sampling_config.get('num_samples')}")
             
             # FIXED: Debug session state issue
             if not step1_data or not sampling_config:
                 print(f"⚠️ [PIPELINE] WARNING: Session state issue detected!")
-                print(f"   • step1_data empty: {not step1_data}")
-                print(f"   • sampling_config empty: {not sampling_config}")
-                print(f"   • This suggests session state was lost or not properly initialized")
-                print(f"   • Will try to extract sampling info from step1_data keys")
                 
                 # FIXED: Try to extract sampling info from step1_data keys first
                 if step1_data:
                     # Look for any key that might contain sample count
                     for key, value in step1_data.items():
                         if isinstance(value, dict) and 'num_samples' in value:
-                            print(f"🔍 [PIPELINE] Found num_samples in {key}: {value['num_samples']}")
+    
                             sampling_config = value
                             break
                         elif key == 'num_samples':
-                            print(f"🔍 [PIPELINE] Found num_samples directly: {value}")
+
                             sampling_config = {'num_samples': value, 'sampling_strategy': 'Stratified (Recommended)'}
                             break
                 
@@ -621,7 +606,7 @@ class StreamlitTrainingPipeline:
                     sample_match = re.search(r'(\d+)samples', self.current_cache_key)
                     if sample_match:
                         extracted_samples = int(sample_match.group(1))
-                        print(f"🔍 [PIPELINE] Extracted samples from cache key: {extracted_samples:,}")
+
                         
                         # Create fallback sampling config
                         fallback_config = {
@@ -635,7 +620,7 @@ class StreamlitTrainingPipeline:
                 
                 # FIXED: Final fallback - check if there are any recent cache files
                 if not sampling_config:
-                    print(f"🔍 [PIPELINE] Trying to extract from recent cache files...")
+
                     try:
                         import os
                         import pickle
@@ -657,7 +642,7 @@ class StreamlitTrainingPipeline:
                                     sample_match = re.search(r'(\d+)samples', cache_key)
                                     if sample_match:
                                         extracted_samples = int(sample_match.group(1))
-                                        print(f"🔍 [PIPELINE] Extracted samples from recent cache: {extracted_samples:,}")
+
                                         
                                         fallback_config = {
                                             'num_samples': extracted_samples,
@@ -1235,15 +1220,12 @@ class StreamlitTrainingPipeline:
                 X_val_bow = cv.transform(X_val) if len(X_val) > 0 else None
                 X_test_bow = cv.transform(X_test)
             
-            # GPU Optimization: Convert sparse matrices to dense arrays
+            # MEMORY OPTIMIZATION: Keep sparse matrices for memory efficiency
             from scipy import sparse
             if sparse.issparse(X_train_bow):
-                print(f"   🔄 Converting BoW from sparse to dense for GPU acceleration...")
-                X_train_bow = X_train_bow.toarray()
-                if X_val_bow is not None:
-                    X_val_bow = X_val_bow.toarray()
-                X_test_bow = X_test_bow.toarray()
-                print(f"   ✅ BoW converted to dense arrays for GPU")
+                print(f"   📊 Using BoW sparse matrix format for memory efficiency")
+                # Keep sparse matrices - modern models handle them efficiently
+                # No conversion to prevent memory overflow
             
             return {
                 'train': X_train_bow,
@@ -1269,15 +1251,13 @@ class StreamlitTrainingPipeline:
                 X_val_tfidf = tfidf.transform(X_val) if len(X_val) > 0 else None
                 X_test_tfidf = tfidf.transform(X_test)
             
-            # GPU Optimization: Convert sparse matrices to dense arrays
+            # MEMORY OPTIMIZATION: Keep sparse matrices for memory efficiency
             from scipy import sparse
             if sparse.issparse(X_train_tfidf):
-                print(f"   🔄 Converting TF-IDF from sparse to dense for GPU acceleration...")
-                X_train_tfidf = X_train_tfidf.toarray()
-                if X_val_tfidf is not None:
-                    X_val_tfidf = X_val_tfidf.toarray()
-                X_test_tfidf = X_test_tfidf.toarray()
-                print(f"   ✅ TF-IDF converted to dense arrays for GPU")
+                print(f"   📊 Using TF-IDF sparse matrix format for memory efficiency")
+                print(f"   💾 Memory saved: Avoiding 89GB+ dense conversion")
+                # Keep sparse matrices - modern models handle them efficiently
+                # No conversion to prevent memory overflow
             
             return {
                 'train': X_train_tfidf,

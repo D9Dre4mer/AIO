@@ -2079,9 +2079,9 @@ def render_step3_wireframe():
             if ensemble_enabled:
                 ensemble_final_estimator = st.selectbox(
                     "🎯 Final Estimator:",
-                    options=["logistic_regression", "random_forest"],
+                    options=["voting", "logistic_regression", "random_forest"],
                     index=0,
-                    help="Final estimator for stacking (Logistic Regression recommended for text classification)"
+                    help="Final estimator for ensemble (Voting recommended for equal model contribution, Logistic Regression for learned weights)"
                 )
                 
     else:
@@ -2998,20 +2998,13 @@ def render_step5_wireframe():
                     st.session_state.cache_data = cached_results
                     st.toast(f"💾 Cache data stored in session state for label access")
                     
-                    # DEBUG: Show what's in cache_data
-                    st.write("🔍 DEBUG: Cache data keys:", list(cached_results.keys()))
-                    if 'label_mapping' in cached_results:
-                        st.write("🔍 DEBUG: Cache label_mapping:", cached_results['label_mapping'])
-                    else:
-                        st.write("⚠️ DEBUG: No label_mapping in cache_data")
+
                     
                     # Also store in training_results for fallback access
                     if 'cache_data' not in training_results:
                         training_results['cache_data'] = cached_results
                     
-                    # DEBUG: Verify session state storage
-                    st.write("🔍 DEBUG: Session state cache_data stored:", 'cache_data' in st.session_state)
-                    st.write("🔍 DEBUG: Session state cache_data keys:", list(st.session_state.cache_data.keys()) if 'cache_data' in st.session_state else "None")
+
                     
                     # Debug: Show what we found
                     if comprehensive_results:
@@ -3342,9 +3335,7 @@ def render_step5_wireframe():
                         # Pass cache_data to prioritize top-level labels over individual result labels
                         cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
                         
-                        # DEBUG: Show what cache_data contains
-                        if cache_data and 'label_mapping' in cache_data:
-                            st.write("🔍 DEBUG: Found label_mapping in cache_data")
+
                         
                         unique_labels, label_mapping = _get_unique_labels_and_mapping(
                             selected_result, 

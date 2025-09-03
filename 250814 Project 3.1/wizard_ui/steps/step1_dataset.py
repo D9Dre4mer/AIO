@@ -137,8 +137,7 @@ class DatasetSelectionStep:
                     if clean_cat and clean_cat not in cleaned_categories:
                         cleaned_categories.append(clean_cat)
             
-            print(f"✅ [STEP1] Extracted categories from column '{label_column}': {len(cleaned_categories)} categories")
-            print(f"   - Sample categories: {cleaned_categories[:5]}")
+            print(f"✅ [STEP1] Extracted {len(cleaned_categories)} categories from column '{label_column}'")
             
             return cleaned_categories
             

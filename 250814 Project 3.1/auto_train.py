@@ -27,6 +27,9 @@ warnings.filterwarnings("ignore")
 # Add current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# Import progress tracking
+from utils.progress_tracker import create_training_progress
+
 
 def print_banner():
     """In banner chào mừng"""
@@ -175,7 +178,15 @@ def create_auto_config(df, mode='full'):
         'ensemble_learning': {
             'eligible': ensemble_enabled,
             'enabled': ensemble_enabled,
-            'final_estimator': 'logistic_regression' if ensemble_enabled else None
+            'final_estimator': 'voting' if ensemble_enabled else None
+        },
+        'knn_config': {
+            'optimization_method': 'Manual Input',
+            'k_value': 15,
+            'weights': 'distance',
+            'metric': 'cosine',
+            'cv_folds': cv_folds,
+            'scoring_metric': 'f1_weighted'
         },
         'validation_errors': [],
         'validation_warnings': [],
@@ -187,6 +198,9 @@ def create_auto_config(df, mode='full'):
     print(f"   🔤 Vectorization: {len(step3_config['selected_vectorization'])} methods")
     print(f"   🚀 Ensemble Learning: {'Enabled' if step3_config['ensemble_learning']['enabled'] else 'Disabled'}")
     print(f"   📈 Total combinations: {len(step3_config['selected_models']) * len(step3_config['selected_vectorization'])}")
+    print(f"   🎯 KNN Configuration: K={step3_config['knn_config']['k_value']}, "
+          f"Weights={step3_config['knn_config']['weights']}, "
+          f"Metric={step3_config['knn_config']['metric']}")
     
     return step1_config, step2_config, step3_config
 

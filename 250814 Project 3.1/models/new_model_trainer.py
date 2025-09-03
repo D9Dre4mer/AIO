@@ -54,6 +54,15 @@ class NewModelTrainer:
             })
             print(f"   🚀 GPU acceleration enabled for {model_name} in CV")
         
+        # Add GPU configuration for KNN models
+        if ('KNN' in model_name or 
+                'knn' in model_name.lower() or
+                'K-Nearest' in model_name):
+            model_params.update({
+                'use_gpu': False
+            })
+            print(f"   🖥️ CPU optimization enabled for {model_name} in CV")
+        
         # Create model instance
         if not self.model_factory:
             raise ValueError(
@@ -117,6 +126,15 @@ class NewModelTrainer:
             })
             print(f"   🚀 GPU acceleration enabled for {model_name} in CV")
         
+        # Add GPU configuration for KNN models
+        if ('KNN' in model_name or 
+                'knn' in model_name.lower() or
+                'K-Nearest' in model_name):
+            model_params.update({
+                'use_gpu': False
+            })
+            print(f"   🖥️ CPU optimization enabled for {model_name} in CV")
+        
         # Create model instance
         if not self.model_factory:
             raise ValueError("Model factory not set. Please provide model_factory in constructor.")
@@ -168,9 +186,7 @@ class NewModelTrainer:
         
         for model_name in available_models:
             try:
-                print(f"\n{'='*50}")
                 print(f"📊 {model_name.upper()} - Cross-Validation")
-                print(f"{'='*50}")
                 
                 cv_result = self.cross_validate_model(model_name, X, y, metrics)
                 results[model_name] = cv_result
@@ -310,15 +326,17 @@ class NewModelTrainer:
             knn_config = step3_data['knn_config']
             optimization_method = knn_config.get('optimization_method', 'Default K=5')
             
-            if optimization_method == "Default K=5":
+            if optimization_method in ["Default K=5", "Manual Input"]:
                 # Use manual configuration
                 model_params.update({
                     'n_neighbors': knn_config.get('k_value', 5),
                     'weights': knn_config.get('weights', 'uniform'),
                     'metric': knn_config.get('metric', 'cosine')
                 })
-                print(f"🎯 KNN Configuration: K={model_params.get('n_neighbors')}, "
-                      f"Weights={model_params.get('weights')}, Metric={model_params.get('metric')}")
+                print(f"🎯 KNN Configuration: Using MANUAL parameters from Step 3:")
+                print(f"   • K: {model_params.get('n_neighbors')}")
+                print(f"   • Weights: {model_params.get('weights')}")
+                print(f"   • Metric: {model_params.get('metric')}")
             elif optimization_method in ["Optimal K (Cosine Metric)", "Grid Search (All Parameters)"]:
                 # Use the BEST K found from optimization in Step 3
                 best_k = knn_config.get('k_value', 5)
@@ -338,6 +356,12 @@ class NewModelTrainer:
                 print(f"   • Optimization Method: {optimization_method}")
             else:
                 print(f"🎯 KNN Configuration: Will use Grid Search for all parameters")
+        elif model_name == 'knn':
+            # Default KNN configuration when no Step 3 data
+            print(f"🎯 KNN Configuration: Using default parameters (no Step 3 config)")
+            print(f"   • K: {model_params.get('n_neighbors', 5)}")
+            print(f"   • Weights: {model_params.get('weights', 'uniform')}")
+            print(f"   • Metric: {model_params.get('metric', 'euclidean')}")
         
         model = self.model_factory.create_model(model_name, **model_params)
         
@@ -355,26 +379,65 @@ class NewModelTrainer:
                 print(f"   • Metric: N/A (custom KNNModel)")
                 print(f"   • Algorithm: N/A (custom KNNModel)")
         
-        # Train model
+        # Train model with progress tracking
         print(f"\n🚀 Training {model_name} model...")
         
-        # Special handling for KNN model with GPU acceleration
-        if model_name == 'knn':
-            try:
-                model.fit(X_train, y_train, use_gpu=True)
-                print(f"✅ KNN model trained successfully")
-            except Exception as e:
-                print(f"⚠️ GPU training failed, falling back to CPU: {e}")
-                model.fit(X_train, y_train, use_gpu=False)
-        else:
-            model.fit(X_train, y_train)
+        # Create a simple progress indicator for training
+        import time
+        import threading
+        
+        # Progress indicator for training
+        def show_training_progress():
+            dots = 0
+            while not getattr(show_training_progress, 'stop', False):
+                print(f"\r🔄 Training {model_name} model{'...' + '.' * (dots % 3):<4}", end="", flush=True)
+                time.sleep(0.5)
+                dots += 1
+        
+        # Start progress indicator
+        progress_thread = threading.Thread(target=show_training_progress, daemon=True)
+        progress_thread.start()
+        
+        try:
+            # Special handling for KNN model with GPU acceleration
+            if model_name == 'knn':
+                try:
+                    model.fit(X_train, y_train, use_gpu=True)
+                    print(f"\n✅ KNN model trained successfully")
+                except Exception as e:
+                    print(f"\n⚠️ GPU training failed, falling back to CPU: {e}")
+                    model.fit(X_train, y_train, use_gpu=False)
+            else:
+                model.fit(X_train, y_train)
+                print(f"\n✅ {model_name} model trained successfully")
+        finally:
+            # Stop progress indicator
+            show_training_progress.stop = True
+            progress_thread.join(timeout=0.1)
         
         # Validate model (only if validation set exists)
         if X_val is not None and y_val is not None and len(X_val) > 0 and len(y_val) > 0:
             print(f"🔍 Validating {model_name} model...")
-            y_val_pred = model.predict(X_val)
-            val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)
-            val_accuracy = val_metrics['accuracy']
+            
+            # Progress indicator for validation
+            def show_validation_progress():
+                dots = 0
+                while not getattr(show_validation_progress, 'stop', False):
+                    print(f"\r🔄 Validating {model_name} model{'...' + '.' * (dots % 3):<4}", end="", flush=True)
+                    time.sleep(0.3)
+                    dots += 1
+            
+            progress_thread = threading.Thread(target=show_validation_progress, daemon=True)
+            progress_thread.start()
+            
+            try:
+                y_val_pred = model.predict(X_val)
+                val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)
+                val_accuracy = val_metrics['accuracy']
+                print(f"\n✅ Validation completed")
+            finally:
+                show_validation_progress.stop = True
+                progress_thread.join(timeout=0.1)
         else:
             print(f"🔍 Skipping validation (no validation set - CV handles it)")
             y_val_pred = np.array([])
@@ -383,9 +446,26 @@ class NewModelTrainer:
         
         # Test model
         print(f"🧪 Testing {model_name} model...")
-        y_test_pred = model.predict(X_test)
-        test_metrics = ModelMetrics.compute_classification_metrics(y_test, y_test_pred)
-        test_accuracy = test_metrics['accuracy']
+        
+        # Progress indicator for testing
+        def show_testing_progress():
+            dots = 0
+            while not getattr(show_testing_progress, 'stop', False):
+                print(f"\r🔄 Testing {model_name} model{'...' + '.' * (dots % 3):<4}", end="", flush=True)
+                time.sleep(0.3)
+                dots += 1
+        
+        progress_thread = threading.Thread(target=show_testing_progress, daemon=True)
+        progress_thread.start()
+        
+        try:
+            y_test_pred = model.predict(X_test)
+            test_metrics = ModelMetrics.compute_classification_metrics(y_test, y_test_pred)
+            test_accuracy = test_metrics['accuracy']
+            print(f"\n✅ Testing completed")
+        finally:
+            show_testing_progress.stop = True
+            progress_thread.join(timeout=0.1)
         
         return y_test_pred, y_val_pred, y_test, val_accuracy, test_accuracy, test_metrics
     
@@ -405,9 +485,7 @@ class NewModelTrainer:
         
         for model_name in available_models:
             try:
-                print(f"\n{'='*50}")
                 print(f"📊 {model_name.upper()}")
-                print(f"{'='*50}")
                 
                 y_test_pred, y_val, y_test, val_acc, test_acc, test_metrics = \
                     self.train_validate_test_model(model_name, X, y)

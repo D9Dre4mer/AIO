@@ -266,12 +266,10 @@ class SVMModel(BaseModel):
             start_time = time.time()
             
             if sparse.issparse(X):
-                print(f"🔧 Converting sparse matrix to dense for SVM training: {X.shape}")
+                print(f"📊 Using sparse matrix for SVM training: {X.shape}")
                 self.training_logger.log_data_preparation("sparse_matrix")
-                X = X.toarray()
-                print(f"✅ Converted to dense: {X.shape}")
-                conversion_time = time.time() - start_time
-                self.training_logger.log_data_preparation("dense_array", conversion_time)
+                # Keep sparse matrix - sklearn SVM handles sparse matrices efficiently
+                # No conversion to prevent memory overflow
             else:
                 print(f"📊 Using dense array for SVM training: {X.shape}")
                 self.training_logger.log_data_preparation("dense_array")

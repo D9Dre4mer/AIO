@@ -5,7 +5,7 @@ Implements StackingClassifier with KNN + Decision Tree + Naive Bayes
 
 import numpy as np
 from typing import Dict, List, Tuple, Any
-from sklearn.ensemble import StackingClassifier
+from sklearn.ensemble import StackingClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 import warnings
@@ -15,7 +15,8 @@ warnings.filterwarnings("ignore")
 
 class EnsembleStackingClassifier:
     """
-    Ensemble Stacking Classifier implementation
+    Ensemble Classifier implementation
+    Supports both StackingClassifier and VotingClassifier
     Combines KNN, Decision Tree, and Naive Bayes models
     """
     
@@ -77,45 +78,72 @@ class EnsembleStackingClassifier:
                 max_iter=1000
             )
     
-    def create_stacking_classifier(self, 
-                                 base_estimators: List[Tuple[str, Any]]) -> StackingClassifier:
+    def create_ensemble_classifier(self, 
+                                 base_estimators: List[Tuple[str, Any]]):
         """
-        Create the StackingClassifier
+        Create the ensemble classifier (StackingClassifier or VotingClassifier)
         
         Args:
             base_estimators: List of (name, estimator) tuples
             
         Returns:
-            Configured StackingClassifier
+            Configured ensemble classifier
         """
-        # Create final estimator
-        self.final_estimator_instance = self.create_final_estimator()
-        
-        # Create StackingClassifier with version-compatible parameters
-        try:
-            # Try with random_state (newer scikit-learn versions)
-            self.stacking_classifier = StackingClassifier(
-                estimators=base_estimators,
-                final_estimator=self.final_estimator_instance,
-                cv=self.cv_folds,
-                stack_method='predict_proba',
-                n_jobs=-1,
-                random_state=self.random_state
-            )
-        except TypeError:
-            # Fallback for older scikit-learn versions without random_state
-            self.stacking_classifier = StackingClassifier(
-                estimators=base_estimators,
-                final_estimator=self.final_estimator_instance,
-                cv=self.cv_folds,
-                stack_method='predict_proba',
-                n_jobs=-1
-            )
-            print(f"⚠️ Using StackingClassifier without random_state (older scikit-learn version)")
-        
-        print(f"✅ Stacking Classifier created successfully")
-        print(f"   • Base Estimators: {len(base_estimators)}")
-        print(f"   • Final Estimator: {type(self.final_estimator_instance).__name__}")
+        if self.final_estimator == 'voting':
+            print("🔧 Creating VotingClassifier...")
+            
+            # Create VotingClassifier with soft voting (uses predict_proba)
+            try:
+                self.stacking_classifier = VotingClassifier(
+                    estimators=base_estimators,
+                    voting='soft',  # Use soft voting for better performance
+                    n_jobs=-1
+                )
+            except Exception as e:
+                print(f"⚠️ Error creating VotingClassifier: {e}")
+                # Fallback to hard voting
+                self.stacking_classifier = VotingClassifier(
+                    estimators=base_estimators,
+                    voting='hard',
+                    n_jobs=-1
+                )
+                print("⚠️ Using hard voting as fallback")
+            
+            print(f"✅ VotingClassifier created successfully")
+            print(f"   • Base Estimators: {len(base_estimators)}")
+            print(f"   • Voting Type: {'soft' if hasattr(self.stacking_classifier, 'voting') and self.stacking_classifier.voting == 'soft' else 'hard'}")
+            
+        else:
+            print("🔧 Creating StackingClassifier...")
+            
+            # Create final estimator
+            self.final_estimator_instance = self.create_final_estimator()
+            
+            # Create StackingClassifier with version-compatible parameters
+            try:
+                # Try with random_state (newer scikit-learn versions)
+                self.stacking_classifier = StackingClassifier(
+                    estimators=base_estimators,
+                    final_estimator=self.final_estimator_instance,
+                    cv=self.cv_folds,
+                    stack_method='predict_proba',
+                    n_jobs=-1,
+                    random_state=self.random_state
+                )
+            except TypeError:
+                # Fallback for older scikit-learn versions without random_state
+                self.stacking_classifier = StackingClassifier(
+                    estimators=base_estimators,
+                    final_estimator=self.final_estimator_instance,
+                    cv=self.cv_folds,
+                    stack_method='predict_proba',
+                    n_jobs=-1
+                )
+                print(f"⚠️ Using StackingClassifier without random_state (older scikit-learn version)")
+            
+            print(f"✅ StackingClassifier created successfully")
+            print(f"   • Base Estimators: {len(base_estimators)}")
+            print(f"   • Final Estimator: {type(self.final_estimator_instance).__name__}")
         
         return self.stacking_classifier
     

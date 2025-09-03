@@ -5,7 +5,7 @@ Manages ensemble learning operations and coordinates between individual models
 
 import numpy as np
 from typing import Dict, List, Tuple, Any
-from sklearn.ensemble import StackingClassifier
+from sklearn.ensemble import StackingClassifier, VotingClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import time
 import warnings
@@ -90,19 +90,17 @@ class EnsembleManager:
         
         return is_eligible
     
-    def create_ensemble_model(self, model_instances: Dict[str, BaseModel]) -> StackingClassifier:
+    def create_ensemble_model(self, model_instances: Dict[str, BaseModel]):
         """
-        Create the ensemble model using StackingClassifier
+        Create the ensemble model using StackingClassifier or VotingClassifier
         
         Args:
             model_instances: Dictionary of fitted base model instances
             
         Returns:
-            Configured StackingClassifier
+            Configured ensemble model (StackingClassifier or VotingClassifier)
         """
-        print("🔧 Creating ensemble model with StackingClassifier...")
-        
-        # Prepare base estimators for stacking
+        # Prepare base estimators
         base_estimators = []
         print(f"🔍 Debug: Processing {len(model_instances)} model instances")
         print(f"🔍 Debug: Required base models: {self.base_models}")
@@ -132,44 +130,73 @@ class EnsembleManager:
         if len(base_estimators) < 2:
             raise ValueError("Need at least 2 base models for ensemble learning")
         
-        # Create final estimator
-        if self.final_estimator == 'logistic_regression':
-            from sklearn.linear_model import LogisticRegression
-            final_estimator = LogisticRegression(random_state=self.random_state, max_iter=1000)
-        elif self.final_estimator == 'random_forest':
-            from sklearn.ensemble import RandomForestClassifier
-            final_estimator = RandomForestClassifier(random_state=self.random_state, n_estimators=100)
+        # Create ensemble model based on final_estimator type
+        if self.final_estimator == 'voting':
+            print("🔧 Creating ensemble model with VotingClassifier...")
+            
+            # Create VotingClassifier with soft voting (uses predict_proba)
+            try:
+                self.ensemble_model = VotingClassifier(
+                    estimators=base_estimators,
+                    voting='soft',  # Use soft voting for better performance
+                    n_jobs=-1
+                )
+            except Exception as e:
+                print(f"⚠️ Error creating VotingClassifier: {e}")
+                # Fallback to hard voting
+                self.ensemble_model = VotingClassifier(
+                    estimators=base_estimators,
+                    voting='hard',
+                    n_jobs=-1
+                )
+                print("⚠️ Using hard voting as fallback")
+            
+            print(f"✅ VotingClassifier created successfully")
+            print(f"   • Base Estimators: {len(base_estimators)}")
+            print(f"   • Voting Type: {'soft' if hasattr(self.ensemble_model, 'voting') and self.ensemble_model.voting == 'soft' else 'hard'}")
+            
         else:
-            # Default to logistic regression
-            from sklearn.linear_model import LogisticRegression
-            final_estimator = LogisticRegression(random_state=self.random_state, max_iter=1000)
-        
-        # Create StackingClassifier with version-compatible parameters
-        try:
-            # Try with random_state (newer scikit-learn versions)
-            self.ensemble_model = StackingClassifier(
-                estimators=base_estimators,
-                final_estimator=final_estimator,
-                cv=self.cv_folds,
-                stack_method='predict_proba',
-                n_jobs=-1,
-                random_state=self.random_state
-            )
-        except TypeError:
-            # Fallback for older scikit-learn versions without random_state
-            self.ensemble_model = StackingClassifier(
-                estimators=base_estimators,
-                final_estimator=final_estimator,
-                cv=self.cv_folds,
-                stack_method='predict_proba',
-                n_jobs=-1
-            )
-            print(f"⚠️ Using StackingClassifier without random_state (older scikit-learn version)")
-        
-        print(f"✅ Ensemble model created successfully")
-        print(f"   • Base Estimators: {len(base_estimators)}")
-        print(f"   • Final Estimator: {type(final_estimator).__name__}")
-        print(f"   • CV Strategy: {self.cv_folds}-fold cross-validation")
+            # Use StackingClassifier for other final estimators
+            print("🔧 Creating ensemble model with StackingClassifier...")
+            
+            # Create final estimator
+            if self.final_estimator == 'logistic_regression':
+                from sklearn.linear_model import LogisticRegression
+                final_estimator = LogisticRegression(random_state=self.random_state, max_iter=1000)
+            elif self.final_estimator == 'random_forest':
+                from sklearn.ensemble import RandomForestClassifier
+                final_estimator = RandomForestClassifier(random_state=self.random_state, n_estimators=100)
+            else:
+                # Default to logistic regression
+                from sklearn.linear_model import LogisticRegression
+                final_estimator = LogisticRegression(random_state=self.random_state, max_iter=1000)
+            
+            # Create StackingClassifier with version-compatible parameters
+            try:
+                # Try with random_state (newer scikit-learn versions)
+                self.ensemble_model = StackingClassifier(
+                    estimators=base_estimators,
+                    final_estimator=final_estimator,
+                    cv=self.cv_folds,
+                    stack_method='predict_proba',
+                    n_jobs=-1,
+                    random_state=self.random_state
+                )
+            except TypeError:
+                # Fallback for older scikit-learn versions without random_state
+                self.ensemble_model = StackingClassifier(
+                    estimators=base_estimators,
+                    final_estimator=final_estimator,
+                    cv=self.cv_folds,
+                    stack_method='predict_proba',
+                    n_jobs=-1
+                )
+                print(f"⚠️ Using StackingClassifier without random_state (older scikit-learn version)")
+            
+            print(f"✅ StackingClassifier created successfully")
+            print(f"   • Base Estimators: {len(base_estimators)}")
+            print(f"   • Final Estimator: {type(final_estimator).__name__}")
+            print(f"   • CV Strategy: {self.cv_folds}-fold cross-validation")
         
         return self.ensemble_model
     
@@ -184,6 +211,27 @@ class EnsembleManager:
             return {"error": "Ensemble model not trained yet"}
         
         try:
+            # Check if it's a VotingClassifier
+            if isinstance(self.ensemble_model, VotingClassifier):
+                weights_info = {
+                    "final_estimator_type": "VotingClassifier",
+                    "base_models": self.base_models,
+                    "voting_type": getattr(self.ensemble_model, 'voting', 'unknown'),
+                    "weights": {}
+                }
+                
+                # For VotingClassifier, all models have equal weight (1/n_models)
+                equal_weight = 1.0 / len(self.base_models)
+                for model_name in self.base_models:
+                    weights_info["weights"][model_name] = {
+                        "weight": equal_weight,
+                        "relative_importance": equal_weight,
+                        "description": "Equal voting weight"
+                    }
+                
+                return weights_info
+            
+            # For StackingClassifier, extract weights from final estimator
             final_estimator = self.ensemble_model.final_estimator_
             weights_info = {
                 "final_estimator_type": type(final_estimator).__name__,
@@ -270,7 +318,14 @@ class EnsembleManager:
         print(f"Base Models: {', '.join(weights_info['base_models'])}")
         print()
         
-        if weights_info['final_estimator_type'] == 'LogisticRegression':
+        if weights_info['final_estimator_type'] == 'VotingClassifier':
+            voting_type = weights_info.get('voting_type', 'unknown')
+            print(f"📊 Model Importance (Voting Classifier - {voting_type} voting):")
+            for model_name, info in weights_info['weights'].items():
+                weight = info['weight'] * 100
+                print(f"   • {model_name}: {weight:.1f}% (equal voting weight)")
+        
+        elif weights_info['final_estimator_type'] == 'LogisticRegression':
             print("📊 Model Importance (Logistic Regression Coefficients):")
             for model_name, info in weights_info['weights'].items():
                 rel_importance = info['relative_importance'] * 100

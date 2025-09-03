@@ -167,8 +167,6 @@ class ValidationManager:
         if metrics is None:
             metrics = ['accuracy', 'precision', 'recall', 'f1']
         
-        print(f"🔍 Cross-validating {model.__class__.__name__} with pre-computed embeddings...")
-        
         # Initialize results storage
         fold_scores = {metric: [] for metric in metrics}
         all_predictions = []
@@ -183,6 +181,13 @@ class ValidationManager:
             X_val = fold_data['X_val']
             y_train = fold_data['y_train']
             y_val = fold_data['y_val']
+            
+            # GPU Optimization: Convert sparse matrices to dense arrays if needed
+            if hasattr(X_train, 'toarray'):  # Sparse matrix
+                print(f"   🔄 Converting sparse matrix to dense for GPU acceleration in CV fold {fold}...")
+                X_train = X_train.toarray()
+                X_val = X_val.toarray()
+                print(f"   ✅ Sparse matrix converted to dense arrays for GPU")
             
             # Train model
             model.fit(X_train, y_train)
@@ -293,8 +298,6 @@ class ValidationManager:
         if metrics is None:
             metrics = ['accuracy', 'precision', 'recall', 'f1']
         
-        print(f"🔍 Evaluating {model.__class__.__name__} on test data from CV cache...")
-        
         # Get test data from first fold (all folds should have same test data)
         first_fold = cv_embeddings[f'fold_1']
         if 'X_test' not in first_fold or 'y_test' not in first_fold:
@@ -306,6 +309,7 @@ class ValidationManager:
         
         if X_test is None or y_test is None:
             print("⚠️ Test data is None in CV cache")
+            print("   💡 This is normal for some embedding types - using CV validation results instead")
             return {}
         
         print(f"  📊 Test data: {X_test.shape if hasattr(X_test, 'shape') else len(X_test)} samples")
@@ -367,8 +371,6 @@ class ValidationManager:
         all_predictions = []
         all_true_labels = []
         
-        print(f"🔄 Performing {self.cv_folds}-Fold Cross-Validation...")
-        
         # Ensure X and y are properly formatted for CV
         # Handle sparse matrices and ensure proper dimensions
         if hasattr(X, 'shape'):
@@ -408,8 +410,10 @@ class ValidationManager:
                 # Standard processing for BoW/TF-IDF or pre-computed features
                 # Split data for this fold - handle sparse matrices properly
                 if hasattr(X_array, 'toarray'):  # Sparse matrix
-                    X_train = X_array[train_idx]
-                    X_val = X_array[val_idx]
+                    # MEMORY OPTIMIZATION: Keep sparse matrices for memory efficiency
+                    print(f"   📊 Using sparse matrix format for memory efficiency in CV fold {fold}")
+                    X_train = X_array[train_idx]  # Keep sparse
+                    X_val = X_array[val_idx]      # Keep sparse
                 else:  # Dense array
                     X_train = X_array[train_idx]
                     X_val = X_array[val_idx]
