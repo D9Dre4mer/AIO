@@ -1221,7 +1221,7 @@ class StreamlitTrainingPipeline:
             }
     
     def _vectorize_bow(self, vectorizer, X_train, X_val, X_test):
-        """Vectorize data using Bag of Words with GPU optimization"""
+        """Vectorize data using Bag of Words"""
         try:
             if hasattr(vectorizer, 'fit_transform_bow'):
                 X_train_bow = vectorizer.fit_transform_bow(X_train)
@@ -1235,16 +1235,6 @@ class StreamlitTrainingPipeline:
                 X_val_bow = cv.transform(X_val) if len(X_val) > 0 else None
                 X_test_bow = cv.transform(X_test)
             
-            # GPU Optimization: Convert sparse matrices to dense arrays
-            from scipy import sparse
-            if sparse.issparse(X_train_bow):
-                print(f"   🔄 Converting BoW from sparse to dense for GPU acceleration...")
-                X_train_bow = X_train_bow.toarray()
-                if X_val_bow is not None:
-                    X_val_bow = X_val_bow.toarray()
-                X_test_bow = X_test_bow.toarray()
-                print(f"   ✅ BoW converted to dense arrays for GPU")
-            
             return {
                 'train': X_train_bow,
                 'val': X_val_bow,
@@ -1255,7 +1245,7 @@ class StreamlitTrainingPipeline:
             return None
     
     def _vectorize_tfidf(self, vectorizer, X_train, X_val, X_test):
-        """Vectorize data using TF-IDF with GPU optimization"""
+        """Vectorize data using TF-IDF"""
         try:
             if hasattr(vectorizer, 'fit_transform_tfidf'):
                 X_train_tfidf = vectorizer.fit_transform_tfidf(X_train)
@@ -1268,16 +1258,6 @@ class StreamlitTrainingPipeline:
                 X_train_tfidf = tfidf.fit_transform(X_train)
                 X_val_tfidf = tfidf.transform(X_val) if len(X_val) > 0 else None
                 X_test_tfidf = tfidf.transform(X_test)
-            
-            # GPU Optimization: Convert sparse matrices to dense arrays
-            from scipy import sparse
-            if sparse.issparse(X_train_tfidf):
-                print(f"   🔄 Converting TF-IDF from sparse to dense for GPU acceleration...")
-                X_train_tfidf = X_train_tfidf.toarray()
-                if X_val_tfidf is not None:
-                    X_val_tfidf = X_val_tfidf.toarray()
-                X_test_tfidf = X_test_tfidf.toarray()
-                print(f"   ✅ TF-IDF converted to dense arrays for GPU")
             
             return {
                 'train': X_train_tfidf,
