@@ -10,10 +10,23 @@ from sklearn.cluster import KMeans
 from sklearn.decomposition import TruncatedSVD
 from sklearn.metrics import silhouette_score
 import matplotlib.pyplot as plt
-
 from ..base.base_model import BaseModel
 from ..base.metrics import ModelMetrics
-from config import KMEANS_N_CLUSTERS, KMEANS_SVD_THRESHOLD, KMEANS_SVD_COMPONENTS
+from config import (KMEANS_N_CLUSTERS, KMEANS_SVD_THRESHOLD,
+                   KMEANS_SVD_COMPONENTS, ENABLE_RAPIDS_CUML,
+                   RAPIDS_FALLBACK_TO_CPU, RAPIDS_AUTO_DETECT_DEVICE)
+
+# Import RAPIDS cuML with fallback
+try:
+    from cuml.cluster import KMeans as cuMLKMeans
+    from cuml.common.device_selection import set_global_device_type
+    from cuml.common import cuda
+    RAPIDS_AVAILABLE = True
+except ImportError:
+    RAPIDS_AVAILABLE = False
+    cuMLKMeans = None
+    set_global_device_type = None
+    cuda = None
 
 
 class KMeansModel(BaseModel):
@@ -28,15 +41,93 @@ class KMeansModel(BaseModel):
         self.optimal_k = None
         self.optimization_results = {}
         
+        # RAPIDS cuML configuration
+        self.use_rapids = ENABLE_RAPIDS_CUML and RAPIDS_AVAILABLE
+        self.device_type = 'cpu'  # Will be determined during fit
+        self.rapids_initialized = False
+    
+    def _initialize_rapids(self) -> bool:
+        """Initialize RAPIDS cuML and determine device type"""
+        if not self.use_rapids or not RAPIDS_AVAILABLE:
+            return False
+        
+        try:
+            if RAPIDS_AUTO_DETECT_DEVICE:
+                # Auto-detect best device
+                if cuda and cuda.is_available():
+                    self.device_type = 'gpu'
+                    if set_global_device_type:
+                        set_global_device_type('gpu')
+                    print("🚀 RAPIDS cuML: Using GPU acceleration")
+                else:
+                    self.device_type = 'cpu'
+                    if set_global_device_type:
+                        set_global_device_type('cpu')
+                    print("💻 RAPIDS cuML: Using CPU (GPU not available)")
+            else:
+                # Use CPU by default
+                self.device_type = 'cpu'
+                if set_global_device_type:
+                    set_global_device_type('cpu')
+                print("💻 RAPIDS cuML: Using CPU")
+            
+            self.rapids_initialized = True
+            return True
+            
+        except Exception as e:
+            print(f"⚠️ RAPIDS cuML initialization failed: {e}")
+            self.device_type = 'cpu'
+            self.rapids_initialized = False
+            return False
+    
+    def _create_kmeans_model(self, n_clusters: int, random_state: int = 42):
+        """Create appropriate KMeans model (RAPIDS cuML or scikit-learn)"""
+        if self.use_rapids and self.rapids_initialized and cuMLKMeans:
+            try:
+                # Use RAPIDS cuML KMeans
+                return cuMLKMeans(
+                    n_clusters=n_clusters,
+                    random_state=random_state,
+                    init='scalable-k-means++'  # RAPIDS cuML default
+                )
+            except Exception as e:
+                print(f"⚠️ RAPIDS cuML KMeans creation failed: {e}")
+                if RAPIDS_FALLBACK_TO_CPU:
+                    print("🔄 Falling back to scikit-learn KMeans")
+                    return KMeans(n_clusters=n_clusters, random_state=random_state)
+                else:
+                    raise
+        else:
+            # Use scikit-learn KMeans
+            return KMeans(n_clusters=n_clusters, random_state=random_state)
+    
+    def _convert_to_dense_if_needed(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
+        """Convert sparse matrix to dense if using RAPIDS cuML on GPU"""
+        if (self.use_rapids and self.device_type == 'gpu' and 
+            sparse.issparse(X) and RAPIDS_AVAILABLE):
+            print("🔄 Converting sparse matrix to dense for RAPIDS cuML GPU")
+            return X.toarray().astype(np.float32)
+        elif sparse.issparse(X):
+            return X
+        else:
+            return X.astype(np.float32) if X.dtype != np.float32 else X
+        
     def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
             y: np.ndarray = None) -> 'KMeansModel':
         """Fit K-Means model with optional SVD preprocessing"""
         
+        # Initialize RAPIDS cuML if enabled
+        if self.use_rapids and not self.rapids_initialized:
+            self._initialize_rapids()
+        
         # Handle sparse matrices and high-dimensional data
         X_processed, X_test_placeholder = self._preprocess_data(X)
         
-        # Fit K-Means
-        self.model = KMeans(n_clusters=self.n_clusters, random_state=42)
+        # Convert to appropriate format for RAPIDS cuML if needed
+        X_processed = self._convert_to_dense_if_needed(X_processed)
+        
+        # Create and fit K-Means model
+        self.model = self._create_kmeans_model(self.n_clusters, random_state=42)
         cluster_ids = self.model.fit_predict(X_processed)
         
         # Create cluster to label mapping if labels provided
@@ -60,6 +151,9 @@ class KMeansModel(BaseModel):
         
         # Preprocess data (not training)
         X_processed, _ = self._preprocess_data(X, is_training=False)
+        
+        # Convert to appropriate format for RAPIDS cuML if needed
+        X_processed = self._convert_to_dense_if_needed(X_processed)
         
         # Get cluster predictions
         cluster_ids = self.model.predict(X_processed)
@@ -166,7 +260,11 @@ class KMeansModel(BaseModel):
         info.update({
             'n_clusters': self.n_clusters,
             'has_svd': self.svd_model is not None,
-            'cluster_mapping': self.cluster_to_label
+            'cluster_mapping': self.cluster_to_label,
+            'rapids_enabled': self.use_rapids,
+            'device_type': self.device_type,
+            'rapids_available': RAPIDS_AVAILABLE,
+            'model_type': 'RAPIDS cuML KMeans' if (self.use_rapids and self.rapids_initialized) else 'scikit-learn KMeans'
         })
         return info
 
@@ -227,9 +325,12 @@ class KMeansModel(BaseModel):
         """Calculate Within-Cluster Sum of Squares (WCSS) for different K values"""
         wcss_scores = {}
         
+        # Convert to appropriate format for RAPIDS cuML if needed
+        X_processed = self._convert_to_dense_if_needed(X)
+        
         for k in k_range:
-            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            kmeans.fit(X)
+            kmeans = self._create_kmeans_model(k, random_state=42)
+            kmeans.fit(X_processed)
             wcss_scores[k] = kmeans.inertia_
         
         return wcss_scores
@@ -238,14 +339,17 @@ class KMeansModel(BaseModel):
         """Calculate silhouette scores for different K values"""
         silhouette_scores = {}
         
+        # Convert to appropriate format for RAPIDS cuML if needed
+        X_processed = self._convert_to_dense_if_needed(X)
+        
         for k in k_range:
             if k == 1:  # Silhouette score requires at least 2 clusters
                 silhouette_scores[k] = 0.0
                 continue
                 
-            kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-            cluster_labels = kmeans.fit_predict(X)
-            silhouette_scores[k] = silhouette_score(X, cluster_labels)
+            kmeans = self._create_kmeans_model(k, random_state=42)
+            cluster_labels = kmeans.fit_predict(X_processed)
+            silhouette_scores[k] = silhouette_score(X_processed, cluster_labels)
         
         return silhouette_scores
     

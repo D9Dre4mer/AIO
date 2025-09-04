@@ -1184,8 +1184,8 @@ class ComprehensiveEvaluator:
         if step1_data and 'selected_categories' in step1_data:
             categories = step1_data['selected_categories']
             if categories:
-                # Use first 3 categories for cache key
-                cat_str = '_'.join(sorted(categories)[:3])
+                # Ensure all categories are strings before joining
+                cat_str = '_'.join(str(cat) for cat in sorted(categories)[:3])
                 cache_components.append(f"cats_{cat_str}")
         
         # CRITICAL FIX: Add data content hash to distinguish different files

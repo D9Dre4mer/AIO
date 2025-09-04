@@ -3,7 +3,7 @@ K-Nearest Neighbors Classification Model with REAL GPU Acceleration
 Uses PyTorch for GPU-accelerated distance calculations
 """
 
-from typing import Dict, Any, Union, Tuple, List, Optional
+from typing import Dict, Any, Union, Tuple, List
 import numpy as np
 from scipy import sparse
 from sklearn.neighbors import KNeighborsClassifier
@@ -22,53 +22,92 @@ except ImportError:
     TORCH_AVAILABLE = False
     print("⚠️ PyTorch not available - GPU acceleration disabled")
 
+# FAISS GPU acceleration imports
+try:
+    import faiss
+    FAISS_AVAILABLE = True
+except ImportError:
+    FAISS_AVAILABLE = False
+    print("⚠️ FAISS not available - GPU KNN acceleration disabled")
+
 
 class KNNModel(BaseModel):
     """K-Nearest Neighbors classification model"""
     
-    def __init__(self, n_neighbors: int = KNN_N_NEIGHBORS, weights: str = 'uniform', metric: str = 'euclidean', **kwargs):
+    def __init__(self, n_neighbors: int = KNN_N_NEIGHBORS, 
+                 weights: str = 'uniform', metric: str = 'euclidean', **kwargs):
         """Initialize KNN model"""
         super().__init__(n_neighbors=n_neighbors, **kwargs)
         self.n_neighbors = n_neighbors
         self.weights = weights
         self.metric = metric
         
+        # FAISS GPU/CPU support with fallback
+        self.faiss_available = self._check_faiss_availability()
+        self.faiss_gpu_available = self._check_faiss_gpu_availability()
+        self.faiss_index = None
+        self.faiss_res = None
+        self.faiss_gpu_res = None
+        self.use_faiss_gpu = False
+        self.use_faiss_cpu = False
+        
     def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
             y: np.ndarray, use_gpu: bool = False) -> 'KNNModel':
-        """Fit KNN model to training data using CPU (optimized for performance)"""
+        """Fit KNN model to training data with FAISS GPU acceleration"""
         
-        # Use CPU-based KNN (faster than GPU for most cases)
-        print(f"🖥️ Using CPU-based KNN (optimized for performance)")
+        # Convert sparse to dense if needed for FAISS
+        if sparse.issparse(X):
+            print("🔄 Converting sparse matrix to dense for FAISS GPU acceleration...")
+            X = X.toarray()
         
-        # Choose algorithm based on data type
-        algorithm = 'brute' if sparse.issparse(X) else 'auto'
-        
-        self.model = KNeighborsClassifier(
-            n_neighbors=self.n_neighbors,
-            weights=self.weights,
-            metric=self.metric,
-            algorithm=algorithm
-        )
-        self.model.fit(X, y)
-        self.use_gpu = False
-        self.is_fitted = True
-        
-        return self
+        # Choose implementation with smart fallback: FAISS GPU → FAISS CPU → scikit-learn
+        if self.faiss_available and use_gpu:
+            if self.faiss_gpu_available:
+                print("🚀 Using FAISS GPU-accelerated KNN")
+                return self._fit_faiss_gpu(X, y)
+            else:
+                print("🖥️ Using FAISS CPU-accelerated KNN (GPU not available)")
+                return self._fit_faiss_cpu(X, y)
+        elif self.faiss_available:
+            print("🖥️ Using FAISS CPU-accelerated KNN")
+            return self._fit_faiss_cpu(X, y)
+        else:
+            print("⚠️ Using scikit-learn KNN (FAISS not available)")
+            return self._fit_sklearn(X, y)
     
     def predict(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
-        """Make predictions on new data using CPU (optimized for performance)"""
+        """Make predictions on new data with FAISS GPU acceleration"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
         
-        # Use CPU-based prediction (faster and more reliable)
-        return self.model.predict(X)
+        # Convert sparse to dense if needed for FAISS
+        if sparse.issparse(X):
+            X = X.toarray()
+        
+        # Choose implementation based on what was used for fitting
+        if self.use_faiss_gpu and self.faiss_gpu_res is not None:
+            return self._predict_faiss_gpu(X)
+        elif self.use_faiss_cpu and self.faiss_index is not None:
+            return self._predict_faiss_cpu(X)
+        else:
+            return self.model.predict(X)
     
     def predict_proba(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
-        """Get prediction probabilities"""
+        """Get prediction probabilities with FAISS GPU acceleration"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
         
-        return self.model.predict_proba(X)
+        # Convert sparse to dense if needed for FAISS
+        if sparse.issparse(X):
+            X = X.toarray()
+        
+        # Choose implementation based on what was used for fitting
+        if self.use_faiss_gpu and self.faiss_gpu_res is not None:
+            return self._predict_proba_faiss_gpu(X)
+        elif self.use_faiss_cpu and self.faiss_index is not None:
+            return self._predict_proba_faiss_cpu(X)
+        else:
+            return self.model.predict_proba(X)
     
     def score(self, X: Union[np.ndarray, sparse.csr_matrix], y: np.ndarray) -> float:
         """Calculate accuracy score (compatible with scikit-learn)"""
@@ -107,15 +146,26 @@ class KNNModel(BaseModel):
     def get_model_info(self) -> Dict[str, Any]:
         """Get detailed model information"""
         info = super().get_model_info()
+        
         # Determine algorithm based on model state
-        if hasattr(self, 'model') and self.model is not None:
+        if self.use_faiss_gpu and self.faiss_gpu_res is not None:
+            algorithm = f"FAISS GPU ({self.metric})"
+        elif self.use_faiss_cpu and self.faiss_index is not None:
+            algorithm = f"FAISS CPU ({self.metric})"
+        elif hasattr(self, 'model') and self.model is not None:
             algorithm = self.model.algorithm
         else:
             algorithm = 'unknown'
             
         info.update({
             'n_neighbors': self.n_neighbors,
-            'algorithm': algorithm
+            'algorithm': algorithm,
+            'faiss_available': self.faiss_available,
+            'faiss_gpu_available': self.faiss_gpu_available,
+            'use_faiss_gpu': self.use_faiss_gpu,
+            'use_faiss_cpu': self.use_faiss_cpu,
+            'weights': self.weights,
+            'metric': self.metric
         })
         return info
     
@@ -157,8 +207,6 @@ class KNNModel(BaseModel):
         gpu_info = self._check_gpu_availability(use_gpu)
         device_info = f"GPU ({gpu_info['device_name']})" if gpu_info['available'] else "CPU"
         
-        print(f"🔍 Tuning KNN hyperparameters with {cv_folds}-fold CV...")
-        print(f"📊 Sample size: {n_samples}, Testing K values: {k_range}")
         print(f"🚀 Using device: {device_info}")
         
         # Define parameter grid (adaptive based on sample size)
@@ -170,25 +218,25 @@ class KNNModel(BaseModel):
         
         # Choose algorithm based on data type and GPU availability
         if gpu_info['available'] and not sparse.issparse(X_train):
-            # Use REAL GPU acceleration with PyTorch
-            print(f"🚀 Using REAL GPU-accelerated KNN with PyTorch")
+            # Use FAISS GPU acceleration
+            print(f"🚀 Using FAISS GPU-accelerated KNN")
             
-            # Test GPU acceleration with a small sample first
+            # Test FAISS GPU acceleration with a small sample first
             try:
                 test_X = X_train[:100]  # Use first 100 samples for testing
                 test_y = y_train[:100]
                 
-                # Create temporary GPU KNN model for testing
+                # Create temporary FAISS GPU KNN model for testing
                 temp_knn = KNNModel(n_neighbors=5, weights='uniform', metric='cosine')
                 temp_knn.fit(test_X, test_y, use_gpu=True)
                 temp_predictions = temp_knn.predict(test_X)
                 
-                print(f"✅ GPU acceleration test successful - using PyTorch KNN")
+                print(f"✅ FAISS GPU acceleration test successful")
                 use_real_gpu = True
                 
             except Exception as e:
-                print(f"⚠️ GPU acceleration test failed: {e}")
-                print(f"🔄 Falling back to scikit-learn with GPU detection")
+                print(f"⚠️ FAISS GPU acceleration test failed: {e}")
+                print(f"🔄 Falling back to scikit-learn")
                 use_real_gpu = False
                 algorithm = 'auto'
         else:
@@ -200,8 +248,7 @@ class KNNModel(BaseModel):
                 print(f"🔄 Using CPU algorithm: {algorithm}")
         
         if use_real_gpu:
-            # Use our GPU-accelerated KNN implementation
-            print(f"🎯 Testing GPU-accelerated KNN with PyTorch...")
+            # Use our FAISS GPU-accelerated KNN implementation
             
             # Test different K values with GPU acceleration
             best_score = 0
@@ -209,16 +256,16 @@ class KNNModel(BaseModel):
             
             for k in k_range:
                 for weight in ['uniform', 'distance']:
-                    print(f"🔍 Testing K={k}, weights={weight} with GPU...")
                     
                     # Manual cross-validation for GPU mode (avoid scikit-learn compatibility issues)
                     from sklearn.model_selection import KFold
                     kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
                     scores = []
                     
-                    for train_idx, val_idx in kf.split(X_train):
+                    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X_train)):
                         X_fold_train, X_fold_val = X_train[train_idx], X_train[val_idx]
                         y_fold_train, y_fold_val = y_train[train_idx], y_train[val_idx]
+                        
                         
                         # Create and fit model for this fold
                         fold_knn = KNNModel(n_neighbors=k, weights=weight, metric='cosine')
@@ -233,19 +280,10 @@ class KNNModel(BaseModel):
                         elif scoring == 'f1_macro':
                             from sklearn.metrics import f1_score
                             try:
-                                # Debug: Print detailed information for first few iterations
-                                if k <= 5:  # Only debug first few K values to avoid spam
-                                    print(f"     Debug: y_fold_val unique: {np.unique(y_fold_val)}")
-                                    print(f"     Debug: y_pred unique: {np.unique(y_pred)}")
-                                    print(f"     Debug: y_fold_val shape: {y_fold_val.shape}")
-                                    print(f"     Debug: y_pred shape: {y_pred.shape}")
                                 
                                 # Calculate f1_score
                                 score = f1_score(y_fold_val, y_pred, average='macro')
-                                
-                                # Debug: Print score information
-                                if k <= 5:
-                                    print(f"     Debug: Raw f1_score: {score:.6f}")
+
                                 
                                 # Check for NaN or invalid scores
                                 if np.isnan(score) or np.isinf(score):
@@ -259,14 +297,11 @@ class KNNModel(BaseModel):
                             # Default to accuracy
                             score = (y_pred == y_fold_val).mean()
                         
-                        # Debug: Print final score for first few iterations
-                        if k <= 5:
-                            print(f"     Debug: Final score: {score:.6f}")
+
                         
                         scores.append(score)
                     
                     mean_score = np.mean(scores)
-                    print(f"   • K={k}, weights={weight}: {mean_score:.4f}")
                     
                     if mean_score > best_score:
                         best_score = mean_score
@@ -283,11 +318,6 @@ class KNNModel(BaseModel):
             all_k_values = sorted(k_range)
             all_weights = ['uniform', 'distance']
             
-            print(f"🔍 Creating cv_results for K values: {all_k_values}")
-            print(f"🔍 Creating cv_results for weights: {all_weights}")
-            print(f"🔍 Debug: k_range = {k_range}")
-            print(f"🔍 Debug: len(k_range) = {len(k_range)}")
-            print(f"🔍 Debug: best_params = {best_params}")
             
             param_n_neighbors = []
             param_weights = []
@@ -325,14 +355,6 @@ class KNNModel(BaseModel):
             }
             
             print(f"✅ Created comprehensive cv_results with {len(param_n_neighbors)} configurations")
-            print(f"📊 K values in cv_results: {sorted(np.unique(param_n_neighbors))}")
-            print(f"📊 Weights in cv_results: {sorted(np.unique(param_weights))}")
-            print(f"📊 Expected K values: {all_k_values}")
-            print(f"📊 Expected weights: {all_weights}")
-            print(f"🔍 Debug: cv_results['param_n_neighbors'] shape: {cv_results['param_n_neighbors'].shape}")
-            print(f"🔍 Debug: cv_results['param_n_neighbors'] content: {cv_results['param_n_neighbors'][:5]}... (showing first 5)")
-            print(f"🔍 Debug: cv_results['param_weights'] content: {cv_results['param_weights'][:5]}... (showing first 5)")
-            print(f"🔍 Debug: cv_results['mean_test_score'] content: {cv_results['mean_test_score'][:5]}... (showing first 5)")
             
             return {
                 'best_params': best_params,
@@ -451,8 +473,9 @@ class KNNModel(BaseModel):
         device_info = f"GPU ({gpu_info['device_name']})" if gpu_info['available'] else "CPU"
         
         print(f"🎯 Determining optimal K for KNN with {cv_folds}-fold CV...")
-        print(f"📊 Sample size: {n_samples}, Testing K values: {k_range}")
         print(f"🚀 Using device: {device_info}")
+        
+        # DEBUG: Check input data
         
         # Define parameter grid focused on K values with cosine metric
         param_grid = {
@@ -462,25 +485,25 @@ class KNNModel(BaseModel):
         
         # Choose algorithm based on data type and GPU availability
         if gpu_info['available'] and not sparse.issparse(X_train):
-            # Use REAL GPU acceleration with PyTorch
-            print(f"🚀 Using REAL GPU-accelerated KNN with PyTorch")
+            # Use FAISS GPU acceleration
+            print(f"🚀 Using FAISS GPU-accelerated KNN")
             
-            # Test GPU acceleration with a small sample first
+            # Test FAISS GPU acceleration with a small sample first
             try:
                 test_X = X_train[:100]  # Use first 100 samples for testing
                 test_y = y_train[:100]
                 
-                # Create temporary GPU KNN model for testing
+                # Create temporary FAISS GPU KNN model for testing
                 temp_knn = KNNModel(n_neighbors=5, weights='uniform', metric='cosine')
                 temp_knn.fit(test_X, test_y, use_gpu=True)
                 temp_predictions = temp_knn.predict(test_X)
                 
-                print(f"✅ GPU acceleration test successful - using PyTorch KNN")
+                print(f"✅ FAISS GPU acceleration test successful")
                 use_real_gpu = True
                 
             except Exception as e:
-                print(f"⚠️ GPU acceleration test failed: {e}")
-                print(f"🔄 Falling back to scikit-learn with GPU detection")
+                print(f"⚠️ FAISS GPU acceleration test failed: {e}")
+                print(f"🔄 Falling back to scikit-learn")
                 use_real_gpu = False
                 algorithm = 'auto'
         else:
@@ -492,8 +515,7 @@ class KNNModel(BaseModel):
                 print(f"🔄 Using CPU algorithm: {algorithm}")
         
         if use_real_gpu:
-            # Use our GPU-accelerated KNN implementation
-            print(f"🎯 Testing GPU-accelerated KNN with PyTorch...")
+            # Use our FAISS GPU-accelerated KNN implementation
             
             # Test different parameters with GPU acceleration
             best_score = 0
@@ -501,16 +523,16 @@ class KNNModel(BaseModel):
             
             for k in k_range:
                 for weight in ['uniform', 'distance']:
-                    print(f"🔍 Testing K={k}, weights={weight} with GPU...")
                     
                     # Manual cross-validation for GPU mode (avoid scikit-learn compatibility issues)
                     from sklearn.model_selection import KFold
                     kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
                     scores = []
                     
-                    for train_idx, val_idx in kf.split(X_train):
+                    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(X_train)):
                         X_fold_train, X_fold_val = X_train[train_idx], X_train[val_idx]
                         y_fold_train, y_fold_val = y_train[train_idx], y_train[val_idx]
+                        
                         
                         # Create and fit model for this fold
                         fold_knn = KNNModel(n_neighbors=k, weights=weight, metric='cosine')
@@ -525,19 +547,11 @@ class KNNModel(BaseModel):
                         elif scoring == 'f1_macro':
                             from sklearn.metrics import f1_score
                             try:
-                                # Debug: Print detailed information for first few iterations
-                                if k <= 5:  # Only debug first few K values to avoid spam
-                                    print(f"     Debug: y_fold_val unique: {np.unique(y_fold_val)}")
-                                    print(f"     Debug: y_pred unique: {np.unique(y_pred)}")
-                                    print(f"     Debug: y_fold_val shape: {y_fold_val.shape}")
-                                    print(f"     Debug: y_pred shape: {y_pred.shape}")
                                 
                                 # Calculate f1_score
                                 score = f1_score(y_fold_val, y_pred, average='macro')
                                 
-                                # Debug: Print score information
-                                if k <= 5:
-                                    print(f"     Debug: Raw f1_score: {score:.6f}")
+
                                 
                                 # Check for NaN or invalid scores
                                 if np.isnan(score) or np.isinf(score):
@@ -551,15 +565,12 @@ class KNNModel(BaseModel):
                             # Default to accuracy
                             score = (y_pred == y_fold_val).mean()
                         
-                        # Debug: Print final score for first few iterations
-                        if k <= 5:
-                            print(f"     Debug: Final score: {score:.6f}")
+
                         
                         scores.append(score)
                     
                     mean_score = np.mean(scores)
                     
-                    print(f"   • K={k}, weights={weight}: {mean_score:.4f}")
                     
                     if mean_score > best_score:
                         best_score = mean_score
@@ -576,11 +587,6 @@ class KNNModel(BaseModel):
             all_k_values = sorted(k_range)
             all_weights = ['uniform', 'distance']
             
-            print(f"🔍 Creating cv_results for K values: {all_k_values}")
-            print(f"🔍 Creating cv_results for weights: {all_weights}")
-            print(f"🔍 Debug: k_range = {k_range}")
-            print(f"🔍 Debug: len(k_range) = {len(k_range)}")
-            print(f"🔍 Debug: best_params = {best_params}")
             
             param_n_neighbors = []
             param_weights = []
@@ -617,14 +623,6 @@ class KNNModel(BaseModel):
             }
             
             print(f"✅ Created comprehensive cv_results with {len(param_n_neighbors)} configurations")
-            print(f"📊 K values in cv_results: {sorted(np.unique(param_n_neighbors))}")
-            print(f"📊 Weights in cv_results: {sorted(np.unique(param_weights))}")
-            print(f"📊 Expected K values: {all_k_values}")
-            print(f"📊 Expected weights: {all_weights}")
-            print(f"🔍 Debug: cv_results['param_n_neighbors'] shape: {cv_results['param_n_neighbors'].shape}")
-            print(f"🔍 Debug: cv_results['param_n_neighbors'] content: {cv_results['param_n_neighbors'][:5]}... (showing first 5)")
-            print(f"🔍 Debug: cv_results['param_weights'] content: {cv_results['param_weights'][:5]}... (showing first 5)")
-            print(f"🔍 Debug: cv_results['mean_test_score'] content: {cv_results['mean_test_score'][:5]}... (showing first 5)")
             
             return {
                 'best_params': best_params,
@@ -680,7 +678,6 @@ class KNNModel(BaseModel):
             results = grid_search.cv_results_
             benchmark_results = {}
             
-            print(f"\n📊 Benchmark Results for KNN (cosine metric):")
             for k in [3, 5, 7, 9, 11, 13, 15]:
                 mask = results['param_n_neighbors'] == k
                 if np.any(mask):
@@ -775,9 +772,6 @@ class KNNModel(BaseModel):
             import pandas as pd
             
             # Check if we have full cv_results or just single results (GPU mode)
-            print(f"🔍 Debug: cv_results has {len(cv_results['param_n_neighbors'])} entries")
-            print(f"🔍 Debug: param_grid['n_neighbors'] = {param_grid['n_neighbors']}")
-            print(f"🔍 Debug: Expected K values = {sorted(param_grid['n_neighbors'])}")
             
             if len(cv_results['param_n_neighbors']) == 1:
                 # GPU mode - create synthetic data for all K values
@@ -787,8 +781,6 @@ class KNNModel(BaseModel):
                 all_k_values = sorted(param_grid['n_neighbors'])
                 all_weights = param_grid['weights']
                 
-                print(f"🔍 Creating data for K values: {all_k_values}")
-                print(f"🔍 Creating data for weights: {all_weights}")
                 
                 # Create synthetic results with slight variations
                 synthetic_results = []
@@ -813,8 +805,6 @@ class KNNModel(BaseModel):
                 
                 results_df = pd.DataFrame(synthetic_results)
                 print(f"✅ Created synthetic data for {len(all_k_values)} K values × {len(all_weights)} weights")
-                print(f"📊 DataFrame shape: {results_df.shape}")
-                print(f"📊 K values in DataFrame: {sorted(results_df['param_n_neighbors'].unique())}")
                 
             else:
                 # CPU mode - use actual cv_results
@@ -828,7 +818,6 @@ class KNNModel(BaseModel):
                     )
                 })
                 print(f"✅ Using actual cv_results with {len(results_df)} data points")
-                print(f"📊 K values in cv_results: {sorted(results_df['param_n_neighbors'].unique())}")
             
             # Pivot data for plotting - Mean Macro-F1 vs K, 
             # mỗi weight một đường + error bar
@@ -846,9 +835,6 @@ class KNNModel(BaseModel):
                 aggfunc="mean"
             ).sort_index()
             
-            print(f"📊 Pivot mean shape: {pivot_mean.shape}")
-            print(f"📊 Pivot mean index (K values): {list(pivot_mean.index)}")
-            print(f"📊 Pivot mean columns (weights): {list(pivot_mean.columns)}")
             
             # Ensure all K values are present in the pivot table
             expected_k_values = sorted(param_grid['n_neighbors'])
@@ -864,11 +850,6 @@ class KNNModel(BaseModel):
                 pivot_std = pivot_std.sort_index()
                 print(f"✅ Added missing K values: {missing_k_values}")
             
-            print(f"📊 Final pivot mean index: {list(pivot_mean.index)}")
-            print(f"🔍 Debug: Expected vs Actual K values:")
-            print(f"  Expected: {expected_k_values}")
-            print(f"  Actual: {list(pivot_mean.index)}")
-            print(f"  Missing: {missing_k_values}")
             
             fig, ax = plt.subplots(figsize=(10, 6))
             
@@ -894,7 +875,6 @@ class KNNModel(BaseModel):
                                 label=f"Weight = {weight}", linewidth=2,
                                 markersize=8, elinewidth=1.5
                             )
-                            print(f"📊 Plotted {weight} weight: {len(valid_ks)} K values")
                         else:
                             print(f"⚠️ No valid data for weight {weight}")
                 else:
@@ -983,7 +963,6 @@ class KNNModel(BaseModel):
         print(f"   CV Folds: {results['cv_folds']}")
         
         if results['benchmark_results']:
-            print(f"\n📊 K Value Benchmark:")
             for k, metrics in results['benchmark_results'].items():
                 print(f"   K = {k}: F1 = {metrics['mean_f1']:.4f} (± {metrics['std_f1']:.4f})")
     
@@ -1035,7 +1014,6 @@ class KNNModel(BaseModel):
             print("⚠️  No benchmark results available. Run tune_hyperparameters() first.")
             return
         
-        print(f"\n📊 KNN Benchmark Results (Best per K value):")
         print(f"{'K':<4} {'Weights':<10} {'Metric':<10} {'Mean Score':<12} {'Std':<8}")
         print("-" * 50)
         
@@ -1052,6 +1030,431 @@ class KNNModel(BaseModel):
         print(f"\n🏆 Best K: {best_k} with score: {best_score:.4f}")
         print(f"   Parameters: {benchmark[best_k]['weights']} weights, "
               f"{benchmark[best_k]['metric']} metric")
+    
+    # ==================== FAISS GPU IMPLEMENTATION ====================
+    
+    def _check_faiss_availability(self) -> bool:
+        """Check if FAISS is available (GPU or CPU)"""
+        if not FAISS_AVAILABLE:
+            return False
+        
+        try:
+            import faiss
+            # Test if FAISS is working (CPU or GPU)
+            if hasattr(faiss, 'IndexFlatL2'):
+                return True
+            else:
+                print("⚠️ FAISS not properly installed - using scikit-learn fallback")
+                return False
+        except Exception as e:
+            print(f"⚠️ FAISS check failed: {e} - using scikit-learn fallback")
+            return False
+    
+    def _check_faiss_gpu_availability(self) -> bool:
+        """Check if FAISS GPU is available"""
+        if not FAISS_AVAILABLE:
+            return False
+        
+        try:
+            import faiss
+            # Check if GPU resources are available
+            if hasattr(faiss, 'StandardGpuResources'):
+                # Test GPU functionality
+                res = faiss.StandardGpuResources()
+                return True
+            else:
+                return False
+        except Exception as e:
+            print(f"⚠️ FAISS GPU not available: {e}")
+            return False
+    
+    def _fit_faiss_gpu(self, X: np.ndarray, y: np.ndarray) -> 'KNNModel':
+        """Fit KNN model using FAISS acceleration (CPU or GPU)"""
+        try:
+            import faiss
+            
+            # Store training data and labels
+            self.X_train = np.ascontiguousarray(X.astype('float32'))
+            self.y_train = y
+            
+            # Get dimensions
+            d = X.shape[1]
+            
+            # Create FAISS index based on metric
+            if self.metric == 'cosine':
+                # For cosine similarity, we need to normalize vectors
+                faiss.normalize_L2(self.X_train)
+                self.faiss_index = faiss.IndexFlatIP(d)  # Inner product for cosine
+            elif self.metric == 'euclidean':
+                self.faiss_index = faiss.IndexFlatL2(d)  # L2 distance for euclidean
+            elif self.metric == 'manhattan':
+                # FAISS doesn't have IndexFlatL1, use L2 as fallback
+                self.faiss_index = faiss.IndexFlatL2(d)  # L1 distance for manhattan
+            else:
+                # Default to L2 for unknown metrics
+                self.faiss_index = faiss.IndexFlatL2(d)
+            
+            # Try to use GPU if available, otherwise use CPU
+            try:
+                # Check if GPU is available
+                if hasattr(faiss, 'StandardGpuResources'):
+                    self.faiss_res = faiss.StandardGpuResources()
+                    self.faiss_gpu_res = faiss.index_cpu_to_gpu(self.faiss_res, 0, self.faiss_index)
+                    self.faiss_gpu_res.add(self.X_train)
+                    print(f"✅ FAISS GPU index created with {len(X)} vectors, dimension {d}")
+                    print(f"🚀 Using {self.metric} metric on GPU")
+                else:
+                    # Use CPU FAISS
+                    self.faiss_index.add(self.X_train)
+                    self.faiss_gpu_res = self.faiss_index  # Use same index for consistency
+                    print(f"✅ FAISS CPU index created with {len(X)} vectors, dimension {d}")
+                    print(f"🚀 Using {self.metric} metric on CPU")
+            except Exception as gpu_error:
+                # Fallback to CPU FAISS
+                self.faiss_index.add(self.X_train)
+                self.faiss_gpu_res = self.faiss_index  # Use same index for consistency
+                print(f"✅ FAISS CPU index created with {len(X)} vectors, dimension {d}")
+                print(f"🚀 Using {self.metric} metric on CPU (GPU fallback)")
+            
+            # IMPORTANT: Create a fallback sklearn model for ensemble compatibility
+            # This ensures self.model is always available for ensemble learning
+            algorithm = 'brute' if sparse.issparse(X) else 'auto'
+            self.model = KNeighborsClassifier(
+                n_neighbors=self.n_neighbors,
+                weights=self.weights,
+                metric=self.metric,
+                algorithm=algorithm
+            )
+            # Fit the sklearn model as well for ensemble compatibility
+            self.model.fit(X, y)
+            
+            # Set flags
+            self.use_faiss_gpu = True
+            self.is_fitted = True
+            
+            return self
+            
+        except Exception as e:
+            print(f"❌ FAISS fitting failed: {e}")
+            print(f"🔄 Falling back to scikit-learn implementation")
+            return self._fit_sklearn(X, y)
+    
+    def _fit_faiss_cpu(self, X: np.ndarray, y: np.ndarray) -> 'KNNModel':
+        """Fit KNN model using FAISS CPU acceleration (optimized)"""
+        try:
+            import faiss
+            
+            # Convert to numpy array if not already
+            if not isinstance(X, np.ndarray):
+                X = np.asarray(X)
+            
+            # Check if X is empty or not 2D
+            if X.size == 0:
+                raise ValueError("Input array X is empty")
+            if X.ndim != 2:
+                raise ValueError(f"Input array X must be 2D, got {X.ndim}D")
+            
+            # Store training data and labels
+            self.X_train = np.ascontiguousarray(X.astype('float32'))
+            self.y_train = y
+            
+            # Get dimensions
+            d = X.shape[1]
+            
+            # Create FAISS index based on metric
+            if self.metric == 'cosine':
+                # For cosine similarity, normalize vectors
+                try:
+                    faiss.normalize_L2(self.X_train)
+                except Exception:
+                    # Fallback to manual normalization
+                    norms = np.linalg.norm(self.X_train, axis=1, keepdims=True)
+                    norms[norms == 0] = 1
+                    self.X_train = self.X_train / norms
+                
+                self.faiss_index = faiss.IndexFlatIP(d)
+            elif self.metric == 'euclidean':
+                self.faiss_index = faiss.IndexFlatL2(d)
+            elif self.metric == 'manhattan':
+                # FAISS doesn't have IndexFlatL1, use L2 as fallback
+                self.faiss_index = faiss.IndexFlatL2(d)
+            else:
+                self.faiss_index = faiss.IndexFlatL2(d)
+            
+            # Add training data to index with multiple fallback methods
+            try:
+                self.faiss_index.add(self.X_train)
+            except Exception:
+                try:
+                    X_fresh = np.ascontiguousarray(self.X_train, dtype=np.float32)
+                    self.faiss_index.add(X_fresh)
+                except Exception:
+                    X_cstyle = np.asarray(self.X_train, dtype=np.float32, order='C')
+                    self.faiss_index.add(X_cstyle)
+            
+            # IMPORTANT: Create a fallback sklearn model for ensemble compatibility
+            # This ensures self.model is always available for ensemble learning
+            algorithm = 'brute' if sparse.issparse(X) else 'auto'
+            self.model = KNeighborsClassifier(
+                n_neighbors=self.n_neighbors,
+                weights=self.weights,
+                metric=self.metric,
+                algorithm=algorithm
+            )
+            # Fit the sklearn model as well for ensemble compatibility
+            self.model.fit(X, y)
+            
+            # Set flags
+            self.use_faiss_gpu = False
+            self.use_faiss_cpu = True
+            self.is_fitted = True
+            
+            print(f"✅ FAISS CPU index created with {len(X)} vectors, dimension {d}")
+            print(f"🚀 Using {self.metric} metric on CPU (optimized)")
+            
+            return self
+            
+        except Exception as e:
+            print(f"❌ FAISS CPU fitting failed: {e}")
+            print(f"🔄 Falling back to scikit-learn implementation")
+            return self._fit_sklearn(X, y)
+    
+    def _fit_sklearn(self, X: np.ndarray, y: np.ndarray) -> 'KNNModel':
+        """Fit KNN model using scikit-learn (fallback)"""
+        # Choose algorithm based on data type
+        algorithm = 'brute' if sparse.issparse(X) else 'auto'
+        
+        self.model = KNeighborsClassifier(
+            n_neighbors=self.n_neighbors,
+            weights=self.weights,
+            metric=self.metric,
+            algorithm=algorithm
+        )
+        self.model.fit(X, y)
+        self.use_faiss_gpu = False
+        self.is_fitted = True
+        
+        return self
+    
+    def _predict_faiss_gpu(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions using FAISS GPU"""
+        try:
+            import faiss
+            
+            # Normalize for cosine similarity if needed
+            if self.metric == 'cosine':
+                faiss.normalize_L2(X.astype('float32'))
+            
+            # Search for nearest neighbors
+            distances, indices = self.faiss_gpu_res.search(X.astype('float32'), self.n_neighbors)
+            
+            # Get labels of nearest neighbors
+            y_train_array = np.array(self.y_train)
+            neighbor_labels = y_train_array[indices.flatten()].reshape(indices.shape)
+            
+            # Predict based on weights
+            if self.weights == 'uniform':
+                # Simple majority vote
+                predictions = []
+                for i in range(len(X)):
+                    unique_labels, counts = np.unique(neighbor_labels[i], return_counts=True)
+                    predictions.append(unique_labels[np.argmax(counts)])
+                return np.array(predictions)
+            
+            elif self.weights == 'distance':
+                # Weighted vote based on distances
+                predictions = []
+                for i in range(len(X)):
+                    # Avoid division by zero
+                    weights = 1.0 / (distances[i] + 1e-8)
+                    # Weighted vote
+                    unique_labels = np.unique(neighbor_labels[i])
+                    weighted_votes = []
+                    for label in unique_labels:
+                        mask = neighbor_labels[i] == label
+                        weighted_votes.append(np.sum(weights[mask]))
+                    predictions.append(unique_labels[np.argmax(weighted_votes)])
+                return np.array(predictions)
+            
+            else:
+                # Default to uniform
+                predictions = []
+                for i in range(len(X)):
+                    unique_labels, counts = np.unique(neighbor_labels[i], return_counts=True)
+                    predictions.append(unique_labels[np.argmax(counts)])
+                return np.array(predictions)
+                
+        except Exception as e:
+            print(f"❌ FAISS GPU prediction failed: {e}")
+            print(f"🔄 Falling back to scikit-learn prediction")
+            return self.model.predict(X)
+    
+    def _predict_proba_faiss_gpu(self, X: np.ndarray) -> np.ndarray:
+        """Get prediction probabilities using FAISS GPU"""
+        try:
+            import faiss
+            
+            # Normalize for cosine similarity if needed
+            if self.metric == 'cosine':
+                faiss.normalize_L2(X.astype('float32'))
+            
+            # Search for nearest neighbors
+            distances, indices = self.faiss_gpu_res.search(X.astype('float32'), self.n_neighbors)
+            
+            # Get labels of nearest neighbors
+            y_train_array = np.array(self.y_train)
+            neighbor_labels = y_train_array[indices.flatten()].reshape(indices.shape)
+            
+            # Get unique classes
+            unique_classes = np.unique(self.y_train)
+            n_classes = len(unique_classes)
+            
+            # Calculate probabilities
+            probabilities = []
+            for i in range(len(X)):
+                if self.weights == 'uniform':
+                    # Uniform weights
+                    class_counts = np.zeros(n_classes)
+                    for j, label in enumerate(neighbor_labels[i]):
+                        class_idx = np.where(unique_classes == label)[0][0]
+                        class_counts[class_idx] += 1
+                    prob = class_counts / self.n_neighbors
+                    
+                elif self.weights == 'distance':
+                    # Distance-based weights
+                    weights = 1.0 / (distances[i] + 1e-8)
+                    class_weights = np.zeros(n_classes)
+                    for j, label in enumerate(neighbor_labels[i]):
+                        class_idx = np.where(unique_classes == label)[0][0]
+                        class_weights[class_idx] += weights[j]
+                    prob = class_weights / np.sum(class_weights)
+                    
+                else:
+                    # Default to uniform
+                    class_counts = np.zeros(n_classes)
+                    for j, label in enumerate(neighbor_labels[i]):
+                        class_idx = np.where(unique_classes == label)[0][0]
+                        class_counts[class_idx] += 1
+                    prob = class_counts / self.n_neighbors
+                
+                probabilities.append(prob)
+            
+            return np.array(probabilities)
+            
+        except Exception as e:
+            print(f"❌ FAISS GPU probability prediction failed: {e}")
+            print(f"🔄 Falling back to scikit-learn prediction")
+            return self.model.predict_proba(X)
+    
+    def _predict_faiss_cpu(self, X: np.ndarray) -> np.ndarray:
+        """Make predictions using FAISS CPU (optimized)"""
+        try:
+            import faiss
+            
+            # Normalize for cosine similarity if needed
+            if self.metric == 'cosine':
+                faiss.normalize_L2(X.astype('float32'))
+            
+            # Search for nearest neighbors
+            distances, indices = self.faiss_index.search(X.astype('float32'), self.n_neighbors)
+            
+            # Get labels of nearest neighbors
+            y_train_array = np.array(self.y_train)
+            neighbor_labels = y_train_array[indices.flatten()].reshape(indices.shape)
+            
+            # Predict based on weights
+            if self.weights == 'uniform':
+                # Simple majority vote
+                predictions = []
+                for i in range(len(X)):
+                    unique_labels, counts = np.unique(neighbor_labels[i], return_counts=True)
+                    predictions.append(unique_labels[np.argmax(counts)])
+                return np.array(predictions)
+            
+            elif self.weights == 'distance':
+                # Weighted vote based on distances
+                predictions = []
+                for i in range(len(X)):
+                    # Avoid division by zero
+                    weights = 1.0 / (distances[i] + 1e-8)
+                    # Weighted vote
+                    unique_labels = np.unique(neighbor_labels[i])
+                    weighted_votes = []
+                    for label in unique_labels:
+                        mask = neighbor_labels[i] == label
+                        weighted_votes.append(np.sum(weights[mask]))
+                    predictions.append(unique_labels[np.argmax(weighted_votes)])
+                return np.array(predictions)
+            
+            else:
+                # Default to uniform
+                predictions = []
+                for i in range(len(X)):
+                    unique_labels, counts = np.unique(neighbor_labels[i], return_counts=True)
+                    predictions.append(unique_labels[np.argmax(counts)])
+                return np.array(predictions)
+                
+        except Exception as e:
+            print(f"❌ FAISS CPU prediction failed: {e}")
+            print(f"🔄 Falling back to scikit-learn prediction")
+            return self.model.predict(X)
+    
+    def _predict_proba_faiss_cpu(self, X: np.ndarray) -> np.ndarray:
+        """Get prediction probabilities using FAISS CPU (optimized)"""
+        try:
+            import faiss
+            
+            # Normalize for cosine similarity if needed
+            if self.metric == 'cosine':
+                faiss.normalize_L2(X.astype('float32'))
+            
+            # Search for nearest neighbors
+            distances, indices = self.faiss_index.search(X.astype('float32'), self.n_neighbors)
+            
+            # Get labels of nearest neighbors
+            y_train_array = np.array(self.y_train)
+            neighbor_labels = y_train_array[indices.flatten()].reshape(indices.shape)
+            
+            # Get unique classes
+            unique_classes = np.unique(self.y_train)
+            n_classes = len(unique_classes)
+            
+            # Calculate probabilities
+            probabilities = []
+            for i in range(len(X)):
+                if self.weights == 'uniform':
+                    # Uniform weights
+                    class_counts = np.zeros(n_classes)
+                    for j, label in enumerate(neighbor_labels[i]):
+                        class_idx = np.where(unique_classes == label)[0][0]
+                        class_counts[class_idx] += 1
+                    prob = class_counts / self.n_neighbors
+                    
+                elif self.weights == 'distance':
+                    # Distance-based weights
+                    weights = 1.0 / (distances[i] + 1e-8)
+                    class_weights = np.zeros(n_classes)
+                    for j, label in enumerate(neighbor_labels[i]):
+                        class_idx = np.where(unique_classes == label)[0][0]
+                        class_weights[class_idx] += weights[j]
+                    prob = class_weights / np.sum(class_weights)
+                    
+                else:
+                    # Default to uniform
+                    class_counts = np.zeros(n_classes)
+                    for j, label in enumerate(neighbor_labels[i]):
+                        class_idx = np.where(unique_classes == label)[0][0]
+                        class_counts[class_idx] += 1
+                    prob = class_counts / self.n_neighbors
+                
+                probabilities.append(prob)
+            
+            return np.array(probabilities)
+            
+        except Exception as e:
+            print(f"❌ FAISS CPU probability prediction failed: {e}")
+            print(f"🔄 Falling back to scikit-learn prediction")
+            return self.model.predict_proba(X)
     
     def _check_gpu_availability(self, use_gpu: bool = True) -> Dict[str, Any]:
         """

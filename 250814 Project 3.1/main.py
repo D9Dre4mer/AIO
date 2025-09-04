@@ -116,17 +116,17 @@ def main():
     print("\n🔤 Step 6: Text Vectorization")
     print("-" * 30)
     
-    # Bag of Words
-    print("Processing Bag of Words...")
-    X_train_bow = text_vectorizer.fit_transform_bow(X_train_full)
-    X_val_bow = text_vectorizer.transform_bow(X_val)
-    X_test_bow = text_vectorizer.transform_bow(X_test)
+    # Bag of Words with SVD (for speed optimization)
+    print("Processing Bag of Words with SVD...")
+    X_train_bow = text_vectorizer.fit_transform_bow_svd(X_train_full)
+    X_val_bow = text_vectorizer.transform_bow_svd(X_val)
+    X_test_bow = text_vectorizer.transform_bow_svd(X_test)
     
-    # TF-IDF
-    print("Processing TF-IDF...")
-    X_train_tfidf = text_vectorizer.fit_transform_tfidf(X_train_full)
-    X_val_tfidf = text_vectorizer.transform_tfidf(X_val)
-    X_test_tfidf = text_vectorizer.transform_tfidf(X_test)
+    # TF-IDF with SVD (for speed optimization)
+    print("Processing TF-IDF with SVD...")
+    X_train_tfidf = text_vectorizer.fit_transform_tfidf_svd(X_train_full)
+    X_val_tfidf = text_vectorizer.transform_tfidf_svd(X_val)
+    X_test_tfidf = text_vectorizer.transform_tfidf_svd(X_test)
     
     # Word Embeddings
     print("Processing Word Embeddings...")
@@ -142,10 +142,10 @@ def main():
     X_test_embeddings = text_vectorizer.transform_embeddings(X_test)
     
     # Print shapes
-    print(f"Shape of X_train_bow: {X_train_bow.shape}")
-    print(f"Shape of X_test_bow: {X_test_bow.shape}")
-    print(f"Shape of X_train_tfidf: {X_train_tfidf.shape}")
-    print(f"Shape of X_test_tfidf: {X_test_tfidf.shape}")
+    print(f"Shape of X_train_bow (with SVD): {X_train_bow.shape}")
+    print(f"Shape of X_test_bow (with SVD): {X_test_bow.shape}")
+    print(f"Shape of X_train_tfidf (with SVD): {X_train_tfidf.shape}")
+    print(f"Shape of X_test_tfidf (with SVD): {X_test_tfidf.shape}")
     print(f"Shape of X_train_embeddings: {X_train_embeddings.shape}")
     print(f"Shape of X_test_embeddings: {X_test_embeddings.shape}")
     

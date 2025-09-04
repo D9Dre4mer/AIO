@@ -120,10 +120,10 @@ class StreamlitTrainingPipeline:
             # Create local variable for return
             preprocessing_config = self.preprocessing_config
             
-            model_config = step3_data.get('data_split', {})
-            selected_models = step3_data.get('selected_models', [])
-            selected_vectorization = step3_data.get('selected_vectorization', [])
-            cv_config = step3_data.get('cross_validation', {})
+            model_config = step3_data.get('data_split', {}) if step3_data and isinstance(step3_data, dict) else {}
+            selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
+            selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
+            cv_config = step3_data.get('cross_validation', {}) if step3_data and isinstance(step3_data, dict) else {}
             
             # Calculate total models to train
             self.total_models = len(selected_models) * len(selected_vectorization)
@@ -170,19 +170,30 @@ class StreamlitTrainingPipeline:
             return {}
     
     def _save_cache_metadata(self):
-        """Save cache metadata to file"""
+        """Save cache metadata to file with atomic write"""
         try:
-            with open(self.cache_metadata_file, 'w') as f:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.cache_metadata_file), exist_ok=True)
+            
+            # Atomic write: write to temp file first, then rename
+            temp_file = self.cache_metadata_file + '.tmp'
+            with open(temp_file, 'w') as f:
                 json.dump(self.cache_metadata, f, indent=2)
+            # Atomic rename - remove target file first on Windows
+            if os.path.exists(self.cache_metadata_file):
+                os.remove(self.cache_metadata_file)
+            os.rename(temp_file, self.cache_metadata_file)
         except Exception as e:
-            print(f"Warning: Could not save cache metadata: {e}")
+            print(f"❌ Error saving cache metadata: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _generate_cache_key(self, step1_data: Dict, step2_data: Dict, step3_data: Dict) -> str:
         """Generate unique cache key based on configuration with human-readable naming"""
         # Extract key configuration details for naming
         sampling_config = step1_data.get('sampling_config', {})
-        selected_models = step3_data.get('selected_models', [])
-        selected_vectorization = step3_data.get('selected_vectorization', [])
+        selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
+        selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
         text_column = step2_data.get('text_column', 'text')
         label_column = step2_data.get('label_column', 'label')
         
@@ -233,7 +244,11 @@ class StreamlitTrainingPipeline:
                 except Exception as e:
                     print(f"⚠️ [CACHE_KEY] Error extracting categories: {e}")
         
-        categories_str = "_".join(str(cat)[:10] for cat in selected_categories[:3]) if selected_categories else "no_cats"
+        # Ensure all categories are strings before joining
+        if selected_categories:
+            categories_str = "_".join(str(cat)[:10] for cat in selected_categories[:3])
+        else:
+            categories_str = "no_cats"
         if len(categories_str) > 20:
             categories_str = categories_str[:20] + "..."
         
@@ -286,9 +301,9 @@ class StreamlitTrainingPipeline:
                 'phrase_detection': step2_data.get('phrase_detection', False),
                 'min_phrase_freq': step2_data.get('min_phrase_freq', 3)
             },
-            'model': step3_data.get('data_split', {}),
+            'model': step3_data.get('data_split', {}) if step3_data and isinstance(step3_data, dict) else {},
             'vectorization': selected_vectorization,
-            'cv': step3_data.get('cross_validation', {})
+            'cv': step3_data.get('cross_validation', {}) if step3_data and isinstance(step3_data, dict) else {}
         }
         
         # Create hash for uniqueness
@@ -326,9 +341,108 @@ class StreamlitTrainingPipeline:
         
         return None
     
-    def _save_to_cache(self, cache_key: str, results: Dict):
-        """Save results to cache with human-readable information"""
+    def _prepare_results_for_cache(self, results: Dict) -> Dict:
+        """Prepare results for cache by handling non-serializable objects like FAISS index"""
+        import copy
+        import faiss
+        import pickle
+        
+        def is_faiss_object(obj):
+            """Check if object is a FAISS index or contains FAISS objects"""
+            if obj is None:
+                return False
+            try:
+                # Check for FAISS index classes
+                if hasattr(obj, '__class__'):
+                    class_name = str(obj.__class__)
+                    if 'faiss' in class_name.lower() or 'Index' in class_name:
+                        return True
+                # Check for FAISS index attributes
+                if hasattr(obj, 'ntotal') and hasattr(obj, 'd'):
+                    return True
+                # Check if object can be pickled (FAISS objects cannot)
+                try:
+                    pickle.dumps(obj)
+                    return False
+                except Exception as e:
+                    # If pickle fails and it's not a basic type, it might be FAISS
+                    if not isinstance(obj, (str, int, float, bool, list, dict, tuple)):
+                        return True
+                    return False
+            except:
+                return False
+        
+        def replace_faiss_recursive(obj, path=""):
+            """Recursively replace FAISS objects with serializable info"""
+            if isinstance(obj, dict):
+                new_dict = {}
+                for key, value in obj.items():
+                    current_path = f"{path}.{key}" if path else key
+                    if is_faiss_object(value):
+                        print(f"🔍 Found FAISS object at {current_path}: {type(value)}")
+                        try:
+                            new_dict[key] = {
+                                '_faiss_index_info': f'FAISS index with {value.ntotal} vectors',
+                                '_faiss_index_type': str(type(value)),
+                                '_faiss_index_serialized': False
+                            }
+                        except:
+                            new_dict[key] = {
+                                '_faiss_index_info': f'FAISS index (unable to get ntotal)',
+                                '_faiss_index_type': str(type(value)),
+                                '_faiss_index_serialized': False
+                            }
+                    elif isinstance(value, (dict, list)):
+                        new_dict[key] = replace_faiss_recursive(value, current_path)
+                    else:
+                        new_dict[key] = value
+                return new_dict
+            elif isinstance(obj, list):
+                new_list = []
+                for i, item in enumerate(obj):
+                    current_path = f"{path}[{i}]" if path else f"[{i}]"
+                    if is_faiss_object(item):
+                        print(f"🔍 Found FAISS object at {current_path}: {type(item)}")
+                        try:
+                            new_list.append({
+                                '_faiss_index_info': f'FAISS index with {item.ntotal} vectors',
+                                '_faiss_index_type': str(type(item)),
+                                '_faiss_index_serialized': False
+                            })
+                        except:
+                            new_list.append({
+                                '_faiss_index_info': f'FAISS index (unable to get ntotal)',
+                                '_faiss_index_type': str(type(item)),
+                                '_faiss_index_serialized': False
+                            })
+                    elif isinstance(item, (dict, list)):
+                        new_list.append(replace_faiss_recursive(item, current_path))
+                    else:
+                        new_list.append(item)
+                return new_list
+            else:
+                return obj
+        
+        print("🔍 Preparing results for cache - scanning for FAISS objects...")
+        # Create a completely new structure with FAISS objects replaced
+        results_copy = replace_faiss_recursive(results)
+        print("✅ FAISS objects replaced successfully")
+        
+        # Final verification - try to pickle the result
         try:
+            pickle.dumps(results_copy)
+            print("✅ Results are now serializable")
+        except Exception as e:
+            print(f"⚠️ Warning: Results may still contain non-serializable objects: {e}")
+        
+        return results_copy
+    
+    def _save_to_cache(self, cache_key: str, results: Dict):
+        """Save results to cache with human-readable information and better error handling"""
+        try:
+            # Ensure cache directory exists
+            os.makedirs(self.cache_dir, exist_ok=True)
+            
             cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
             
             # CRITICAL FIX: Ensure label mapping is included in results
@@ -348,9 +462,24 @@ class StreamlitTrainingPipeline:
                     results['label_encoder_classes'] = self.label_encoder.classes_.tolist()
 
             
-            # Save results
-            with open(cache_file, 'wb') as f:
-                pickle.dump(results, f)
+            # CRITICAL FIX: Handle FAISS index serialization issue
+            # FAISS index cannot be pickled directly, need to convert to serializable format
+            results_copy = self._prepare_results_for_cache(results)
+            
+            # Save results with atomic write (write to temp file first, then rename)
+            temp_file = cache_file + '.tmp'
+            try:
+                with open(temp_file, 'wb') as f:
+                    pickle.dump(results_copy, f)
+                # Atomic rename - remove target file first on Windows
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)
+                os.rename(temp_file, cache_file)
+            except Exception as e:
+                # Clean up temp file if it exists
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                raise e
             
             # Update metadata with human-readable info
             self.cache_metadata[cache_key] = {
@@ -364,11 +493,14 @@ class StreamlitTrainingPipeline:
                 }
             }
             
+            # Save metadata with atomic write
             self._save_cache_metadata()
             print(f"✅ Results cached successfully: {cache_key}")
             
         except Exception as e:
-            print(f"Warning: Could not save to cache: {e}")
+            print(f"❌ Error saving to cache: {e}")
+            import traceback
+            traceback.print_exc()
     
     def show_cache_status(self):
         """Display cache status in a user-friendly format"""
@@ -416,12 +548,25 @@ class StreamlitTrainingPipeline:
                     print(f"✅ Cleared cache: {cache_key}")
             else:
                 # Clear all cache
+                # First, clear files from metadata
                 for key in list(self.cache_metadata.keys()):
                     cache_file = self.cache_metadata[key]['file_path']
                     if os.path.exists(cache_file):
                         os.remove(cache_file)
                 self.cache_metadata = {}
-                print("✅ Cleared all cache")
+                
+                # Then, clear all .pkl files in cache directory (including orphaned files)
+                if os.path.exists(self.cache_dir):
+                    cache_files = [f for f in os.listdir(self.cache_dir) if f.endswith('.pkl')]
+                    for cache_file in cache_files:
+                        file_path = os.path.join(self.cache_dir, cache_file)
+                        try:
+                            os.remove(file_path)
+                            print(f"✅ Removed orphaned cache file: {cache_file}")
+                        except Exception as e:
+                            print(f"⚠️ Could not remove {cache_file}: {e}")
+                
+                print("✅ Cleared all cache (including orphaned files)")
             
             self._save_cache_metadata()
             
@@ -537,9 +682,9 @@ class StreamlitTrainingPipeline:
             # Extract configuration
             text_column = step2_data.get('text_column')
             label_column = step2_data.get('label_column')
-            cv_config = step3_data.get('cross_validation', {})
+            cv_config = step3_data.get('cross_validation', {}) if step3_data and isinstance(step3_data, dict) else {}
             cv_folds = cv_config.get('cv_folds', 5)
-            data_split = step3_data.get('data_split', {})
+            data_split = step3_data.get('data_split', {}) if step3_data and isinstance(step3_data, dict) else {}
             
             # Calculate test size from step 3 configuration
             test_size = data_split.get('test', 20) / 100.0
@@ -586,18 +731,20 @@ class StreamlitTrainingPipeline:
             # FIXED: Debug session state issue
             if not step1_data or not sampling_config:
                 print(f"⚠️ [PIPELINE] WARNING: Session state issue detected!")
+                print(f"   - step1_data exists: {step1_data is not None}")
+                print(f"   - sampling_config exists: {sampling_config is not None}")
                 
                 # FIXED: Try to extract sampling info from step1_data keys first
                 if step1_data:
                     # Look for any key that might contain sample count
                     for key, value in step1_data.items():
                         if isinstance(value, dict) and 'num_samples' in value:
-    
                             sampling_config = value
+                            print(f"✅ [PIPELINE] Found sampling config in step1_data['{key}']: {sampling_config}")
                             break
                         elif key == 'num_samples':
-
                             sampling_config = {'num_samples': value, 'sampling_strategy': 'Stratified (Recommended)'}
+                            print(f"✅ [PIPELINE] Created sampling config from step1_data['{key}']: {sampling_config}")
                             break
                 
                 # FIXED: If still no config, try to extract from cache key if available
@@ -606,7 +753,6 @@ class StreamlitTrainingPipeline:
                     sample_match = re.search(r'(\d+)samples', self.current_cache_key)
                     if sample_match:
                         extracted_samples = int(sample_match.group(1))
-
                         
                         # Create fallback sampling config
                         fallback_config = {
@@ -617,6 +763,13 @@ class StreamlitTrainingPipeline:
                         sampling_config = fallback_config
                     else:
                         print(f"❌ [PIPELINE] Could not extract sample count from cache key")
+                        # Create default fallback config
+                        fallback_config = {
+                            'num_samples': 1000,
+                            'sampling_strategy': 'Stratified (Recommended)'
+                        }
+                        print(f"🔄 [PIPELINE] Using default fallback sampling config: {fallback_config}")
+                        sampling_config = fallback_config
                 
                 # FIXED: Final fallback - check if there are any recent cache files
                 if not sampling_config:
@@ -853,8 +1006,8 @@ class StreamlitTrainingPipeline:
                     }
 
                 # Get selected models and vectorization methods from step 3
-                selected_models = step3_data.get('selected_models', [])
-                selected_vectorization = step3_data.get('selected_vectorization', [])
+                selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
+                selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
                 
                 # FIXED: Update step1_data with sampled dataframe to ensure consistency
                 if sampling_config and sampling_config.get('num_samples'):
@@ -875,8 +1028,12 @@ class StreamlitTrainingPipeline:
                     print(f"   • step2_data keys: {list(step2_data.keys()) if isinstance(step2_data, dict) else 'Not a dict'}")
                 
                 # Check if ensemble learning is enabled
-                ensemble_config = step3_data.get('ensemble_learning', {})
-                ensemble_enabled = ensemble_config.get('enabled', False)
+                if step3_data and isinstance(step3_data, dict):
+                    ensemble_config = step3_data.get('ensemble_learning', {})
+                    ensemble_enabled = ensemble_config.get('enabled', False)
+                else:
+                    ensemble_config = {}
+                    ensemble_enabled = False
                 
                 print(f"🚀 [TRAINING_PIPELINE] Ensemble Learning: {'Enabled' if ensemble_enabled else 'Disabled'}")
                 if ensemble_enabled:
@@ -1099,9 +1256,24 @@ class StreamlitTrainingPipeline:
                 
                 # Split: separate test set only
                 test_size = data_split.get('test', 0.2)
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, test_size=test_size, random_state=42, stratify=y
-                )
+                
+                # Check if we have enough samples for stratified split
+                unique_classes = len(np.unique(y))
+                test_samples = int(len(y) * test_size)
+                
+                if test_samples >= unique_classes:
+                    # Use stratified split if we have enough test samples
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=test_size, random_state=42, stratify=y
+                    )
+                else:
+                    # Use non-stratified split for small datasets
+                    print(f"⚠️ Small dataset detected: {len(y)} samples, {unique_classes} classes")
+                    print(f"   Test samples: {test_samples} < {unique_classes} classes")
+                    print(f"   Using non-stratified split to avoid error")
+                    X_train, X_test, y_train, y_test = train_test_split(
+                        X, y, test_size=test_size, random_state=42
+                    )
                 
                 # No separate validation set - CV will handle it
                 X_val, y_val = np.array([]), np.array([])

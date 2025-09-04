@@ -97,7 +97,7 @@ class EnsembleStackingClassifier:
                 self.stacking_classifier = VotingClassifier(
                     estimators=base_estimators,
                     voting='soft',  # Use soft voting for better performance
-                    n_jobs=-1
+                    n_jobs=1  # Use single job to avoid serialization issues
                 )
             except Exception as e:
                 print(f"⚠️ Error creating VotingClassifier: {e}")
@@ -105,7 +105,7 @@ class EnsembleStackingClassifier:
                 self.stacking_classifier = VotingClassifier(
                     estimators=base_estimators,
                     voting='hard',
-                    n_jobs=-1
+                    n_jobs=1  # Use single job to avoid serialization issues
                 )
                 print("⚠️ Using hard voting as fallback")
             
@@ -127,7 +127,7 @@ class EnsembleStackingClassifier:
                     final_estimator=self.final_estimator_instance,
                     cv=self.cv_folds,
                     stack_method='predict_proba',
-                    n_jobs=-1,
+                    n_jobs=1,  # Use single job to avoid serialization issues
                     random_state=self.random_state
                 )
             except TypeError:
@@ -137,7 +137,7 @@ class EnsembleStackingClassifier:
                     final_estimator=self.final_estimator_instance,
                     cv=self.cv_folds,
                     stack_method='predict_proba',
-                    n_jobs=-1
+                    n_jobs=1  # Use single job to avoid serialization issues
                 )
                 print(f"⚠️ Using StackingClassifier without random_state (older scikit-learn version)")
             

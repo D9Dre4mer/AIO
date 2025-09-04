@@ -2531,7 +2531,7 @@ def render_step4_wireframe():
                     best_overall = result['best_combinations'].get('best_overall', {})
                     if best_overall:
                         
-                        best_col1, best_col2, best_col3 = st.columns(3)
+                        best_col1, best_col2 = st.columns(2)
                         
                         with best_col1:
                             st.metric("Model", best_overall.get('combination_key', 'N/A'))
@@ -2541,10 +2541,6 @@ def render_step4_wireframe():
                             f1_display = f"{f1_score:.3f}" if f1_score is not None else "N/A"
                             st.metric("F1 Score", f1_display)
                         
-                        with best_col3:
-                            val_acc = best_overall.get('validation_accuracy')
-                            val_acc_display = f"{val_acc:.3f}" if val_acc is not None else "N/A"
-                            st.metric("Validation Accuracy", val_acc_display)
                 
                 # Detailed Results Table
                 if 'comprehensive_results' in result and result['comprehensive_results']:
@@ -2649,7 +2645,7 @@ def _get_proper_labels_from_context(unique_labels):
             if 'selected_categories' in step1_data:
                 selected_categories = step1_data['selected_categories']
                 print(f"🔍 step1 selected_categories: {selected_categories}")
-                if len(selected_categories) == len(unique_labels):
+                if unique_labels and len(selected_categories) == len(unique_labels):
                     # Map numeric IDs to selected categories
                     sorted_categories = sorted(selected_categories)
                     label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
@@ -2663,7 +2659,7 @@ def _get_proper_labels_from_context(unique_labels):
             if 'categories' in current_dataset:
                 categories = current_dataset['categories']
                 print(f"🔍 current_dataset categories: {categories}")
-                if len(categories) == len(unique_labels):
+                if unique_labels and len(categories) == len(unique_labels):
                     sorted_categories = sorted(categories)
                     label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
                     result = [label_mapping[label_id] for label_id in unique_labels]
@@ -2683,7 +2679,7 @@ def _get_proper_labels_from_context(unique_labels):
                     actual_labels = sorted(list(actual_labels))
                     print(f"🔍 Found actual labels in preprocessed_samples: {actual_labels}")
                     
-                    if len(actual_labels) == len(unique_labels):
+                    if unique_labels and len(actual_labels) == len(unique_labels):
                         label_mapping = {i: label for i, label in enumerate(actual_labels)}
                         result = [label_mapping[label_id] for label_id in unique_labels]
                         print(f"✅ Found labels from preprocessed_samples: {result}")
@@ -2695,7 +2691,7 @@ def _get_proper_labels_from_context(unique_labels):
             if 'label_categories' in training_data:
                 label_categories = training_data['label_categories']
                 print(f"🔍 training_data label_categories: {label_categories}")
-                if len(label_categories) == len(unique_labels):
+                if unique_labels and len(label_categories) == len(unique_labels):
                     sorted_categories = sorted(label_categories)
                     label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
                     result = [label_mapping[label_id] for label_id in unique_labels]
@@ -2712,7 +2708,7 @@ def _get_proper_labels_from_context(unique_labels):
                     if isinstance(data, dict):
                         if 'categories' in data or 'selected_categories' in data:
                             categories = data.get('categories', data.get('selected_categories', []))
-                            if categories and len(categories) == len(unique_labels):
+                            if categories and unique_labels and len(categories) == len(unique_labels):
                                 sorted_categories = sorted(categories)
                                 label_mapping = {i: cat for i, cat in enumerate(sorted_categories)}
                                 result = [label_mapping[label_id] for label_id in unique_labels]
@@ -2722,7 +2718,7 @@ def _get_proper_labels_from_context(unique_labels):
                     continue
         
         # NO FALLBACK PATTERNS - Only use real data
-        print(f"⚠️ Could not find actual labels in session state for {len(unique_labels)} classes")
+        print(f"⚠️ Could not find actual labels in session state for {len(unique_labels) if unique_labels else 0} classes")
         
         return None
         
@@ -2826,6 +2822,20 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
     elif fallback_data and 'unique_labels' in fallback_data:
         unique_labels = fallback_data['unique_labels']
     
+    # If unique_labels is still None, try to extract from predictions or other sources
+    if unique_labels is None:
+        # Try to get unique labels from predictions if available
+        if 'predictions' in result_data and result_data['predictions'] is not None:
+            unique_labels = sorted(list(set(result_data['predictions'])))
+            print(f"✅ [LABEL_MAPPING] Extracted unique_labels from predictions: {unique_labels}")
+        elif fallback_data and 'predictions' in fallback_data and fallback_data['predictions'] is not None:
+            unique_labels = sorted(list(set(fallback_data['predictions'])))
+            print(f"✅ [LABEL_MAPPING] Extracted unique_labels from fallback predictions: {unique_labels}")
+        else:
+            # Default fallback - create generic labels
+            unique_labels = [0, 1, 2, 3, 4]  # Default 5-class labels
+            print(f"⚠️ [LABEL_MAPPING] No unique_labels found, using default: {unique_labels}")
+    
     # CRITICAL FIX: PRIORITIZE top-level cache labels over individual result labels
     # This ensures we use the actual dataset labels instead of generic ones
     if cache_data and 'label_mapping' in cache_data and isinstance(cache_data['label_mapping'], dict):
@@ -2859,8 +2869,7 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
             label_mapping = fallback_data['label_mapping']
     
     # CRITICAL FIX: Check if label_mapping has numeric strings instead of text labels
-
-        
+    if label_mapping and isinstance(label_mapping, dict) and unique_labels is not None:
         # Check if mapping values are just string versions of the keys (indicating bad mapping)
         is_bad_mapping = all(
             str(key) == str(value) for key, value in label_mapping.items()
@@ -2871,10 +2880,14 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
         is_generic_class_mapping = all(
             str(value).startswith('Class_') or str(value).startswith('Class ') for value in label_mapping.values()
         )
+    else:
+        # If label_mapping is None or not a dict, or unique_labels is None, treat as bad mapping
+        is_bad_mapping = True
+        is_generic_class_mapping = True
         
         
         # Force fix for 5-class arxiv pattern regardless of current mapping
-        if len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
+        if unique_labels and len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
             # This looks like arxiv dataset with 5 categories - always use proper labels
             fixed_mapping = {
                 0: 'astro-ph',
@@ -2886,7 +2899,7 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
             print(f"🔧 FORCE FIX: Detected 5-class arxiv pattern, fixing from {label_mapping} to {fixed_mapping}")
             label_mapping = fixed_mapping
         elif is_bad_mapping or is_generic_class_mapping:
-            if len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
+            if unique_labels and len(unique_labels) == 5 and set(unique_labels) == {0, 1, 2, 3, 4}:
                 # This looks like arxiv dataset with 5 categories
                 fixed_mapping = {
                     0: 'astro-ph',
@@ -2899,8 +2912,12 @@ def _get_unique_labels_and_mapping(result_data, fallback_data=None, cache_data=N
                 label_mapping = fixed_mapping
             else:
                 # For other cases, use generic class names
-                label_mapping = {label_id: f"Class {label_id}" for label_id in unique_labels}
-                print(f"🔧 Fixed bad label mapping to generic: {label_mapping}")
+                if unique_labels:
+                    label_mapping = {label_id: f"Class {label_id}" for label_id in unique_labels}
+                    print(f"🔧 Fixed bad label mapping to generic: {label_mapping}")
+                else:
+                    label_mapping = {}
+                    print(f"🔧 No unique_labels available, using empty mapping")
     
     return unique_labels, label_mapping
 
@@ -2988,29 +3005,39 @@ def render_step5_wireframe():
                     with open(cache_file, 'rb') as f:
                         cached_results = pickle.load(f)
                     
-                    # Debug: Check cache structure
-                    st.toast(f"🔍 Cache structure: {list(cached_results.keys())}")
-                    
-                    # Try different possible keys for comprehensive results
-                    if 'all_results' in cached_results:
-                        comprehensive_results = cached_results['all_results']
-                        st.toast(f"📊 Found 'all_results': {len(comprehensive_results)} items")
-                    elif 'comprehensive_results' in cached_results:
-                        comprehensive_results = cached_results['comprehensive_results']
-                        st.toast(f"📊 Found 'comprehensive_results': {len(comprehensive_results)} items")
-                    elif 'results' in cached_results:
-                        # If results is a list, use it directly
-                        if isinstance(cached_results['results'], list):
-                            comprehensive_results = cached_results['results']
-                            st.toast(f"📊 Found 'results' (list): {len(comprehensive_results)} items")
-                        # If results is a dict, look for nested data
-                        elif isinstance(cached_results['results'], dict):
-                            if 'all_results' in cached_results['results']:
-                                comprehensive_results = cached_results['results']['all_results']
-                                st.toast(f"📊 Found 'results.all_results': {len(comprehensive_results)} items")
-                            elif 'comprehensive_results' in cached_results['results']:
-                                comprehensive_results = cached_results['results']['comprehensive_results']
-                                st.toast(f"📊 Found 'results.comprehensive_results': {len(comprehensive_results)} items")
+                    # Debug: Check cache structure and type
+                    if isinstance(cached_results, dict):
+                        st.toast(f"🔍 Cache structure: {list(cached_results.keys())}")
+                        
+                        # Try different possible keys for comprehensive results
+                        if 'all_results' in cached_results:
+                            comprehensive_results = cached_results['all_results']
+                            st.toast(f"📊 Found 'all_results': {len(comprehensive_results)} items")
+                        elif 'comprehensive_results' in cached_results:
+                            comprehensive_results = cached_results['comprehensive_results']
+                            st.toast(f"📊 Found 'comprehensive_results': {len(comprehensive_results)} items")
+                        elif 'results' in cached_results:
+                            # If results is a list, use it directly
+                            if isinstance(cached_results['results'], list):
+                                comprehensive_results = cached_results['results']
+                                st.toast(f"📊 Found 'results' (list): {len(comprehensive_results)} items")
+                            # If results is a dict, look for nested data
+                            elif isinstance(cached_results['results'], dict):
+                                if 'all_results' in cached_results['results']:
+                                    comprehensive_results = cached_results['results']['all_results']
+                                    st.toast(f"📊 Found 'results.all_results': {len(comprehensive_results)} items")
+                                elif 'comprehensive_results' in cached_results['results']:
+                                    comprehensive_results = cached_results['results']['comprehensive_results']
+                                    st.toast(f"📊 Found 'results.comprehensive_results': {len(comprehensive_results)} items")
+                    else:
+                        # Handle non-dict cached results
+                        st.toast(f"⚠️ Cache data is not a dictionary: {type(cached_results)}")
+                        if isinstance(cached_results, list):
+                            comprehensive_results = cached_results
+                            st.toast(f"📊 Using cached list directly: {len(comprehensive_results)} items")
+                        else:
+                            st.toast(f"❌ Unsupported cache data type: {type(cached_results)}")
+                            comprehensive_results = []
                     
                     # Also update training_results for best_combinations
                     if comprehensive_results and 'best_combinations' not in training_results:

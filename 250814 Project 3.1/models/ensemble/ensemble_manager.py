@@ -167,22 +167,18 @@ class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
     def get_params(self, deep=True):
         """Get model parameters for sklearn compatibility"""
         params = {
-            'model': self.original_model,
+            'trained_model': self.trained_model,
             'model_name': self.model_name
         }
-        params.update(self.kwargs)
         return params
     
     def set_params(self, **params):
         """Set model parameters for sklearn compatibility"""
         for key, value in params.items():
-            if key == 'model':
-                self.original_model = value
-                self.model = value
+            if key == 'trained_model':
+                self.trained_model = value
             elif key == 'model_name':
                 self.model_name = value
-            else:
-                self.kwargs[key] = value
         return self
 
 
@@ -363,12 +359,12 @@ class EnsembleManager:
                 print(f"🔍 Debug: Processing {model_name}: type={type(base_model)}")
                 
                 if base_model is None:
-                    print(f"❌ Error: Model '{model_name}' is None")
+                    print(f"❌ Error: Model '{model_name}' is None - skipping from ensemble")
                     continue
                 
                 # For ensemble, we need to create a sklearn-compatible wrapper
                 # that handles data type selection properly
-                if hasattr(base_model, 'model'):
+                if hasattr(base_model, 'model') and base_model.model is not None:
                     # Get the underlying sklearn model
                     sklearn_model = base_model.model
                     print(f"🔍 Debug: Using base_model.model for {model_name}")
@@ -376,6 +372,11 @@ class EnsembleManager:
                     # Use the model directly if it's already a sklearn model
                     sklearn_model = base_model
                     print(f"🔍 Debug: Using base_model directly for {model_name}")
+                    
+                # Validate that we have a proper sklearn model
+                if sklearn_model is None:
+                    print(f"❌ Error: Model '{model_name}' has no valid sklearn model - skipping from ensemble")
+                    continue
                 
                 # For Naive Bayes, we need to handle sparse/dense data compatibility
                 if model_name == 'naive_bayes' and X_train is not None:
@@ -404,7 +405,10 @@ class EnsembleManager:
                 continue
         
         if len(base_estimators) < 2:
-            raise ValueError("Need at least 2 base models for ensemble learning")
+            error_msg = f"Need at least 2 base models for ensemble learning, got {len(base_estimators)}"
+            print(f"❌ {error_msg}")
+            print(f"🔍 Debug: Available base_estimators: {[name for name, _ in base_estimators]}")
+            raise ValueError(error_msg)
         
         # Create ensemble model based on final_estimator type
         if self.final_estimator == 'voting':
@@ -415,7 +419,7 @@ class EnsembleManager:
                 self.ensemble_model = VotingClassifier(
                     estimators=base_estimators,
                     voting='soft',  # Use soft voting for better performance
-                    n_jobs=-1
+                    n_jobs=1  # Use single job to avoid serialization issues
                 )
             except Exception as e:
                 print(f"⚠️ Error creating VotingClassifier: {e}")
@@ -423,7 +427,7 @@ class EnsembleManager:
                 self.ensemble_model = VotingClassifier(
                     estimators=base_estimators,
                     voting='hard',
-                    n_jobs=-1
+                    n_jobs=1  # Use single job to avoid serialization issues
                 )
                 print("⚠️ Using hard voting as fallback")
             
@@ -455,7 +459,7 @@ class EnsembleManager:
                     final_estimator=final_estimator,
                     cv=self.cv_folds,
                     stack_method='predict_proba',
-                    n_jobs=-1,
+                    n_jobs=1,  # Use single job to avoid serialization issues
                     random_state=self.random_state
                 )
             except TypeError:
@@ -465,7 +469,7 @@ class EnsembleManager:
                     final_estimator=final_estimator,
                     cv=self.cv_folds,
                     stack_method='predict_proba',
-                    n_jobs=-1
+                    n_jobs=1  # Use single job to avoid serialization issues
                 )
                 print(f"⚠️ Using StackingClassifier without random_state (older scikit-learn version)")
             
@@ -657,7 +661,7 @@ class EnsembleManager:
             from sklearn.model_selection import cross_val_score
             print("📊 Performing cross-validation for ensemble...")
             cv_scores = cross_val_score(self.ensemble_model, X_train_dense, y_train, 
-                                      cv=self.cv_folds, scoring='accuracy', n_jobs=-1)
+                                      cv=self.cv_folds, scoring='accuracy', n_jobs=1)
             cv_mean = cv_scores.mean()
             cv_std = cv_scores.std()
             
@@ -888,11 +892,19 @@ class EnsembleManager:
         Returns:
             Trained model instance or None
         """
-        for result in individual_results:
+        print(f"🔍 Debug: Looking for model '{model_name}' in {len(individual_results)} results")
+        
+        for i, result in enumerate(individual_results):
+            print(f"🔍 Debug: Result {i}: status={result.get('status')}, model_name={result.get('model_name')}, has_trained_model={'trained_model' in result}")
+            
             if (result.get('status') == 'success' and 
                 result.get('model_name') == model_name and
                 'trained_model' in result):
-                return result['trained_model']
+                trained_model = result['trained_model']
+                print(f"✅ Found trained model '{model_name}': type={type(trained_model)}")
+                return trained_model
+        
+        print(f"❌ No trained model found for '{model_name}'")
         return None
     
     def _create_and_train_model(self, model_name: str, X_train: np.ndarray, 

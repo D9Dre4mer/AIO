@@ -6,13 +6,13 @@ Handles different text vectorization methods: BoW, TF-IDF, and Word Embeddings
 from typing import List, Literal
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.decomposition import TruncatedSVD
 from sentence_transformers import SentenceTransformer
 
 from config import (
     EMBEDDING_MODEL_NAME, EMBEDDING_NORMALIZE, EMBEDDING_DEVICE,
-    MAX_VOCABULARY_SIZE
+    MAX_VOCABULARY_SIZE, BOW_TFIDF_SVD_COMPONENTS, BOW_TFIDF_SVD_THRESHOLD
 )
-
 
 class EmbeddingVectorizer:
     """Class for generating word embeddings using pre-trained models"""
@@ -214,6 +214,10 @@ class TextVectorizer:
         )
         self.embedding_vectorizer = EmbeddingVectorizer()
         
+        # SVD models for dimensionality reduction
+        self.bow_svd_model = None
+        self.tfidf_svd_model = None
+        
     def fit_transform_bow(self, texts: List[str]):
         """Fit and transform texts using Bag of Words (returns sparse matrix)"""
         vectors = self.bow_vectorizer.fit_transform(texts)
@@ -235,6 +239,64 @@ class TextVectorizer:
         """Transform texts using fitted TF-IDF vectorizer (returns sparse matrix)"""
         vectors = self.tfidf_vectorizer.transform(texts)
         return vectors  # Keep sparse for memory efficiency
+        
+    def fit_transform_bow_svd(self, texts: List[str]):
+        """Fit and transform texts using Bag of Words with SVD dimensionality reduction"""
+        # First, get BoW vectors
+        vectors = self.bow_vectorizer.fit_transform(texts)
+        print(f"📊 BoW Features: {vectors.shape[1]:,} | Sparsity: {1 - vectors.nnz / (vectors.shape[0] * vectors.shape[1]):.3f}")
+        
+        # Apply SVD if needed
+        if vectors.shape[1] > BOW_TFIDF_SVD_THRESHOLD:
+            print(f"🔧 Applying SVD to BoW: {vectors.shape[1]:,} → {BOW_TFIDF_SVD_COMPONENTS} dimensions")
+            n_components = min(BOW_TFIDF_SVD_COMPONENTS, vectors.shape[1] - 1, vectors.shape[0] - 1)
+            self.bow_svd_model = TruncatedSVD(n_components=n_components, random_state=42)
+            vectors = self.bow_svd_model.fit_transform(vectors)
+            explained_variance = self.bow_svd_model.explained_variance_ratio_.sum()
+            print(f"✅ BoW SVD completed: {n_components} dimensions | Variance preserved: {explained_variance:.1%}")
+        else:
+            print(f"ℹ️ BoW features ({vectors.shape[1]:,}) below SVD threshold ({BOW_TFIDF_SVD_THRESHOLD}), skipping SVD")
+            
+        return vectors
+        
+    def transform_bow_svd(self, texts: List[str]):
+        """Transform texts using fitted BoW vectorizer with SVD (if applied)"""
+        vectors = self.bow_vectorizer.transform(texts)
+        
+        # Apply SVD if model exists
+        if self.bow_svd_model is not None:
+            vectors = self.bow_svd_model.transform(vectors)
+            
+        return vectors
+        
+    def fit_transform_tfidf_svd(self, texts: List[str]):
+        """Fit and transform texts using TF-IDF with SVD dimensionality reduction"""
+        # First, get TF-IDF vectors
+        vectors = self.tfidf_vectorizer.fit_transform(texts)
+        print(f"📊 TF-IDF Features: {vectors.shape[1]:,} | Sparsity: {1 - vectors.nnz / (vectors.shape[0] * vectors.shape[1]):.3f}")
+        
+        # Apply SVD if needed
+        if vectors.shape[1] > BOW_TFIDF_SVD_THRESHOLD:
+            print(f"🔧 Applying SVD to TF-IDF: {vectors.shape[1]:,} → {BOW_TFIDF_SVD_COMPONENTS} dimensions")
+            n_components = min(BOW_TFIDF_SVD_COMPONENTS, vectors.shape[1] - 1, vectors.shape[0] - 1)
+            self.tfidf_svd_model = TruncatedSVD(n_components=n_components, random_state=42)
+            vectors = self.tfidf_svd_model.fit_transform(vectors)
+            explained_variance = self.tfidf_svd_model.explained_variance_ratio_.sum()
+            print(f"✅ TF-IDF SVD completed: {n_components} dimensions | Variance preserved: {explained_variance:.1%}")
+        else:
+            print(f"ℹ️ TF-IDF features ({vectors.shape[1]:,}) below SVD threshold ({BOW_TFIDF_SVD_THRESHOLD}), skipping SVD")
+            
+        return vectors
+        
+    def transform_tfidf_svd(self, texts: List[str]):
+        """Transform texts using fitted TF-IDF vectorizer with SVD (if applied)"""
+        vectors = self.tfidf_vectorizer.transform(texts)
+        
+        # Apply SVD if model exists
+        if self.tfidf_svd_model is not None:
+            vectors = self.tfidf_svd_model.transform(vectors)
+            
+        return vectors
         
     def fit_transform_embeddings(self, texts: List[str], stop_callback=None) -> np.ndarray:
         """Fit embedding model on training data and transform to embeddings"""

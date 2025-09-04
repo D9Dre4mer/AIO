@@ -940,12 +940,28 @@ class DataLoader:
             test_size = TEST_SIZE
             print(f"📊 No requested samples, using default test_size: {test_size}")
         
-        X_train, X_test, y_train, y_test = train_test_split(
-            X_full, y_full, 
-            test_size=test_size, 
-            random_state=RANDOM_STATE, 
-            stratify=y_full
-        )
+        # Check if we have enough samples for stratified split
+        unique_classes = len(np.unique(y_full))
+        test_samples = int(len(y_full) * test_size)
+        
+        if test_samples >= unique_classes:
+            # Use stratified split if we have enough test samples
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_full, y_full, 
+                test_size=test_size, 
+                random_state=RANDOM_STATE, 
+                stratify=y_full
+            )
+        else:
+            # Use non-stratified split for small datasets
+            print(f"⚠️ Small dataset detected: {len(y_full)} samples, {unique_classes} classes")
+            print(f"   Test samples: {test_samples} < {unique_classes} classes")
+            print(f"   Using non-stratified split to avoid error")
+            X_train, X_test, y_train, y_test = train_test_split(
+                X_full, y_full, 
+                test_size=test_size, 
+                random_state=RANDOM_STATE
+            )
         
         print(f"✅ CV samples: {len(X_train)} (for 5-fold CV)")
         print(f"✅ Test samples: {len(X_test)}")

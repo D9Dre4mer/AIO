@@ -96,6 +96,11 @@ def create_auto_config(df, mode='full'):
         'dataframe': df,
         'text_column': 'abstract',
         'label_column': 'label',
+        'selected_categories': sorted(df['label'].unique().tolist()),
+        'sampling_config': {
+            'num_samples': 1000,
+            'sampling_strategy': 'Stratified (Recommended)'
+        },
         'completed': True
     }
     
@@ -279,7 +284,7 @@ def main():
     print_banner()
     
     # Đường dẫn file CSV
-    csv_file = "cache\20250822-004129_sample-300_000Samples.csv"
+    csv_file = "cache\\20250822-004129_sample-300_000Samples.csv"
     
     # Kiểm tra file có tồn tại không
     if not check_file_exists(csv_file):
