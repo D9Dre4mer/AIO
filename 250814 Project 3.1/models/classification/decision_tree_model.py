@@ -976,9 +976,10 @@ class DecisionTreeModel(BaseModel):
             import cuml
             from cuml.tree import DecisionTreeClassifier as cuMLDecisionTree
             
-            # Convert data to GPU if needed
+            # Keep sparse matrix for GPU processing
             if not isinstance(X, np.ndarray):
-                X = X.toarray()
+                print("🔧 Using sparse matrix for GPU Decision Tree")
+                # cuML supports sparse matrices directly
             
             # Create cuML Decision Tree (Pure single tree)
             gpu_tree = cuMLDecisionTree(

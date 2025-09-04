@@ -32,5 +32,9 @@ EMBEDDING_MODEL_NAME = 'sentence-transformers/allenai-specter'  # 768d
 EMBEDDING_NORMALIZE = True
 EMBEDDING_DEVICE = 'auto'
 
+# GPU Optimization Settings
+ENABLE_GPU_OPTIMIZATION = False  # Use sparse matrices (memory efficient)
+FORCE_DENSE_CONVERSION = False   # Force sparse->dense conversion for GPU
+
 # Output directories
 FIGURES_DIR = "pdf/Figures"

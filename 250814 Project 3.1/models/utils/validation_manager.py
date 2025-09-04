@@ -182,12 +182,10 @@ class ValidationManager:
             y_train = fold_data['y_train']
             y_val = fold_data['y_val']
             
-            # GPU Optimization: Convert sparse matrices to dense arrays if needed
-            if hasattr(X_train, 'toarray'):  # Sparse matrix
-                print(f"   🔄 Converting sparse matrix to dense for GPU acceleration in CV fold {fold}...")
-                X_train = X_train.toarray()
-                X_val = X_val.toarray()
-                print(f"   ✅ Sparse matrix converted to dense arrays for GPU")
+            # Keep sparse matrices for better performance
+            if hasattr(X_train, 'toarray'):
+                print(f"   📊 Using sparse matrix format for memory efficiency in CV fold {fold}")
+                print(f"   💾 Memory saved: Keeping sparse matrices (no dense conversion)")
             
             # Train model
             model.fit(X_train, y_train)
@@ -312,7 +310,7 @@ class ValidationManager:
             print("   💡 This is normal for some embedding types - using CV validation results instead")
             return {}
         
-        print(f"  📊 Test data: {X_test.shape if hasattr(X_test, 'shape') else len(X_test)} samples")
+        print(f"  📊 Test data: {X_test.shape if hasattr(X_test, 'shape') else (X_test.getnnz() if hasattr(X_test, 'getnnz') else len(X_test))} samples")
         
         # Make predictions on test data
         y_test_pred = model.predict(X_test)
@@ -339,8 +337,13 @@ class ValidationManager:
         test_results['test_predictions'] = y_test_pred
         test_results['test_true_labels'] = y_test
         
-        print(f"✅ Test evaluation completed: {test_results}")
-        return test_results
+        # Print summary without the large arrays
+        summary = {k: v for k, v in test_results.items() 
+                  if k not in ['test_predictions', 'test_true_labels']}
+        print(f"✅ Test evaluation completed: {summary}")
+        
+        # Return only summary to avoid printing large arrays
+        return summary
 
     def cross_validate_model(
         self,
@@ -386,9 +389,25 @@ class ValidationManager:
         print(f"🔍 Data shapes: X={X_array.shape}, y={y_array.shape}")
         print(f"🔍 Data types: X={type(X_array)}, y={type(y_array)}")
         
-        # Perform cross-validation
-        for fold, (train_idx, val_idx) in enumerate(self.kf.split(X_array, y_array), 1):
-            print(f"  📊 Fold {fold}/{self.cv_folds}")
+        # Progress tracking for CV folds
+        import time
+        import threading
+        
+        def show_cv_fold_progress():
+            dots = 0
+            while not getattr(show_cv_fold_progress, 'stop', False):
+                print(f"\r🔄 CV Fold processing{'...' + '.' * (dots % 3):<4}", end="", flush=True)
+                time.sleep(0.3)
+                dots += 1
+        
+        # Start CV fold progress indicator
+        progress_thread = threading.Thread(target=show_cv_fold_progress, daemon=True)
+        progress_thread.start()
+        
+        try:
+            # Perform cross-validation
+            for fold, (train_idx, val_idx) in enumerate(self.kf.split(X_array, y_array), 1):
+                print(f"\n  📊 Fold {fold}/{self.cv_folds}")
             
             # Handle embeddings differently to prevent data leakage
             if is_embeddings and texts is not None and vectorizer is not None:
@@ -446,6 +465,12 @@ class ValidationManager:
             
             print(f"    ✅ Train: {X_train.shape[0]}, Val: {X_val.shape[0]}, "
                   f"Acc: {fold_metrics['accuracy']:.4f}")
+        
+        finally:
+            # Stop CV fold progress indicator
+            show_cv_fold_progress.stop = True
+            progress_thread.join(timeout=0.1)
+            print(f"\n✅ CV Folds completed")
         
         # Compute overall statistics
         overall_results = self._compute_overall_statistics(

@@ -1222,8 +1222,11 @@ class StreamlitTrainingPipeline:
             
             # MEMORY OPTIMIZATION: Keep sparse matrices for memory efficiency
             from scipy import sparse
+            from config import ENABLE_GPU_OPTIMIZATION, FORCE_DENSE_CONVERSION
+            
             if sparse.issparse(X_train_bow):
                 print(f"   📊 Using BoW sparse matrix format for memory efficiency")
+                print(f"   💾 Memory saved: Keeping sparse matrices (no dense conversion)")
                 # Keep sparse matrices - modern models handle them efficiently
                 # No conversion to prevent memory overflow
             
@@ -1253,9 +1256,11 @@ class StreamlitTrainingPipeline:
             
             # MEMORY OPTIMIZATION: Keep sparse matrices for memory efficiency
             from scipy import sparse
+            from config import ENABLE_GPU_OPTIMIZATION, FORCE_DENSE_CONVERSION
+            
             if sparse.issparse(X_train_tfidf):
                 print(f"   📊 Using TF-IDF sparse matrix format for memory efficiency")
-                print(f"   💾 Memory saved: Avoiding 89GB+ dense conversion")
+                print(f"   💾 Memory saved: Keeping sparse matrices (no dense conversion)")
                 # Keep sparse matrices - modern models handle them efficiently
                 # No conversion to prevent memory overflow
             
@@ -2086,10 +2091,10 @@ class StreamlitTrainingPipeline:
             print(f"         🔍 Ensemble result keys: {list(ensemble_result.keys())}")
             
             ensemble_info = ensemble_result.get('ensemble_info', {})
-            print(f"         🔍 Ensemble info: {ensemble_info}")
+            print(f"         🔍 Ensemble info keys: {list(ensemble_info.keys())}")
             individual_results = ensemble_info.get('individual_results', {})
             print(f"         🔍 Individual results type: {type(individual_results)}")
-            print(f"         🔍 Individual results: {individual_results}")
+            print(f"         🔍 Individual results keys: {list(individual_results.keys()) if isinstance(individual_results, dict) else 'Not a dict'}")
             
             if not individual_results:
                 print(f"         ❌ Không có individual results trong ensemble")

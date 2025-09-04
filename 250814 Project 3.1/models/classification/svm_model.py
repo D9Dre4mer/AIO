@@ -242,7 +242,7 @@ class SVMModel(BaseModel):
         try:
             # Convert input data to proper format if needed
             if isinstance(X, list):
-                print(f"🔧 Converting list to numpy array for SVM: {len(X)} samples")
+                print(f"🔧 Converting list to numpy array for SVM: {X.shape[0] if hasattr(X, 'shape') else (X.getnnz() if hasattr(X, 'getnnz') else len(X))} samples")
                 X = np.array(X)
                 print(f"✅ Converted to numpy array: {X.shape}")
             elif not hasattr(X, 'shape'):
@@ -319,11 +319,12 @@ class SVMModel(BaseModel):
             raise ValueError("Model must be fitted before making predictions")
         
         try:
-            # Convert input data if needed
+            # Keep sparse matrix for SVM prediction
             if isinstance(X, list):
                 X = np.array(X)
             elif sparse.issparse(X):
-                X = X.toarray()
+                print("🔧 Using sparse matrix for SVM prediction")
+                # SVM supports sparse matrices directly
             
             # Make predictions
             prediction_start = time.time()
@@ -346,11 +347,12 @@ class SVMModel(BaseModel):
             raise ValueError("Model must be fitted before making predictions")
         
         try:
-            # Convert input data if needed
+            # Keep sparse matrix for SVM prediction
             if isinstance(X, list):
                 X = np.array(X)
             elif sparse.issparse(X):
-                X = X.toarray()
+                print("🔧 Using sparse matrix for SVM prediction")
+                # SVM supports sparse matrices directly
             
             # Check if model supports predict_proba
             if hasattr(self.model, 'predict_proba'):

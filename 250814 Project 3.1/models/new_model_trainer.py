@@ -34,6 +34,9 @@ class NewModelTrainer:
         # Update validation manager with new CV parameters if provided
         if self.validation_manager:
             self.validation_manager.set_cv_parameters(cv_folds, cv_stratified)
+        
+        # ENHANCED: Track current model for reuse
+        self.current_model = None
     
     def cross_validate_with_precomputed_embeddings(
         self,
@@ -69,6 +72,9 @@ class NewModelTrainer:
                 "Model factory not set. Please provide model_factory in constructor."
             )
         model = self.model_factory.create_model(model_name, **model_params)
+        
+        # ENHANCED: Store current model for reuse
+        self.current_model = model
         
         # Initialize GPU libraries if GPU is enabled
         if (hasattr(model, '_init_gpu_libraries') and 
@@ -140,6 +146,9 @@ class NewModelTrainer:
             raise ValueError("Model factory not set. Please provide model_factory in constructor.")
         model = self.model_factory.create_model(model_name, **model_params)
         
+        # ENHANCED: Store current model for reuse
+        self.current_model = model
+        
         # Initialize GPU libraries if GPU is enabled
         if (hasattr(model, '_init_gpu_libraries') and 
                 hasattr(model, 'use_gpu') and model.use_gpu):
@@ -175,7 +184,7 @@ class NewModelTrainer:
         y: np.ndarray,
         metrics: List[str] = None
     ) -> Dict[str, Dict[str, Any]]:
-        """Perform cross-validation on all available models"""
+        """Perform cross-validation on all available models with progress tracking"""
         
         results = {}
         if not self.model_factory:
@@ -184,16 +193,39 @@ class NewModelTrainer:
         
         print(f"🔄 Cross-Validating {len(available_models)} models...")
         
-        for model_name in available_models:
-            try:
-                print(f"📊 {model_name.upper()} - Cross-Validation")
-                
-                cv_result = self.cross_validate_model(model_name, X, y, metrics)
-                results[model_name] = cv_result
-                
-            except Exception as e:
-                print(f"❌ Error with {model_name}: {e}")
-                continue
+        # Progress tracking for overall CV process
+        import time
+        import threading
+        
+        def show_cv_progress():
+            dots = 0
+            while not getattr(show_cv_progress, 'stop', False):
+                print(f"\r🔄 Cross-Validation in progress{'...' + '.' * (dots % 3):<4}", end="", flush=True)
+                time.sleep(0.5)
+                dots += 1
+        
+        # Start overall CV progress indicator
+        progress_thread = threading.Thread(target=show_cv_progress, daemon=True)
+        progress_thread.start()
+        
+        try:
+            for i, model_name in enumerate(available_models, 1):
+                try:
+                    print(f"\n📊 [{i}/{len(available_models)}] {model_name.upper()} - Cross-Validation")
+                    
+                    cv_result = self.cross_validate_model(model_name, X, y, metrics)
+                    results[model_name] = cv_result
+                    
+                    print(f"✅ {model_name.upper()} CV completed")
+                    
+                except Exception as e:
+                    print(f"\n❌ Error with {model_name}: {e}")
+                    continue
+        finally:
+            # Stop progress indicator
+            show_cv_progress.stop = True
+            progress_thread.join(timeout=0.1)
+            print(f"\n✅ Cross-Validation completed for all models")
         
         return results
     
@@ -291,7 +323,7 @@ class NewModelTrainer:
             # Use provided split data (X_val can be None for empty validation set)
             X_train, y_train = X, y
             print(f"📊 Using provided data split:")
-            print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Val: {X_val.shape[0] if hasattr(X_val, 'shape') and len(X_val) > 0 else 0} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
+            print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else (X_train.getnnz() if hasattr(X_train, 'getnnz') else len(X_train))} | Val: {X_val.shape[0] if hasattr(X_val, 'shape') and X_val.shape[0] > 0 else 0} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else (X_test.getnnz() if hasattr(X_test, 'getnnz') else len(X_test))}")
         else:
             # Split data into train/test only (validation handled by CV)
             if not self.validation_manager:
@@ -304,7 +336,7 @@ class NewModelTrainer:
             
                     # Print split summary
         print(f"📊 Created 2-way data split (validation handled by CV):")
-        print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else len(X_train)} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test)}")
+        print(f"   • Train: {X_train.shape[0] if hasattr(X_train, 'shape') else (X_train.getnnz() if hasattr(X_train, 'getnnz') else len(X_train))} | Test: {X_test.shape[0] if hasattr(X_test, 'shape') else (X_test.getnnz() if hasattr(X_test, 'getnnz') else len(X_test))}")
         print(f"   • Validation: Empty (CV folds will handle validation)")
         
         # Create model instance with KNN configuration if available
@@ -379,93 +411,61 @@ class NewModelTrainer:
                 print(f"   • Metric: N/A (custom KNNModel)")
                 print(f"   • Algorithm: N/A (custom KNNModel)")
         
-        # Train model with progress tracking
-        print(f"\n🚀 Training {model_name} model...")
+        # Estimate training time
+        self._estimate_training_time(model_name, X_train, y_train, X_val, y_val, X_test, y_test)
         
-        # Create a simple progress indicator for training
-        import time
-        import threading
-        
-        # Progress indicator for training
-        def show_training_progress():
-            dots = 0
-            while not getattr(show_training_progress, 'stop', False):
-                print(f"\r🔄 Training {model_name} model{'...' + '.' * (dots % 3):<4}", end="", flush=True)
-                time.sleep(0.5)
-                dots += 1
-        
-        # Start progress indicator
-        progress_thread = threading.Thread(target=show_training_progress, daemon=True)
-        progress_thread.start()
+        # Train model (no progress bar - will be shown in CV/Test)
+        print(f"🚀 Training {model_name} model...")
         
         try:
             # Special handling for KNN model with GPU acceleration
             if model_name == 'knn':
                 try:
                     model.fit(X_train, y_train, use_gpu=True)
-                    print(f"\n✅ KNN model trained successfully")
+                    print(f"✅ KNN model trained successfully")
                 except Exception as e:
-                    print(f"\n⚠️ GPU training failed, falling back to CPU: {e}")
+                    print(f"⚠️ GPU training failed, falling back to CPU: {e}")
                     model.fit(X_train, y_train, use_gpu=False)
             else:
                 model.fit(X_train, y_train)
-                print(f"\n✅ {model_name} model trained successfully")
-        finally:
-            # Stop progress indicator
-            show_training_progress.stop = True
-            progress_thread.join(timeout=0.1)
+                print(f"✅ {model_name} model trained successfully")
+        except Exception as e:
+            print(f"❌ Training failed: {e}")
+            raise
         
         # Validate model (only if validation set exists)
-        if X_val is not None and y_val is not None and len(X_val) > 0 and len(y_val) > 0:
+        if X_val is not None and y_val is not None and (X_val.shape[0] > 0 if hasattr(X_val, 'shape') else (X_val.getnnz() if hasattr(X_val, 'getnnz') else len(X_val)) > 0) and (y_val.shape[0] > 0 if hasattr(y_val, 'shape') else len(y_val) > 0):
             print(f"🔍 Validating {model_name} model...")
-            
-            # Progress indicator for validation
-            def show_validation_progress():
-                dots = 0
-                while not getattr(show_validation_progress, 'stop', False):
-                    print(f"\r🔄 Validating {model_name} model{'...' + '.' * (dots % 3):<4}", end="", flush=True)
-                    time.sleep(0.3)
-                    dots += 1
-            
-            progress_thread = threading.Thread(target=show_validation_progress, daemon=True)
-            progress_thread.start()
             
             try:
                 y_val_pred = model.predict(X_val)
                 val_metrics = ModelMetrics.compute_classification_metrics(y_val, y_val_pred)
                 val_accuracy = val_metrics['accuracy']
-                print(f"\n✅ Validation completed")
-            finally:
-                show_validation_progress.stop = True
-                progress_thread.join(timeout=0.1)
+                print(f"✅ Validation completed")
+            except Exception as e:
+                print(f"❌ Validation failed: {e}")
+                y_val_pred = np.array([])
+                val_metrics = None
+                val_accuracy = 0.0
         else:
             print(f"🔍 Skipping validation (no validation set - CV handles it)")
             y_val_pred = np.array([])
             val_metrics = None
             val_accuracy = 0.0
         
-        # Test model
+        # Test model (no progress bar - will be shown in overall process)
         print(f"🧪 Testing {model_name} model...")
-        
-        # Progress indicator for testing
-        def show_testing_progress():
-            dots = 0
-            while not getattr(show_testing_progress, 'stop', False):
-                print(f"\r🔄 Testing {model_name} model{'...' + '.' * (dots % 3):<4}", end="", flush=True)
-                time.sleep(0.3)
-                dots += 1
-        
-        progress_thread = threading.Thread(target=show_testing_progress, daemon=True)
-        progress_thread.start()
         
         try:
             y_test_pred = model.predict(X_test)
             test_metrics = ModelMetrics.compute_classification_metrics(y_test, y_test_pred)
             test_accuracy = test_metrics['accuracy']
-            print(f"\n✅ Testing completed")
-        finally:
-            show_testing_progress.stop = True
-            progress_thread.join(timeout=0.1)
+            print(f"✅ Testing completed")
+        except Exception as e:
+            print(f"❌ Testing failed: {e}")
+            y_test_pred = np.array([])
+            test_metrics = None
+            test_accuracy = 0.0
         
         return y_test_pred, y_val_pred, y_test, val_accuracy, test_accuracy, test_metrics
     
@@ -612,3 +612,51 @@ class NewModelTrainer:
         if not self.model_factory:
             raise ValueError("Model factory not set. Please provide model_factory in constructor.")
         return self.model_factory.suggest_models(task_type, data_type)
+    
+    def _estimate_training_time(self, model_name: str, X_train, y_train, X_val, y_val, X_test, y_test):
+        """Estimate total training time for a model"""
+        import time
+        
+        # Get data sizes
+        train_size = X_train.shape[0] if hasattr(X_train, 'shape') else (X_train.getnnz() if hasattr(X_train, 'getnnz') else len(X_train))
+        val_size = X_val.shape[0] if X_val is not None and hasattr(X_val, 'shape') else (X_val.getnnz() if X_val is not None and hasattr(X_val, 'getnnz') else (len(X_val) if X_val is not None and hasattr(X_val, '__len__') else 0))
+        test_size = X_test.shape[0] if hasattr(X_test, 'shape') else (X_test.getnnz() if hasattr(X_test, 'getnnz') else len(X_test))
+        
+        # Base time estimates per 1000 samples (in seconds)
+        base_times = {
+            'knn': 0.5,
+            'decision_tree': 0.1,
+            'naive_bayes': 0.05,
+            'svm': 2.0,
+            'logistic_regression': 0.3,
+            'linear_svc': 1.0,
+            'kmeans': 0.2
+        }
+        
+        # Get base time for this model
+        base_time = base_times.get(model_name, 1.0)
+        
+        # Calculate estimated time based on data size
+        train_time = base_time * (train_size / 1000)
+        val_time = base_time * 0.1 * (val_size / 1000) if val_size > 0 else 0
+        test_time = base_time * 0.05 * (test_size / 1000)
+        
+        # Add overhead for model-specific operations
+        if model_name == 'knn':
+            # KNN has additional overhead for distance calculations
+            train_time *= 1.5
+        elif model_name in ['svm', 'linear_svc']:
+            # SVM models are more complex
+            train_time *= 2.0
+        
+        total_time = train_time + val_time + test_time
+        
+        # Format time display
+        if total_time < 60:
+            time_display = f"{total_time:.1f}s"
+        elif total_time < 3600:
+            time_display = f"{total_time/60:.1f}m"
+        else:
+            time_display = f"{total_time/3600:.1f}h"
+        
+        print(f"⏱️ Estimated total time: {time_display} (Train: {train_size:,} samples, Val: {val_size:,}, Test: {test_size:,})")

@@ -7,12 +7,183 @@ import numpy as np
 from typing import Dict, List, Tuple, Any
 from sklearn.ensemble import StackingClassifier, VotingClassifier
 from sklearn.metrics import accuracy_score, classification_report
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
+from sklearn.base import BaseEstimator, ClassifierMixin
+from scipy import sparse
 import time
 import warnings
 
 from ..base.base_model import BaseModel
 
 warnings.filterwarnings("ignore")
+
+
+class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
+    """
+    Simple wrapper for already trained models in ensemble learning
+    Uses the trained model directly without retraining
+    """
+    
+    # Set _estimator_type for sklearn compatibility
+    _estimator_type = "classifier"
+    
+    def __init__(self, trained_model, model_name: str = None):
+        self.trained_model = trained_model
+        self.model_name = model_name if model_name is not None else "unknown"
+        self.is_fitted = True  # Already fitted
+        
+        # Copy attributes from trained model
+        if hasattr(trained_model, 'classes_'):
+            self.classes_ = trained_model.classes_
+        if hasattr(trained_model, 'n_features_in_'):
+            self.n_features_in_ = trained_model.n_features_in_
+    
+    def fit(self, X, y):
+        """No-op since model is already trained"""
+        return self
+        
+    def predict(self, X):
+        """Make predictions using the trained model"""
+        return self.trained_model.predict(X)
+        
+    def predict_proba(self, X):
+        """Make probability predictions using the trained model"""
+        if hasattr(self.trained_model, 'predict_proba'):
+            return self.trained_model.predict_proba(X)
+        else:
+            # Fallback for models without predict_proba
+            from sklearn.utils.extmath import softmax
+            predictions = self.trained_model.predict(X)
+            # Create dummy probabilities
+            n_classes = len(self.classes_) if hasattr(self, 'classes_') else 2
+            proba = np.zeros((len(predictions), n_classes))
+            for i, pred in enumerate(predictions):
+                if hasattr(self, 'classes_'):
+                    class_idx = np.where(self.classes_ == pred)[0]
+                    if len(class_idx) > 0:
+                        proba[i, class_idx[0]] = 1.0
+                    else:
+                        proba[i, 0] = 1.0
+                else:
+                    proba[i, int(pred)] = 1.0
+            return proba
+    
+    def score(self, X, y):
+        """Score the model"""
+        return self.trained_model.score(X, y)
+    
+    def _more_tags(self):
+        """Additional tags for sklearn compatibility"""
+        return {
+            'binary_only': False,
+            'multiclass_only': False,
+            'multilabel': False,
+            'multioutput': False,
+            'multioutput_only': False,
+            'no_validation': False,
+            'non_deterministic': False,
+            'pairwise': False,
+            'preserves_dtype': [],
+            'poor_score': False,
+            'requires_fit': False,  # Already fitted
+            'requires_y': False,
+            'stateless': False,
+            'X_types': ['2darray', 'sparse'],
+            'y_types': ['1dlabels']
+        }
+    
+    def _check_targets(self, y_true, y_pred):
+        """Check targets for sklearn compatibility"""
+        from sklearn.utils.multiclass import type_of_target
+        return type_of_target(y_true)
+    
+    def __sklearn_is_fitted__(self):
+        """Check if the estimator is fitted"""
+        return self.is_fitted
+    
+    def _validate_data(self, X, y=None, reset=True):
+        """Validate input data for sklearn compatibility"""
+        from sklearn.utils.validation import check_X_y, check_array
+        if y is not None:
+            X, y = check_X_y(X, y)
+            return X, y
+        else:
+            return check_array(X)
+    
+    def _get_tags(self):
+        """Get tags for sklearn compatibility"""
+        from sklearn.utils._tags import _Tags
+        return _Tags(
+            estimator_type="classifier",
+            target_tags=self._get_target_tags(),
+            transformer_tags=None,
+            classifier_tags=self._get_classifier_tags(),
+            regressor_tags=None,
+            array_api_support=False,
+            no_validation=False,
+            non_deterministic=False,
+            requires_fit=True,
+            _skip_test=False,
+            input_tags=self._get_input_tags()
+        )
+    
+    def _get_target_tags(self):
+        """Get target tags"""
+        from sklearn.utils._tags import _TargetTags
+        return _TargetTags(
+            required=True,
+            one_d_labels=True,
+            two_d_labels=False,
+            positive_only=False,
+            multi_output=False,
+            single_output=True
+        )
+    
+    def _get_classifier_tags(self):
+        """Get classifier tags"""
+        from sklearn.utils._tags import _ClassifierTags
+        return _ClassifierTags(
+            poor_score=False,
+            multi_class=True,
+            multi_label=False
+        )
+    
+    def _get_input_tags(self):
+        """Get input tags"""
+        from sklearn.utils._tags import _InputTags
+        return _InputTags(
+            one_d_array=False,
+            two_d_array=True,
+            three_d_array=False,
+            sparse=True,
+            categorical=False,
+            string=False,
+            dict=False,
+            positive_only=False,
+            allow_nan=False,
+            pairwise=False
+        )
+        
+    def get_params(self, deep=True):
+        """Get model parameters for sklearn compatibility"""
+        params = {
+            'model': self.original_model,
+            'model_name': self.model_name
+        }
+        params.update(self.kwargs)
+        return params
+    
+    def set_params(self, **params):
+        """Set model parameters for sklearn compatibility"""
+        for key, value in params.items():
+            if key == 'model':
+                self.original_model = value
+                self.model = value
+            elif key == 'model_name':
+                self.model_name = value
+            else:
+                self.kwargs[key] = value
+        return self
 
 
 class EnsembleManager:
@@ -90,12 +261,92 @@ class EnsembleManager:
         
         return is_eligible
     
-    def create_ensemble_model(self, model_instances: Dict[str, BaseModel]):
+    def create_ensemble_with_reuse(self, individual_results: List[Dict[str, Any]], 
+                                  X_train: np.ndarray, y_train: np.ndarray,
+                                  model_factory=None) -> Dict[str, Any]:
+        """
+        Create ensemble model by reusing trained instances from individual results
+        
+        Args:
+            individual_results: List of individual model training results
+            X_train: Training features
+            y_train: Training labels
+            model_factory: Model factory for creating new instances if needed
+            
+        Returns:
+            Dictionary containing ensemble creation results
+        """
+        print(f"🔧 Creating ensemble with model reuse...")
+        start_time = time.time()
+        
+        base_model_instances = {}
+        reuse_results = {
+            'models_reused': [],
+            'models_retrained': [],
+            'reuse_errors': []
+        }
+        
+        for model_name in self.base_models:
+            print(f"🔍 Processing {model_name} for ensemble...")
+            
+            try:
+                # Try to find trained model in individual results
+                trained_model = self._find_trained_model_in_results(individual_results, model_name)
+                
+                if trained_model:
+                    print(f"✅ Found trained {model_name} in individual results")
+                    base_model_instances[model_name] = trained_model
+                    reuse_results['models_reused'].append(model_name)
+                else:
+                    # Fallback to creating new model
+                    print(f"⚠️ No trained {model_name} found, creating new instance")
+                    new_model = self._create_and_train_model(model_name, X_train, y_train, model_factory)
+                    if new_model:
+                        base_model_instances[model_name] = new_model
+                        reuse_results['models_retrained'].append(model_name)
+                    else:
+                        reuse_results['reuse_errors'].append(f"Failed to create {model_name}")
+                        
+            except Exception as e:
+                error_msg = f"Error processing {model_name}: {str(e)}"
+                print(f"❌ {error_msg}")
+                reuse_results['reuse_errors'].append(error_msg)
+        
+        # Create ensemble model
+        if len(base_model_instances) < 2:
+            error_msg = f"Need at least 2 base models for ensemble, got {len(base_model_instances)}"
+            print(f"❌ {error_msg}")
+            return {'error': error_msg, 'reuse_results': reuse_results}
+        
+        try:
+            ensemble_model = self.create_ensemble_model(base_model_instances, X_train)
+            creation_time = time.time() - start_time
+            
+            print(f"✅ Ensemble model created successfully")
+            print(f"   • Models Reused: {len(reuse_results['models_reused'])}")
+            print(f"   • Models Retrained: {len(reuse_results['models_retrained'])}")
+            print(f"   • Creation Time: {creation_time:.2f}s")
+            
+            return {
+                'ensemble_model': ensemble_model,
+                'base_model_instances': base_model_instances,
+                'reuse_results': reuse_results,
+                'creation_time': creation_time,
+                'success': True
+            }
+            
+        except Exception as e:
+            error_msg = f"Failed to create ensemble model: {str(e)}"
+            print(f"❌ {error_msg}")
+            return {'error': error_msg, 'reuse_results': reuse_results}
+
+    def create_ensemble_model(self, model_instances: Dict[str, BaseModel], X_train=None):
         """
         Create the ensemble model using StackingClassifier or VotingClassifier
         
         Args:
             model_instances: Dictionary of fitted base model instances
+            X_train: Training data to check data type compatibility
             
         Returns:
             Configured ensemble model (StackingClassifier or VotingClassifier)
@@ -115,14 +366,39 @@ class EnsembleManager:
                     print(f"❌ Error: Model '{model_name}' is None")
                     continue
                 
+                # For ensemble, we need to create a sklearn-compatible wrapper
+                # that handles data type selection properly
                 if hasattr(base_model, 'model'):
-                    # Use the underlying scikit-learn model
+                    # Get the underlying sklearn model
+                    sklearn_model = base_model.model
                     print(f"🔍 Debug: Using base_model.model for {model_name}")
-                    base_estimators.append((model_name, base_model.model))
                 else:
-                    # Use the model directly if it's already a scikit-learn model
+                    # Use the model directly if it's already a sklearn model
+                    sklearn_model = base_model
                     print(f"🔍 Debug: Using base_model directly for {model_name}")
-                    base_estimators.append((model_name, base_model))
+                
+                # For Naive Bayes, we need to handle sparse/dense data compatibility
+                if model_name == 'naive_bayes' and X_train is not None:
+                    # Check if we need to recreate the model for different data type
+                    from scipy import sparse
+                    from sklearn.naive_bayes import GaussianNB, MultinomialNB
+                    
+                    if sparse.issparse(X_train) and isinstance(sklearn_model, GaussianNB):
+                        # Convert GaussianNB to MultinomialNB for sparse data
+                        print(f"📊 Ensemble: Converting GaussianNB to MultinomialNB for sparse data")
+                        # Create new MultinomialNB and copy parameters if possible
+                        new_model = MultinomialNB()
+                        # Note: We can't copy parameters between different NB types
+                        sklearn_model = new_model
+                    elif not sparse.issparse(X_train) and isinstance(sklearn_model, MultinomialNB):
+                        # Convert MultinomialNB to GaussianNB for dense data
+                        print(f"📊 Ensemble: Converting MultinomialNB to GaussianNB for dense data")
+                        new_model = GaussianNB()
+                        sklearn_model = new_model
+                
+                # Use the trained model directly (no wrapper needed)
+                # The model is already trained and sklearn-compatible
+                base_estimators.append((model_name, sklearn_model))
             else:
                 print(f"⚠️ Warning: Model '{model_name}' not found in instances")
                 continue
@@ -358,10 +634,29 @@ class EnsembleManager:
         start_time = time.time()
         
         try:
+            # Keep sparse matrices for ensemble training (better performance)
+            from scipy import sparse
+            if sparse.issparse(X_train):
+                print("🔧 Using sparse matrix for ensemble training (memory efficient)...")
+                X_train_dense = X_train  # Keep sparse for better performance
+                print(f"✅ Using sparse matrix: {X_train_dense.shape}")
+            else:
+                X_train_dense = X_train
+            
+            if X_val is not None:
+                if sparse.issparse(X_val):
+                    print("🔧 Using sparse validation matrix...")
+                    X_val_dense = X_val  # Keep sparse
+                    print(f"✅ Using sparse validation matrix: {X_val_dense.shape}")
+                else:
+                    X_val_dense = X_val
+            else:
+                X_val_dense = X_val
+            
             # Perform cross-validation for ensemble before final training
             from sklearn.model_selection import cross_val_score
             print("📊 Performing cross-validation for ensemble...")
-            cv_scores = cross_val_score(self.ensemble_model, X_train, y_train, 
+            cv_scores = cross_val_score(self.ensemble_model, X_train_dense, y_train, 
                                       cv=self.cv_folds, scoring='accuracy', n_jobs=-1)
             cv_mean = cv_scores.mean()
             cv_std = cv_scores.std()
@@ -369,18 +664,18 @@ class EnsembleManager:
             print(f"   • CV Accuracy: {cv_mean:.3f}±{cv_std:.3f}")
             
             # Train ensemble model on full training data
-            self.ensemble_model.fit(X_train, y_train)
+            self.ensemble_model.fit(X_train_dense, y_train)
             
             training_time = time.time() - start_time
             self.training_times['ensemble'] = training_time
             
             # Calculate training accuracy
-            train_accuracy = self.ensemble_model.score(X_train, y_train)
+            train_accuracy = self.ensemble_model.score(X_train_dense, y_train)
             
             # Calculate validation accuracy if validation data provided
             val_accuracy = None
-            if X_val is not None and y_val is not None:
-                val_accuracy = self.ensemble_model.score(X_val, y_val)
+            if X_val_dense is not None and y_val is not None:
+                val_accuracy = self.ensemble_model.score(X_val_dense, y_val)
             
             # Store results including CV metrics
             self.ensemble_results = {
@@ -432,9 +727,18 @@ class EnsembleManager:
         start_time = time.time()
         
         try:
+            # Keep sparse matrices for prediction (better performance)
+            from scipy import sparse
+            if sparse.issparse(X):
+                print("🔧 Using sparse matrix for ensemble prediction (memory efficient)...")
+                X_dense = X  # Keep sparse for better performance
+                print(f"✅ Using sparse matrix: {X_dense.shape}")
+            else:
+                X_dense = X
+            
             # Make predictions
-            predictions = self.ensemble_model.predict(X)
-            probabilities = self.ensemble_model.predict_proba(X)
+            predictions = self.ensemble_model.predict(X_dense)
+            probabilities = self.ensemble_model.predict_proba(X_dense)
             
             prediction_time = time.time() - start_time
             self.prediction_times['ensemble'] = prediction_time
@@ -462,7 +766,7 @@ class EnsembleManager:
         print("📊 Evaluating ensemble model performance...")
         
         try:
-            # Make predictions
+            # Make predictions (predict_ensemble already handles sparse matrices)
             y_pred, y_proba = self.predict_ensemble(X_test)
             
             # Calculate metrics
@@ -571,3 +875,66 @@ class EnsembleManager:
         self.is_ensemble_ready = False
         
         print("🔄 Ensemble system reset to initial state")
+    
+    def _find_trained_model_in_results(self, individual_results: List[Dict[str, Any]], 
+                                     model_name: str):
+        """
+        Find trained model instance in individual results
+        
+        Args:
+            individual_results: List of individual model results
+            model_name: Name of model to find
+            
+        Returns:
+            Trained model instance or None
+        """
+        for result in individual_results:
+            if (result.get('status') == 'success' and 
+                result.get('model_name') == model_name and
+                'trained_model' in result):
+                return result['trained_model']
+        return None
+    
+    def _create_and_train_model(self, model_name: str, X_train: np.ndarray, 
+                               y_train: np.ndarray, model_factory=None):
+        """
+        Create and train a new model instance
+        
+        Args:
+            model_name: Name of model to create
+            X_train: Training features
+            y_train: Training labels
+            model_factory: Model factory for creating instances
+            
+        Returns:
+            Trained model instance or None
+        """
+        try:
+            if model_factory:
+                model_instance = model_factory.create_model(model_name)
+            else:
+                # Fallback: import model factory
+                from ..utils.model_factory import ModelFactory
+                from ..utils.model_registry import ModelRegistry
+                from ..register_models import register_all_models
+                
+                registry = ModelRegistry()
+                register_all_models(registry)
+                factory = ModelFactory(registry)
+                model_instance = factory.create_model(model_name)
+            
+            if model_instance is None:
+                print(f"❌ Model factory returned None for {model_name}")
+                return None
+            
+            # Train the model
+            if model_name == 'knn':
+                model_instance.fit(X_train, y_train, use_gpu=False)
+            else:
+                model_instance.fit(X_train, y_train)
+            
+            return model_instance
+            
+        except Exception as e:
+            print(f"❌ Failed to create and train {model_name}: {e}")
+            return None

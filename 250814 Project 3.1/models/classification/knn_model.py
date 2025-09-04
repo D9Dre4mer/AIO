@@ -232,10 +232,36 @@ class KNNModel(BaseModel):
                             score = (y_pred == y_fold_val).mean()
                         elif scoring == 'f1_macro':
                             from sklearn.metrics import f1_score
-                            score = f1_score(y_fold_val, y_pred, average='macro')
+                            try:
+                                # Debug: Print detailed information for first few iterations
+                                if k <= 5:  # Only debug first few K values to avoid spam
+                                    print(f"     Debug: y_fold_val unique: {np.unique(y_fold_val)}")
+                                    print(f"     Debug: y_pred unique: {np.unique(y_pred)}")
+                                    print(f"     Debug: y_fold_val shape: {y_fold_val.shape}")
+                                    print(f"     Debug: y_pred shape: {y_pred.shape}")
+                                
+                                # Calculate f1_score
+                                score = f1_score(y_fold_val, y_pred, average='macro')
+                                
+                                # Debug: Print score information
+                                if k <= 5:
+                                    print(f"     Debug: Raw f1_score: {score:.6f}")
+                                
+                                # Check for NaN or invalid scores
+                                if np.isnan(score) or np.isinf(score):
+                                    print(f"     ⚠️ Invalid f1_score: {score}, using accuracy instead")
+                                    score = (y_pred == y_fold_val).mean()
+                                    
+                            except Exception as e:
+                                print(f"     ⚠️ f1_score error: {e}, using accuracy instead")
+                                score = (y_pred == y_fold_val).mean()
                         else:
                             # Default to accuracy
                             score = (y_pred == y_fold_val).mean()
+                        
+                        # Debug: Print final score for first few iterations
+                        if k <= 5:
+                            print(f"     Debug: Final score: {score:.6f}")
                         
                         scores.append(score)
                     
@@ -304,9 +330,9 @@ class KNNModel(BaseModel):
             print(f"📊 Expected K values: {all_k_values}")
             print(f"📊 Expected weights: {all_weights}")
             print(f"🔍 Debug: cv_results['param_n_neighbors'] shape: {cv_results['param_n_neighbors'].shape}")
-            print(f"🔍 Debug: cv_results['param_n_neighbors'] content: {cv_results['param_n_neighbors']}")
-            print(f"🔍 Debug: cv_results['param_weights'] content: {cv_results['param_weights']}")
-            print(f"🔍 Debug: cv_results['mean_test_score'] content: {cv_results['mean_test_score']}")
+            print(f"🔍 Debug: cv_results['param_n_neighbors'] content: {cv_results['param_n_neighbors'][:5]}... (showing first 5)")
+            print(f"🔍 Debug: cv_results['param_weights'] content: {cv_results['param_weights'][:5]}... (showing first 5)")
+            print(f"🔍 Debug: cv_results['mean_test_score'] content: {cv_results['mean_test_score'][:5]}... (showing first 5)")
             
             return {
                 'best_params': best_params,
@@ -331,58 +357,59 @@ class KNNModel(BaseModel):
             optimal_n_jobs = n_jobs
             print(f"🔄 CPU mode: Using {optimal_n_jobs} parallel jobs")
         
-        # Create GridSearchCV
-        grid_search = GridSearchCV(
-            estimator=base_knn,
-            param_grid=param_grid,
-            cv=cv_folds,
-            scoring=scoring,
-            n_jobs=optimal_n_jobs,
-            verbose=verbose,
-            return_train_score=False
-        )
-        
-        # Fit GridSearchCV
-        print(f"🔄 Fitting {len(param_grid['n_neighbors'])} K values × "
-              f"{len(param_grid['weights'])} weights × "
-              f"{len(param_grid['metric'])} metrics = "
-              f"{len(param_grid['n_neighbors']) * len(param_grid['weights']) * len(param_grid['metric'])} combinations...")
-        
-        grid_search.fit(X_train, y_train)
-        
-        # Get best parameters and model
-        best_params = grid_search.best_params_
-        best_score = grid_search.best_score_
-        best_model = grid_search.best_estimator_
-        
-        print(f"✅ Best KNN parameters: {best_params}")
-        print(f"✅ Best CV score ({scoring}): {best_score:.4f}")
-        
-        # Update current model with best one
-        self.model = best_model
-        self.n_neighbors = best_params['n_neighbors']
-        self.is_fitted = True
-        
-        # Store tuning results
-        self.tuning_results = {
-            'best_params': best_params,
-            'best_score': best_score,
-            'cv_results': grid_search.cv_results_,
-            'param_grid': param_grid,
-            'cv_folds': cv_folds,
-            'scoring': scoring
-        }
-        
-        # Update training history
-        self.training_history.append({
-            'action': 'hyperparameter_tuning',
-            'best_params': best_params,
-            'best_score': best_score,
-            'cv_folds': cv_folds,
-            'scoring': scoring
-        })
-        
-        return self.tuning_results
+        # Create GridSearchCV (only if not using real GPU)
+        if not use_real_gpu:
+            grid_search = GridSearchCV(
+                estimator=base_knn,
+                param_grid=param_grid,
+                cv=cv_folds,
+                scoring=scoring,
+                n_jobs=optimal_n_jobs,
+                verbose=verbose,
+                return_train_score=False
+            )
+            
+            # Fit GridSearchCV
+            print(f"🔄 Fitting {len(param_grid['n_neighbors'])} K values × "
+                  f"{len(param_grid['weights'])} weights × "
+                  f"{len(param_grid['metric'])} metrics = "
+                  f"{len(param_grid['n_neighbors']) * len(param_grid['weights']) * len(param_grid['metric'])} combinations...")
+            
+            grid_search.fit(X_train, y_train)
+            
+            # Get best parameters and model
+            best_params = grid_search.best_params_
+            best_score = grid_search.best_score_
+            best_model = grid_search.best_estimator_
+            
+            print(f"✅ Best KNN parameters: {best_params}")
+            print(f"✅ Best CV score ({scoring}): {best_score:.4f}")
+            
+            # Update current model with best one
+            self.model = best_model
+            self.n_neighbors = best_params['n_neighbors']
+            self.is_fitted = True
+            
+            # Store tuning results
+            self.tuning_results = {
+                'best_params': best_params,
+                'best_score': best_score,
+                'cv_results': grid_search.cv_results_,
+                'param_grid': param_grid,
+                'cv_folds': cv_folds,
+                'scoring': scoring
+            }
+            
+            # Update training history
+            self.training_history.append({
+                'action': 'hyperparameter_tuning',
+                'best_params': best_params,
+                'best_score': best_score,
+                'cv_folds': cv_folds,
+                'scoring': scoring
+            })
+            
+            return self.tuning_results
     
     def determine_optimal_k(
         self, 
@@ -497,10 +524,36 @@ class KNNModel(BaseModel):
                             score = (y_pred == y_fold_val).mean()
                         elif scoring == 'f1_macro':
                             from sklearn.metrics import f1_score
-                            score = f1_score(y_fold_val, y_pred, average='macro')
+                            try:
+                                # Debug: Print detailed information for first few iterations
+                                if k <= 5:  # Only debug first few K values to avoid spam
+                                    print(f"     Debug: y_fold_val unique: {np.unique(y_fold_val)}")
+                                    print(f"     Debug: y_pred unique: {np.unique(y_pred)}")
+                                    print(f"     Debug: y_fold_val shape: {y_fold_val.shape}")
+                                    print(f"     Debug: y_pred shape: {y_pred.shape}")
+                                
+                                # Calculate f1_score
+                                score = f1_score(y_fold_val, y_pred, average='macro')
+                                
+                                # Debug: Print score information
+                                if k <= 5:
+                                    print(f"     Debug: Raw f1_score: {score:.6f}")
+                                
+                                # Check for NaN or invalid scores
+                                if np.isnan(score) or np.isinf(score):
+                                    print(f"     ⚠️ Invalid f1_score: {score}, using accuracy instead")
+                                    score = (y_pred == y_fold_val).mean()
+                                    
+                            except Exception as e:
+                                print(f"     ⚠️ f1_score error: {e}, using accuracy instead")
+                                score = (y_pred == y_fold_val).mean()
                         else:
                             # Default to accuracy
                             score = (y_pred == y_fold_val).mean()
+                        
+                        # Debug: Print final score for first few iterations
+                        if k <= 5:
+                            print(f"     Debug: Final score: {score:.6f}")
                         
                         scores.append(score)
                     
@@ -569,9 +622,9 @@ class KNNModel(BaseModel):
             print(f"📊 Expected K values: {all_k_values}")
             print(f"📊 Expected weights: {all_weights}")
             print(f"🔍 Debug: cv_results['param_n_neighbors'] shape: {cv_results['param_n_neighbors'].shape}")
-            print(f"🔍 Debug: cv_results['param_n_neighbors'] content: {cv_results['param_n_neighbors']}")
-            print(f"🔍 Debug: cv_results['param_weights'] content: {cv_results['param_weights']}")
-            print(f"🔍 Debug: cv_results['mean_test_score'] content: {cv_results['mean_test_score']}")
+            print(f"🔍 Debug: cv_results['param_n_neighbors'] content: {cv_results['param_n_neighbors'][:5]}... (showing first 5)")
+            print(f"🔍 Debug: cv_results['param_weights'] content: {cv_results['param_weights'][:5]}... (showing first 5)")
+            print(f"🔍 Debug: cv_results['mean_test_score'] content: {cv_results['mean_test_score'][:5]}... (showing first 5)")
             
             return {
                 'best_params': best_params,
@@ -596,80 +649,81 @@ class KNNModel(BaseModel):
             optimal_n_jobs = n_jobs
             print(f"🔄 CPU mode: Using {optimal_n_jobs} parallel jobs")
         
-        # Create GridSearchCV
-        grid_search = GridSearchCV(
-            estimator=base_knn,
-            param_grid=param_grid,
-            cv=cv_folds,
-            scoring=scoring,
-            n_jobs=optimal_n_jobs,
-            verbose=verbose,
-            return_train_score=False
-        )
-        
-        # Fit GridSearchCV
-        print(f"🔄 Fitting {len(param_grid['n_neighbors'])} K values × "
-              f"{len(param_grid['weights'])} weights = "
-              f"{len(param_grid['n_neighbors']) * len(param_grid['weights'])} combinations...")
-        
-        grid_search.fit(X_train, y_train)
-        
-        # Get best parameters and model
-        best_params = grid_search.best_params_
-        best_score = grid_search.best_score_
-        best_model = grid_search.best_estimator_
-        
-        print(f"✅ Best KNN params for cosine metric: {best_params}")
-        print(f"✅ Best CV score ({scoring}): {best_score:.4f}")
-        
-        # Get benchmark results for each K value
-        results = grid_search.cv_results_
-        benchmark_results = {}
-        
-        print(f"\n📊 Benchmark Results for KNN (cosine metric):")
-        for k in [3, 5, 7, 9, 11, 13, 15]:
-            mask = results['param_n_neighbors'] == k
-            if np.any(mask):
-                mean_f1 = results['mean_test_score'][mask].mean()
-                std_f1 = results['std_test_score'][mask].mean()
-                benchmark_results[k] = {
-                    'mean_f1': mean_f1,
-                    'std_f1': std_f1
-                }
-                print(f"K = {k}: Mean Macro F1 = {mean_f1:.4f} (± {std_f1:.4f})")
-        
-        # Plot benchmark F1-scores for K values if requested
-        if plot_results:
-            self._plot_k_benchmark(results, param_grid, best_params, best_score)
-        
-        # Update current model with best one
-        self.model = best_model
-        self.n_neighbors = best_params['n_neighbors']
-        self.is_fitted = True
-        
-        # Store optimal K results
-        self.optimal_k_results = {
-            'best_params': best_params,
-            'best_score': best_score,
-            'cv_results': results,
-            'param_grid': param_grid,
-            'cv_folds': cv_folds,
-            'scoring': scoring,
-            'benchmark_results': benchmark_results,
-            'optimal_k': best_params['n_neighbors']
-        }
-        
-        # Update training history
-        self.training_history.append({
-            'action': 'optimal_k_determination',
-            'best_params': best_params,
-            'best_score': best_score,
-            'optimal_k': best_params['n_neighbors'],
-            'cv_folds': cv_folds,
-            'scoring': scoring
-        })
-        
-        return self.optimal_k_results
+     # Create GridSearchCV (only if not using real GPU)
+        if not use_real_gpu:
+            grid_search = GridSearchCV(
+                estimator=base_knn,
+                param_grid=param_grid,
+                cv=cv_folds,
+                scoring=scoring,
+                n_jobs=optimal_n_jobs,
+                verbose=verbose,
+                return_train_score=False
+            )
+            
+            # Fit GridSearchCV
+            print(f"🔄 Fitting {len(param_grid['n_neighbors'])} K values × "
+                  f"{len(param_grid['weights'])} weights = "
+                  f"{len(param_grid['n_neighbors']) * len(param_grid['weights'])} combinations...")
+            
+            grid_search.fit(X_train, y_train)
+            
+            # Get best parameters and model
+            best_params = grid_search.best_params_
+            best_score = grid_search.best_score_
+            best_model = grid_search.best_estimator_
+            
+            print(f"✅ Best KNN params for cosine metric: {best_params}")
+            print(f"✅ Best CV score ({scoring}): {best_score:.4f}")
+            
+            # Get benchmark results for each K value
+            results = grid_search.cv_results_
+            benchmark_results = {}
+            
+            print(f"\n📊 Benchmark Results for KNN (cosine metric):")
+            for k in [3, 5, 7, 9, 11, 13, 15]:
+                mask = results['param_n_neighbors'] == k
+                if np.any(mask):
+                    mean_f1 = results['mean_test_score'][mask].mean()
+                    std_f1 = results['std_test_score'][mask].mean()
+                    benchmark_results[k] = {
+                        'mean_f1': mean_f1,
+                        'std_f1': std_f1
+                    }
+                    print(f"K = {k}: Mean Macro F1 = {mean_f1:.4f} (± {std_f1:.4f})")
+            
+            # Plot benchmark F1-scores for K values if requested
+            if plot_results:
+                self._plot_k_benchmark(results, param_grid, best_params, best_score)
+            
+            # Update current model with best one
+            self.model = best_model
+            self.n_neighbors = best_params['n_neighbors']
+            self.is_fitted = True
+            
+            # Store optimal K results
+            self.optimal_k_results = {
+                'best_params': best_params,
+                'best_score': best_score,
+                'cv_results': results,
+                'param_grid': param_grid,
+                'cv_folds': cv_folds,
+                'scoring': scoring,
+                'benchmark_results': benchmark_results,
+                'optimal_k': best_params['n_neighbors']
+            }
+            
+            # Update training history
+            self.training_history.append({
+                'action': 'optimal_k_determination',
+                'best_params': best_params,
+                'best_score': best_score,
+                'optimal_k': best_params['n_neighbors'],
+                'cv_folds': cv_folds,
+                'scoring': scoring
+            })
+            
+            return self.optimal_k_results
     
     def _plot_k_benchmark(self, cv_results: Dict[str, Any], param_grid: Dict[str, Any], best_params: Dict[str, Any] = None, best_score: float = None):
         """

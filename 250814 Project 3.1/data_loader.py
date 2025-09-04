@@ -615,12 +615,22 @@ class DataLoader:
                         self._global_word_freq = {}
                         
                         # Count word frequencies across all samples (including stopwords)
-                        for sample in self.samples:
+                        total_samples = len(self.samples)
+                        print(f"🔄 Computing global word frequencies from {total_samples:,} samples...")
+                        
+                        for i, sample in enumerate(self.samples):
                             sample_tokens = word_tokenize(sample['abstract'].lower())
                             for word in sample_tokens:
                                 if len(word) > 1:  # Only exclude single characters
                                     self._global_word_freq[word] = self._global_word_freq.get(word, 0) + 1
+                            
+                            # Show progress every 2% or every 100 samples for better visibility
+                            if (i + 1) % max(1, min(total_samples // 50, 100)) == 0 or i == total_samples - 1:
+                                progress_percent = ((i + 1) / total_samples) * 100
+                                progress_bar = self._create_progress_bar(progress_percent, 40)
+                                print(f"\r🔄 Word Frequencies: {progress_bar} {progress_percent:.1f}% ({i + 1:,}/{total_samples:,})", end="", flush=True)
                         
+                        print()  # New line after progress bar
                         print(f"🔧 [DATALOADER] Global word frequencies computed: {len(self._global_word_freq)} unique words")
                     
                     # Apply rare words removal using global frequencies
@@ -638,9 +648,7 @@ class DataLoader:
                     abstract = ' '.join(filtered_tokens)
                     
                     removed_count = len(tokens) - len(filtered_tokens)
-                    print(f"🔧 [DATALOADER] Applied ML-standard rare words removal: "
-                          f"{len(tokens)} → {len(filtered_tokens)} tokens "
-                          f"(removed {removed_count} rare words with global freq < {threshold})")
+                    # Rare words removal applied silently
                         
                 except ImportError:
                     # Fallback - no external libraries available for rare words removal
@@ -669,7 +677,7 @@ class DataLoader:
                     try:
                         nltk.data.find('taggers/averaged_perceptron_tagger')
                         nltk.data.find('corpora/wordnet')
-                        print("✅ [DATALOADER] All required NLTK data verified")
+                        # NLTK data verified silently
                     except LookupError as e:
                         print(f"❌ [DATALOADER] NLTK data verification failed: {e}")
                         raise ImportError("Required NLTK data not available")
@@ -702,8 +710,7 @@ class DataLoader:
                         lemmatized_words.append(lemmatized_word)
                     
                     abstract = ' '.join(lemmatized_words)
-                    print(f"🔧 [DATALOADER] Applied NLTK lemmatization: "
-                          f"{len(words)} words processed")
+                    # Lemmatization applied silently
                     
                 except ImportError:
                     # Fallback - no external libraries available for lemmatization
@@ -739,8 +746,7 @@ class DataLoader:
                     filtered_words = [word for word in words if word.lower() not in all_stopwords]
                     abstract = ' '.join(filtered_words)
                     
-                    print(f"🔧 [DATALOADER] Applied {aggressiveness} stopwords removal using NLTK: "
-                          f"{len(words)} → {len(filtered_words)} words")
+                    # Stopwords removal applied silently
                     
                 except ImportError:
                     # Fallback to stop-words library if NLTK not available
@@ -762,8 +768,7 @@ class DataLoader:
                         filtered_words = [word for word in words if word.lower() not in all_stopwords]
                         abstract = ' '.join(filtered_words)
                         
-                        print(f"🔧 [DATALOADER] Applied {aggressiveness} stopwords removal using stop-words library: "
-                              f"{len(words)} → {len(filtered_words)} words")
+                        # Stopwords removal applied silently
                         
                     except ImportError:
                         # Final fallback - no external libraries available
@@ -813,9 +818,7 @@ class DataLoader:
                             abstract = abstract.replace(phrase, underscore_phrase)
                             replaced_count += 1
                     
-                    print(f"🔧 [DATALOADER] Applied NLTK phrase detection: "
-                          f"found {len(phrase_counts)} phrases, "
-                          f"replaced {replaced_count} with frequency >= {min_freq}")
+                    # Phrase detection applied silently
                     
                 except ImportError:
                     # Fallback - no external libraries available for phrase detection
@@ -837,7 +840,9 @@ class DataLoader:
             original_count = len(self.preprocessed_samples)
             cleaned_samples = []
             
-            for sample in self.preprocessed_samples:
+            print(f"🧹 [DATALOADER] Starting data validation for {original_count:,} samples...")
+            
+            for i, sample in enumerate(self.preprocessed_samples):
                 # Clean text and label
                 text = sample['text'].strip() if sample['text'] else ""
                 label = sample['label'].strip() if sample['label'] else ""
@@ -852,18 +857,36 @@ class DataLoader:
                     'text': text,
                     'label': label
                 })
+                
+                # Show progress every 2% or every 1000 samples for better visibility
+                if (i + 1) % max(1, min(original_count // 50, 1000)) == 0 or i == original_count - 1:
+                    progress_percent = ((i + 1) / original_count) * 100
+                    progress_bar = self._create_progress_bar(progress_percent, 40)
+                    print(f"\r🧹 Data Validation: {progress_bar} {progress_percent:.1f}% ({i + 1:,}/{original_count:,})", end="", flush=True)
             
+            print()  # New line after progress bar
             self.preprocessed_samples = cleaned_samples
-            print(f"🧹 [DATALOADER] Data validation cleaned all {len(self.preprocessed_samples)} samples (preserved count)")
+            print(f"🧹 [DATALOADER] Data validation completed: {len(self.preprocessed_samples)} samples cleaned (preserved count)")
         
         if preprocessing_config.get('memory_optimization', True):
             # Convert text to category for memory efficiency
-            for sample in self.preprocessed_samples:
+            print(f"💾 [DATALOADER] Applying memory optimization to {len(self.preprocessed_samples):,} samples...")
+            
+            for i, sample in enumerate(self.preprocessed_samples):
                 sample['text'] = str(sample['text'])
+                
+                # Show progress every 5% or every 2000 samples for memory optimization
+                if (i + 1) % max(1, min(len(self.preprocessed_samples) // 20, 2000)) == 0 or i == len(self.preprocessed_samples) - 1:
+                    progress_percent = ((i + 1) / len(self.preprocessed_samples)) * 100
+                    progress_bar = self._create_progress_bar(progress_percent, 40)
+                    print(f"\r💾 Memory Optimization: {progress_bar} {progress_percent:.1f}% ({i + 1:,}/{len(self.preprocessed_samples):,})", end="", flush=True)
+            
+            print()  # New line after progress bar
+            print(f"💾 [DATALOADER] Memory optimization completed")
         
         print(f"✅ [DATALOADER] Preprocessing completed: "
               f"{len(self.preprocessed_samples)} samples")
-        print(f"🔧 [DATALOADER] Applied options: {preprocessing_config}")
+        # Preprocessing options applied silently
         
         # Print first 3 preprocessed samples
         for sample in self.preprocessed_samples[:3]:

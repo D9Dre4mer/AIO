@@ -27,8 +27,7 @@ warnings.filterwarnings("ignore")
 # Add current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import progress tracking
-from utils.progress_tracker import create_training_progress
+# Progress tracking removed - using simple progress indicators instead
 
 
 def print_banner():
@@ -217,11 +216,19 @@ def run_training(step1_config, step2_config, step3_config):
         def progress_callback(phase, message, progress):
             print(f"   [{phase}] {message} ({progress:.1%})")
         
-        # GPU Optimization: Convert sparse matrices to dense for GPU acceleration
-        print(f"\n🚀 ENABLING GPU OPTIMIZATION...")
-        print(f"   • Converting sparse matrices (BoW, TF-IDF) to dense arrays")
-        print(f"   • This enables GPU acceleration for all vectorization methods")
-        print(f"   • Memory usage will increase but performance will improve")
+        # GPU Optimization: Check configuration
+        from config import ENABLE_GPU_OPTIMIZATION, FORCE_DENSE_CONVERSION
+        
+        if ENABLE_GPU_OPTIMIZATION or FORCE_DENSE_CONVERSION:
+            print("\n🚀 ENABLING GPU OPTIMIZATION...")
+            print("   • Converting sparse matrices (BoW, TF-IDF) to dense arrays")
+            print("   • This enables GPU acceleration for all vectorization methods")
+            print("   • Memory usage will increase but performance will improve")
+        else:
+            print("\n💾 MEMORY OPTIMIZATION MODE...")
+            print("   • Using sparse matrices (BoW, TF-IDF) for memory efficiency")
+            print("   • GPU acceleration disabled to save memory")
+            print("   • Models will use CPU with sparse matrices (faster for most cases)")
         
         # Execute training
         result = execute_streamlit_training(

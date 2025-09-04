@@ -113,9 +113,9 @@ class KMeansModel(BaseModel):
                     print(f"✅ SVD transformation completed for prediction")
                     return X_processed, X_processed
             else:
-                print(f"✅ Converting to dense matrix "
+                print(f"✅ Using sparse matrix for K-Means "
                       f"({X.shape[1]:,} features ≤ {KMEANS_SVD_THRESHOLD:,} threshold)")
-                return X.toarray(), X.toarray()
+                return X, X
         else:
             return X, X
     

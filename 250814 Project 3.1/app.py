@@ -1788,11 +1788,39 @@ def render_step3_wireframe():
                         # Use Sentence Embeddings for KNN optimization (same as Project3_1_A-Son.ipynb)
                         from text_encoders import EmbeddingVectorizer
                         from sklearn.preprocessing import LabelEncoder
-                                   
-                        # Create sentence embeddings (use raw mode for direct text input)
-                        embedding_vectorizer = EmbeddingVectorizer()
-                        embedding_vectorizer.fit(X_texts)
-                        X_train = embedding_vectorizer.transform(X_texts, mode='raw')
+                        
+                        # Show progress for large datasets
+                        if len(X_texts) > 50000:
+                            st.warning(f"⚠️ **Large dataset**: {len(X_texts):,} samples. This may take several minutes...")
+                        
+                        # Create sentence embeddings with progress tracking
+                        with st.spinner("🔄 Loading SentenceTransformer model..."):
+                            embedding_vectorizer = EmbeddingVectorizer()
+                        
+                        with st.spinner("🔄 Fitting embedding vectorizer..."):
+                            embedding_vectorizer.fit(X_texts)
+                        
+                        # Create progress bar for embedding transformation
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Use transform_with_progress for better progress tracking
+                        status_text.text("🔄 Creating embeddings... (This may take a while for large datasets)")
+                        X_train = embedding_vectorizer.transform_with_progress(
+                            X_texts, 
+                            mode='raw',
+                            batch_size=1000,  # Process in batches of 1000
+                            stop_callback=None
+                        )
+                        X_train = np.array(X_train)  # Convert to numpy array
+                        
+                        progress_bar.progress(1.0)
+                        status_text.text("✅ Embeddings created successfully!")
+                        st.success(f"✅ **Embeddings created**: Shape {X_train.shape}")
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
                         
                         label_encoder = LabelEncoder()
                         y_train = label_encoder.fit_transform(y_labels)

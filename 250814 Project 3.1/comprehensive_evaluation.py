@@ -24,8 +24,7 @@ from models import NewModelTrainer, validation_manager, ModelMetrics
 # Import visualization
 from visualization import create_output_directories
 
-# Import progress tracking
-from utils.progress_tracker import create_training_progress, create_embedding_progress
+# Progress tracking removed - using simple progress indicators instead
 
 
 class ComprehensiveEvaluator:
@@ -367,9 +366,8 @@ class ComprehensiveEvaluator:
         else:
             # Fallback: Load dataset from scratch (for non-Streamlit usage)
             if hasattr(self, 'step1_data'):
-                print(f"   • step1_data value: {self.step1_data}")
+                print(f"   • step1_data type: {type(self.step1_data)}")
                 if self.step1_data:
-                    print(f"   • step1_data type: {type(self.step1_data)}")
                     print(f"   • step1_data keys: {list(self.step1_data.keys()) if isinstance(self.step1_data, dict) else 'Not a dict'}")
             
             print("📥 Loading dataset from scratch...")
@@ -595,9 +593,7 @@ class ComprehensiveEvaluator:
             print("🧠 Processing Word Embeddings...")
             start_time = time.time()
             
-            # Create progress tracker for embeddings
-            total_samples = len(X_train) + len(X_test) + (len(X_val) if X_val else 0)
-            embedding_progress = create_embedding_progress(total_samples, "Word Embeddings")
+            # Progress tracking removed - using simple progress indicators
             
             # FIXED: Fit embedding model on TRAINING DATA ONLY to prevent data leakage
             print(f"🔧 Fitting embedding model on {len(X_train):,} training samples...")
@@ -610,8 +606,7 @@ class ComprehensiveEvaluator:
                 
             X_train_emb = self.text_vectorizer.fit_transform_embeddings(X_train, stop_callback=actual_stop_callback)
             
-            # Update progress after training embeddings
-            embedding_progress.update_batch(len(X_train))
+            # Progress tracking removed
             
             # Check if stopped during training embeddings
             if actual_stop_callback and actual_stop_callback():
@@ -622,8 +617,7 @@ class ComprehensiveEvaluator:
             print(f"🔧 Transforming {X_test.shape[0] if hasattr(X_test, 'shape') else len(X_test):,} test samples using fitted model...")
             X_test_emb = self.text_vectorizer.transform_embeddings(X_test, stop_callback=actual_stop_callback)
             
-            # Update progress after test embeddings
-            embedding_progress.update_batch(len(X_test))
+            # Progress tracking removed
             
             # Check if stopped during test embeddings
             if actual_stop_callback and actual_stop_callback():
@@ -636,16 +630,14 @@ class ComprehensiveEvaluator:
                 print(f"🔧 Transforming {len(X_val):,} validation samples...")
                 X_val_emb = self.text_vectorizer.transform_embeddings(X_val, stop_callback=actual_stop_callback)
                 
-                # Update progress after validation embeddings
-                embedding_progress.update_batch(len(X_val))
+                # Progress tracking removed
                 
                 # Check if stopped during validation embeddings
                 if actual_stop_callback and actual_stop_callback():
                     print("🛑 Embedding creation stopped by user request")
                     return {}
             
-            # Finish embedding progress
-            embedding_progress.finish()
+            # Progress tracking removed
             
             emb_time = time.time() - start_time
             
@@ -941,7 +933,7 @@ class ComprehensiveEvaluator:
                 print(f"     ❌ ML Standard CV calculation failed: {e}")
                 print(f"     💡 Recommendation: Check validation data and model configuration")
             
-            # Store results
+            # Store results with trained model instance for reuse
             result = {
                 'model_name': model_name,
                 'embedding_name': embedding_name,
@@ -953,6 +945,9 @@ class ComprehensiveEvaluator:
                 'validation_metrics': val_metrics,
                 'test_metrics': test_metrics,
                 'f1_score': test_metrics.get('f1_score', 0.0),  # ← Thêm F1 score từ test set
+                
+                # ENHANCED: Store trained model instance for ensemble reuse
+                'trained_model': getattr(self.model_trainer, 'current_model', None),
                 
                 # Overfitting analysis
                 'overfitting_score': overfitting_score,
@@ -1047,8 +1042,8 @@ class ComprehensiveEvaluator:
                         label_mapping[label_id] = f"Class_{label_id}"
                 
                 print(f"✅ [COMPREHENSIVE_EVALUATOR] Using transferred label mapping from data_loader:")
-                print(f"   - Full id_to_label: {self.data_loader.id_to_label}")
-                print(f"   - Applied mapping: {label_mapping}")
+                print(f"   - Full id_to_label keys: {list(self.data_loader.id_to_label.keys())}")
+                print(f"   - Applied mapping keys: {list(label_mapping.keys())}")
                 return label_mapping
             
             # CRITICAL FIX: Nếu không có id_to_label, tạo meaningful labels từ preprocessed_samples
@@ -1063,7 +1058,7 @@ class ComprehensiveEvaluator:
                     # Create mapping using actual labels
                     sorted_actual_labels = sorted(list(actual_labels))
                     label_mapping = {i: label for i, label in enumerate(sorted_actual_labels)}
-                    print(f"✅ Sử dụng labels từ preprocessed_samples: {label_mapping}")
+                    print(f"✅ Sử dụng labels từ preprocessed_samples: {len(label_mapping)} labels")
                     return label_mapping
             
             # IMPROVED FALLBACK: Cố gắng đoán text labels từ tên cột và dataset pattern
@@ -1074,7 +1069,7 @@ class ComprehensiveEvaluator:
                     common_arxiv_labels = ['astro-ph', 'cond-mat', 'cs', 'math', 'physics']
                     if len(unique_labels) == len(common_arxiv_labels):
                         label_mapping = {i: label for i, label in enumerate(common_arxiv_labels)}
-                        print(f"✅ Sử dụng arxiv pattern labels: {label_mapping}")
+                        print(f"✅ Sử dụng arxiv pattern labels: {len(label_mapping)} labels")
                         return label_mapping
                 
                 # Try to load data and create mapping if data_loader has file_path
@@ -1089,7 +1084,7 @@ class ComprehensiveEvaluator:
                             recommended = self.data_loader.get_category_recommendations(max_categories=len(unique_labels))
                             if len(recommended) == len(unique_labels):
                                 label_mapping = {i: label for i, label in enumerate(sorted(recommended))}
-                                print(f"✅ Sử dụng recommended labels từ data: {label_mapping}")
+                                print(f"✅ Sử dụng recommended labels từ data: {len(label_mapping)} labels")
                                 return label_mapping
                     except Exception as load_error:
                         print(f"⚠️ Không thể load data cho label mapping: {load_error}")
@@ -1099,7 +1094,7 @@ class ComprehensiveEvaluator:
             
             # Final fallback: tạo mapping đơn giản
             label_mapping = {label_id: f"Class_{label_id}" for label_id in unique_labels}
-            print(f"⚠️  Sử dụng fallback label mapping: {label_mapping}")
+            print(f"⚠️  Sử dụng fallback label mapping: {len(label_mapping)} labels")
             return label_mapping
             
         except Exception as e:
@@ -1552,23 +1547,45 @@ class ComprehensiveEvaluator:
         if ensemble_config and ensemble_config.get('enabled', False):
             total_combinations += len(embeddings_to_evaluate)  # Add ensemble for each embedding
         
-        # Create progress tracker
-        progress = create_training_progress(models_to_evaluate, embeddings_to_evaluate)
+        # Progress tracking removed - using overall testing progress instead
         
-        for model_name in models_to_evaluate:
-            # Check if training should stop (outer loop)
-            try:
-                from training_pipeline import global_stop_check
-                if global_stop_check():
-                    print("🛑 Training stopped by user request")
-                    break
-            except ImportError:
-                if stop_callback and stop_callback():
-                    print("🛑 Training stopped by user request")
-                    break
+        # Overall progress tracking for testing process
+        import threading
+        import time as time_module
+        
+        def show_testing_progress():
+            dots = 0
+            start_time = time_module.time()
+            while not getattr(show_testing_progress, 'stop', False):
+                elapsed_time = time_module.time() - start_time
+                # Create progress bar with time countdown
+                progress_bar = "█" * (dots % 20) + "░" * (19 - (dots % 20))
                 
-            for embedding_name in embeddings_to_evaluate:
-                # Check if training should stop (inner loop)
+                # Calculate estimated remaining time based on dots progress
+                if dots > 0:
+                    # Estimate total time based on current progress (dots represent cycles)
+                    # Use a more stable estimation method
+                    progress_ratio = (dots % 20) / 20.0
+                    if progress_ratio > 0:
+                        estimated_total_time = elapsed_time / progress_ratio
+                        remaining_time = max(0, estimated_total_time - elapsed_time)
+                        time_display = f"⏱️ {remaining_time:.1f}s remaining"
+                    else:
+                        time_display = f"⏱️ {elapsed_time:.1f}s elapsed"
+                else:
+                    time_display = "⏱️ calculating..."
+                
+                print(f"\r🔄 Testing all model-embedding combinations [{progress_bar}] {time_display}", end="", flush=True)
+                time_module.sleep(0.5)
+                dots += 1
+        
+        # Start overall testing progress indicator
+        testing_progress_thread = threading.Thread(target=show_testing_progress, daemon=True)
+        testing_progress_thread.start()
+        
+        try:
+            for model_name in models_to_evaluate:
+                # Check if training should stop (outer loop)
                 try:
                     from training_pipeline import global_stop_check
                     if global_stop_check():
@@ -1578,46 +1595,67 @@ class ComprehensiveEvaluator:
                     if stop_callback and stop_callback():
                         print("🛑 Training stopped by user request")
                         break
+                
+                for embedding_name in embeddings_to_evaluate:
+                    # Check if training should stop (inner loop)
+                    try:
+                        from training_pipeline import global_stop_check
+                        if global_stop_check():
+                            print("🛑 Training stopped by user request")
+                            break
+                    except ImportError:
+                        if stop_callback and stop_callback():
+                            print("🛑 Training stopped by user request")
+                            break
                     
-                if embedding_name in embeddings:
-                    embedding_data = embeddings[embedding_name]
-                    
-                    # Start progress tracking for this combination
-                    progress.start_combination(model_name, embedding_name)
-                    
-                    result = self.evaluate_single_combination(
-                        model_name=model_name,
-                        embedding_name=embedding_name,
-                        X_train=embedding_data['X_train'],
-                        X_val=embedding_data['X_val'],
-                        X_test=embedding_data['X_test'],
-                        y_train=data_dict['y_train'],
-                        y_val=data_dict['y_val'],
-                        y_test=data_dict['y_test'],
-                        step3_data=step3_data
-                    )
-                    
-                    # End progress tracking for this combination
-                    progress.end_combination()
-                    
-                    all_results.append(result)
-                    if result['status'] == 'success':
-                        successful_combinations += 1
-                else:
-                    print(f"⚠️  Warning: {embedding_name} not found in created embeddings. Skipping {model_name}_{embedding_name}")
-                    # Add error result
-                    error_result = {
-                        'model_name': model_name,
-                        'embedding_name': embedding_name,
-                        'combination_key': f"{model_name}_{embedding_name}",
-                        'status': 'error',
-                        'error_message': f'Embedding {embedding_name} not created',
-                        'validation_accuracy': 0.0,
-                        'test_accuracy': 0.0,
-                        'overfitting_score': 0.0,
-                        'overfitting_status': 'error'
-                    }
-                    all_results.append(error_result)
+                    if embedding_name in embeddings:
+                        embedding_data = embeddings[embedding_name]
+                        
+                        # Progress tracking removed - using overall testing progress
+                        
+                        result = self.evaluate_single_combination(
+                            model_name=model_name,
+                            embedding_name=embedding_name,
+                            X_train=embedding_data['X_train'],
+                            X_val=embedding_data['X_val'],
+                            X_test=embedding_data['X_test'],
+                            y_train=data_dict['y_train'],
+                            y_val=data_dict['y_val'],
+                            y_test=data_dict['y_test'],
+                            step3_data=step3_data
+                        )
+                        
+                        # Progress tracking removed - using overall testing progress
+                        
+                        all_results.append(result)
+                        if result['status'] == 'success':
+                            successful_combinations += 1
+                    else:
+                        print(f"⚠️  Warning: {embedding_name} not found in created embeddings. Skipping {model_name}_{embedding_name}")
+                        # Add error result
+                        error_result = {
+                            'model_name': model_name,
+                            'embedding_name': embedding_name,
+                            'combination_key': f"{model_name}_{embedding_name}",
+                            'status': 'error',
+                            'error_message': f'Embedding {embedding_name} not created',
+                            'validation_accuracy': 0.0,
+                            'test_accuracy': 0.0,
+                            'overfitting_score': 0.0,
+                            'overfitting_status': 'error'
+                        }
+                        all_results.append(error_result)
+        
+        except Exception as e:
+            print(f"\n❌ Error during model evaluation: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        finally:
+            # Stop overall testing progress indicator
+            show_testing_progress.stop = True
+            testing_progress_thread.join(timeout=0.1)
+            print(f"\n✅ Testing process completed")
         
         # 5. Analyze results
         print(f"\n📊 Individual Models Evaluation Complete!")
@@ -1626,40 +1664,59 @@ class ComprehensiveEvaluator:
         if individual_combinations - successful_combinations > 0:
             print(f"   • Failed individual combinations: {individual_combinations - successful_combinations}")
         
-        # Finish progress tracking for individual models
-        progress.finish()
+        # Progress tracking removed - using overall testing progress
         
         # 6. 🚀 ENSEMBLE LEARNING - Train ensemble model with ALL selected embeddings
         if ensemble_config and ensemble_config.get('enabled', False):
             print(f"\n🚀 Starting Ensemble Learning with ALL embeddings...")
             
-            # Train ensemble with each selected embedding
-            ensemble_success_count = 0
-            for embedding_name in embeddings_to_evaluate:
-                if embedding_name in embeddings:
-                    print(f"\n🎯 Training Ensemble Learning with {embedding_name} embedding...")
-                    
-                    # Create embeddings dict with only this embedding
-                    single_embedding = {embedding_name: embeddings[embedding_name]}
-                    
-                    ensemble_result = self._train_ensemble_model(
-                        all_results=all_results,
-                        data_dict=data_dict,
-                        embeddings=single_embedding,
-                        ensemble_config=ensemble_config,
-                        step3_data=step3_data,
-                        target_embedding=embedding_name
-                    )
-                    
-                    if ensemble_result:
-                        all_results.append(ensemble_result)
-                        successful_combinations += 1
-                        ensemble_success_count += 1
-                        print(f"✅ Ensemble Learning with {embedding_name} completed successfully")
+            # Progress tracking for ensemble learning
+            def show_ensemble_progress():
+                dots = 0
+                while not getattr(show_ensemble_progress, 'stop', False):
+                    print(f"\r🎯 Training Ensemble Learning{'...' + '.' * (dots % 3):<4}", end="", flush=True)
+                    import time
+                    time.sleep(0.5)
+                    dots += 1
+            
+            # Start ensemble progress indicator
+            ensemble_progress_thread = threading.Thread(target=show_ensemble_progress, daemon=True)
+            ensemble_progress_thread.start()
+            
+            try:
+                # Train ensemble with each selected embedding
+                ensemble_success_count = 0
+                for embedding_name in embeddings_to_evaluate:
+                    if embedding_name in embeddings:
+                        print(f"\n🎯 Training Ensemble Learning with {embedding_name} embedding...")
+                        
+                        # Create embeddings dict with only this embedding
+                        single_embedding = {embedding_name: embeddings[embedding_name]}
+                        
+                        ensemble_result = self._train_ensemble_model(
+                            all_results=all_results,
+                            data_dict=data_dict,
+                            embeddings=single_embedding,
+                            ensemble_config=ensemble_config,
+                            step3_data=step3_data,
+                            target_embedding=embedding_name
+                        )
+                        
+                        if ensemble_result:
+                            all_results.append(ensemble_result)
+                            successful_combinations += 1
+                            ensemble_success_count += 1
+                            print(f"✅ Ensemble Learning with {embedding_name} completed successfully")
+                        else:
+                            print(f"❌ Ensemble Learning with {embedding_name} failed")
                     else:
-                        print(f"❌ Ensemble Learning with {embedding_name} failed")
-                else:
-                    print(f"⚠️ Skipping {embedding_name} - embedding not available")
+                        print(f"⚠️ Skipping {embedding_name} - embedding not available")
+            
+            finally:
+                # Stop ensemble progress indicator
+                show_ensemble_progress.stop = True
+                ensemble_progress_thread.join(timeout=0.1)
+                print(f"\n✅ Ensemble Learning process completed")
             
             if ensemble_success_count > 0:
                 print(f"🎉 Ensemble Learning completed with {ensemble_success_count}/{len(embeddings_to_evaluate)} embeddings")
@@ -2027,21 +2084,28 @@ class ComprehensiveEvaluator:
                         print(f"❌ No successful training result found for {internal_name}")
                         return None
                     
-                    # Create a fresh model instance and train it with the same data
-                    print(f"🔧 Creating and training {internal_name} model for ensemble...")
-                    model_instance = model_factory.create_model(internal_name)
+                    # ENHANCED: Try to reuse trained model from results instead of retraining
+                    trained_model = model_result.get('trained_model', None)
                     
-                    if model_instance is None:
-                        print(f"❌ Model factory returned None for {internal_name}")
-                        return None
-                    
-                    # Train the model with the same data used in individual training
-                    # Force CPU mode for ensemble compatibility (ensures self.model is set)
-                    if internal_name == 'knn':
-                        # Force KNN to use CPU mode so it sets self.model
-                        model_instance.fit(X_train, y_train, use_gpu=False)
+                    if trained_model and hasattr(trained_model, 'is_fitted') and trained_model.is_fitted:
+                        print(f"✅ Reusing trained {internal_name} model from individual results")
+                        model_instance = trained_model
                     else:
-                        model_instance.fit(X_train, y_train)
+                        # Fallback: Create a fresh model instance and train it
+                        print(f"🔧 Creating and training {internal_name} model for ensemble...")
+                        model_instance = model_factory.create_model(internal_name)
+                        
+                        if model_instance is None:
+                            print(f"❌ Model factory returned None for {internal_name}")
+                            return None
+                        
+                        # Train the model with the same data used in individual training
+                        # Force CPU mode for ensemble compatibility (ensures self.model is set)
+                        if internal_name == 'knn':
+                            # Force KNN to use CPU mode so it sets self.model
+                            model_instance.fit(X_train, y_train, use_gpu=False)
+                        else:
+                            model_instance.fit(X_train, y_train)
                     
                     print(f"🔍 Model type: {type(model_instance)}")
                     print(f"🔍 Model fitted: {hasattr(model_instance, 'is_fitted') and model_instance.is_fitted}")
@@ -2058,8 +2122,17 @@ class ComprehensiveEvaluator:
                     traceback.print_exc()
                     return None
             
-            # Create ensemble model
-            ensemble_model = ensemble_manager.create_ensemble_model(base_model_instances)
+            # ENHANCED: Use model reuse for ensemble creation
+            ensemble_creation_result = ensemble_manager.create_ensemble_with_reuse(
+                all_results, X_train, y_train, model_factory
+            )
+            
+            if not ensemble_creation_result.get('success', False):
+                print(f"❌ Failed to create ensemble with reuse: {ensemble_creation_result.get('error', 'Unknown error')}")
+                return None
+            
+            ensemble_model = ensemble_creation_result['ensemble_model']
+            reuse_stats = ensemble_creation_result.get('reuse_results', {})
             
             # Train ensemble model
             print(f"🚀 Training ensemble model with {best_embedding} embedding...")
@@ -2119,12 +2192,21 @@ class ComprehensiveEvaluator:
                     'f1_score': ensemble_eval.get('classification_report', {}).get('weighted avg', {}).get('f1-score', 0.0)
                 },
                 
-                # Add ensemble-specific information
+                # Add ensemble-specific information with reuse stats
                 'ensemble_info': {
                     'base_models': [model_display_mapping[name] for name in required_models_internal],
                     'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
                     'performance_comparison': performance_comparison,
-                    'individual_results': individual_results
+                    'individual_results': individual_results,
+                    # ENHANCED: Add model reuse statistics
+                    'model_reuse_stats': {
+                        'models_reused': reuse_stats.get('models_reused', []),
+                        'models_retrained': reuse_stats.get('models_retrained', []),
+                        'reuse_errors': reuse_stats.get('reuse_errors', []),
+                        'total_models_reused': len(reuse_stats.get('models_reused', [])),
+                        'total_models_retrained': len(reuse_stats.get('models_retrained', [])),
+                        'reuse_percentage': len(reuse_stats.get('models_reused', [])) / len(required_models_internal) * 100 if required_models_internal else 0
+                    }
                 }
             }
             

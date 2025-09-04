@@ -80,16 +80,45 @@ class BaseModel(ABC):
         return self.validation_metrics.copy() if self.validation_metrics else {}
     
     def save_model(self, path: str) -> None:
-        """Save the trained model (to be implemented by subclasses)"""
-        raise NotImplementedError(
-            "Model saving not implemented for this model type"
-        )
+        """Save the trained model using pickle"""
+        import pickle
+        import os
+        
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before saving")
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        
+        # Save model data
+        model_data = {
+            'model_instance': self,
+            'model_params': self.model_params,
+            'is_fitted': self.is_fitted,
+            'training_history': self.training_history,
+            'validation_metrics': self.validation_metrics,
+            'model_type': self.__class__.__name__
+        }
+        
+        with open(path, 'wb') as f:
+            pickle.dump(model_data, f)
     
     def load_model(self, path: str) -> None:
-        """Load a saved model (to be implemented by subclasses)"""
-        raise NotImplementedError(
-            "Model loading not implemented for this model type"
-        )
+        """Load a saved model using pickle"""
+        import pickle
+        import os
+        
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Model file not found: {path}")
+        
+        with open(path, 'rb') as f:
+            model_data = pickle.load(f)
+        
+        # Restore model state
+        self.model_params = model_data.get('model_params', {})
+        self.is_fitted = model_data.get('is_fitted', False)
+        self.training_history = model_data.get('training_history', [])
+        self.validation_metrics = model_data.get('validation_metrics', {})
     
     def get_model_info(self) -> Dict[str, Any]:
         """Get information about the model"""
