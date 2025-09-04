@@ -7,8 +7,8 @@ Usage:
     python auto_train.py
 
 Features:
-- Tự động đọc file 2cls_spam_text_cls.csv từ cache/
-- Tự động cấu hình: text column = 'Message', label column = 'Category'
+- Tự động đọc file 20250822-004129_sample-300_000Samples.csv từ cache/
+- Tự động cấu hình: text column = 'abstract', label column = 'label'
 - Kích hoạt tất cả preprocessing options
 - Chạy training với tất cả models (7 models) và vectorization methods (3 methods)
 - Tạo cache tự động
@@ -62,22 +62,22 @@ def load_dataset(file_path):
         print(f"   📊 Shape: {df.shape[0]:,} rows × {df.shape[1]} columns")
         print(f"   📋 Columns: {list(df.columns)}")
         
-        # Kiểm tra cột Message và Category
-        if 'Message' not in df.columns:
-            print("❌ Column 'Message' not found!")
+        # Kiểm tra cột abstract và label
+        if 'abstract' not in df.columns:
+            print("❌ Column 'abstract' not found!")
             print(f"   Available columns: {list(df.columns)}")
             return None
             
-        if 'Category' not in df.columns:
-            print("❌ Column 'Category' not found!")
+        if 'label' not in df.columns:
+            print("❌ Column 'label' not found!")
             print(f"   Available columns: {list(df.columns)}")
             return None
         
         # Hiển thị thông tin về dữ liệu
-        print(f"   📝 Text samples: {len(df['Message'].dropna()):,}")
-        print(f"   🏷️  Unique categories: {df['Category'].nunique()}")
+        print(f"   📝 Text samples: {len(df['abstract'].dropna()):,}")
+        print(f"   🏷️  Unique categories: {df['label'].nunique()}")
         print("   📊 Category distribution:")
-        category_counts = df['Category'].value_counts()
+        category_counts = df['label'].value_counts()
         for category, count in category_counts.items():
             print(f"      - {category}: {count:,} samples")
         
@@ -91,36 +91,16 @@ def load_dataset(file_path):
 def create_auto_config(df, mode='full'):
     """Tạo cấu hình tự động cho training"""
     print(f"\n🔧 Creating auto configuration ({mode} mode)...")
-    
     # Step 1: Dataset configuration
-    max_samples = 10000 if mode == 'full' else 1000
     step1_config = {
         'dataframe': df,
-        'file_path': 'cache/2cls_spam_text_cls.csv',
-        'sampling_config': {
-            'num_samples': min(max_samples, len(df)),
-            'sampling_strategy': 'Stratified (Recommended)'
-        },
-        'dataset_size': len(df)
+        'text_column': 'abstract',
+        'label_column': 'label',
+        'completed': True
     }
     
-    # Step 2: Column selection & preprocessing
+    # Step 2: Preprocessing configuration
     step2_config = {
-        'text_column': 'Message',
-        'label_column': 'Category',
-        'text_samples': len(df['Message'].dropna()),
-        'unique_classes': df['Category'].nunique(),
-        'distribution': 'Balanced' if df['Category'].nunique() <= 5 else 'Multi-class',
-        'avg_length': df['Message'].astype(str).str.len().mean(),
-        'avg_length_words': df['Message'].astype(str).str.split().str.len().mean(),
-        'unique_words': len(set(' '.join(df['Message'].astype(str).dropna()).lower().split())),
-        'validation_errors': [],
-        'validation_warnings': [],
-        # Kích hoạt tất cả preprocessing options
-        'text_cleaning': True,
-        'category_mapping': True,
-        'data_validation': True,
-        'memory_optimization': True,
         # Advanced preprocessing options
         'rare_words_removal': True,
         'rare_words_threshold': 2,
@@ -299,7 +279,7 @@ def main():
     print_banner()
     
     # Đường dẫn file CSV
-    csv_file = "cache/2cls_spam_text_cls.csv"
+    csv_file = "cache\20250822-004129_sample-300_000Samples.csv"
     
     # Kiểm tra file có tồn tại không
     if not check_file_exists(csv_file):
