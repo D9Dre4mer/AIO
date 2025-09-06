@@ -22,7 +22,7 @@ class LogisticRegressionModel(BaseModel):
         default_params = {
             'max_iter': 2000,
             'multi_class': 'multinomial',
-            'n_jobs': None,
+            'n_jobs': -1,  # Use all CPU cores by default
             'random_state': 42,
             'C': 1.0,
             'solver': 'lbfgs'
@@ -38,6 +38,15 @@ class LogisticRegressionModel(BaseModel):
         
         # Create model with parameters
         self.model = LogisticRegression(**self.model_params)
+        
+        # Display multithreading info
+        n_jobs = self.model_params.get('n_jobs', -1)
+        if n_jobs == -1:
+            import os
+            cpu_count = os.cpu_count()
+            print(f"🔄 CPU multithreading: Using all {cpu_count} available cores")
+        else:
+            print(f"🔄 CPU multithreading: Using {n_jobs} parallel jobs")
         
         # Fit the model
         self.model.fit(X, y)

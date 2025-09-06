@@ -68,7 +68,7 @@ def format_cache_age(age_hours: float) -> str:
 
 # Page configuration
 st.set_page_config(
-    page_title="🤖 Topic Modeling - Auto Classifier",
+    page_title="🤖 AIO Classifier",
     page_icon="🔥",
     layout="wide"
 )
@@ -330,7 +330,7 @@ def main():
     # Header
     st.markdown("""
     <div class="main-header">
-        <h1>🤖 Topic Modeling - Auto Classifier</h1>
+        <h1>🤖 AIO Classifier</h1>
         <p>Intelligent Text Classification with Machine Learning</p>
     </div>
     """, unsafe_allow_html=True)
@@ -3536,47 +3536,20 @@ def render_step5_wireframe():
                             "💡 This might happen if predictions/true_labels are not in the expected format"
                         )
                 elif selected_result.get('model_name') == 'Ensemble Learning' and 'ensemble_info' in selected_result:
-                    st.markdown("**🎯 Confusion Matrix (generated from ensemble base models):**")
+                    st.markdown("**🎯 Confusion Matrix (generated from ensemble model):**")
 
                     try:
                         from sklearn.metrics import confusion_matrix
 
-                        # Extract data from ensemble base models
-                        ensemble_info = selected_result.get('ensemble_info', {})
-                        individual_results = ensemble_info.get('individual_results', {})
+                        # Extract data directly from ensemble model (not from base models)
+                        y_pred = selected_result.get('predictions', [])
+                        y_true = selected_result.get('true_labels', [])
                         
-                        if not individual_results:
-                            st.warning("⚠️ No individual results found in ensemble")
+                        if not y_pred or not y_true:
+                            st.warning("⚠️ No predictions or true labels found in ensemble result")
                             return
                         
-                        # Find best base model with complete data
-                        best_model_key = None
-                        best_model_data = None
-                        
-                        for model_key, model_data in individual_results.items():
-                            if (isinstance(model_data, dict) and 
-                                'predictions' in model_data and 
-                                'true_labels' in model_data):
-                                
-                                if best_model_data is None:
-                                    best_model_key = model_key
-                                    best_model_data = model_data
-                                else:
-                                    # Prioritize model with higher accuracy
-                                    if (model_data.get('test_accuracy', 0) > 
-                                        best_model_data.get('test_accuracy', 0)):
-                                        best_model_key = model_key
-                                        best_model_data = model_data
-                        
-                        if best_model_data is None:
-                            st.warning("⚠️ No base model found with complete data")
-                            return
-                        
-                        st.info(f"✅ Using data from base model: {best_model_key}")
-                        
-                        # Get data from best base model
-                        y_pred = best_model_data['predictions']
-                        y_true = best_model_data['true_labels']
+                        st.info(f"✅ Using ensemble model data with {selected_result.get('embedding_name', 'unknown')} embedding")
                         
                         if (
                             y_pred is not None and y_true is not None
@@ -3586,10 +3559,16 @@ def render_step5_wireframe():
                             # Pass cache_data to prioritize top-level labels over individual result labels
                             cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
                             
+                            # Create a dummy model_data dict for ensemble model
+                            ensemble_model_data = {
+                                'predictions': y_pred,
+                                'true_labels': y_true,
+                                'label_mapping': selected_result.get('label_mapping', {})
+                            }
                             
                             unique_labels, label_mapping = _get_unique_labels_and_mapping(
                                 selected_result, 
-                                best_model_data,
+                                ensemble_model_data,
                                 cache_data=cache_data
                             )
                             

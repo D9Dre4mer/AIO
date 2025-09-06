@@ -10,7 +10,7 @@ Features:
 - Tự động đọc file 20250822-004129_sample-300_000Samples.csv từ cache/
 - Tự động cấu hình: text column = 'abstract', label column = 'label'
 - Kích hoạt tất cả preprocessing options
-- Chạy training với tất cả models (7 models) và vectorization methods (3 methods)
+- Chạy training với tất cả models (4 models) và vectorization methods (3 methods)
 - Tạo cache tự động
 """
 
@@ -98,7 +98,7 @@ def create_auto_config(df, mode='full'):
         'label_column': 'label',
         'selected_categories': sorted(df['label'].unique().tolist()),
         'sampling_config': {
-            'num_samples': 1000,
+            'num_samples': len(df),  # Sử dụng toàn bộ dataset
             'sampling_strategy': 'Stratified (Recommended)'
         },
         'completed': True
@@ -123,10 +123,7 @@ def create_auto_config(df, mode='full'):
             'K-Nearest Neighbors',
             'Decision Tree', 
             'Naive Bayes',
-            'K-Means Clustering',
-            'Support Vector Machine',
-            'Logistic Regression',
-            'Linear SVC'
+            'K-Means Clustering'
         ]
         selected_vectorization = [
             'BoW',
@@ -166,8 +163,8 @@ def create_auto_config(df, mode='full'):
         },
         'knn_config': {
             'optimization_method': 'Manual Input',
-            'k_value': 15,
-            'weights': 'distance',
+            'k_value': 9,
+            'weights': 'uniform',
             'metric': 'cosine',
             'cv_folds': cv_folds,
             'scoring_metric': 'f1_weighted'
@@ -202,7 +199,7 @@ def run_training(step1_config, step2_config, step3_config):
             print(f"   [{phase}] {message} ({progress:.1%})")
         
         # GPU Optimization: Check configuration
-        from config import ENABLE_GPU_OPTIMIZATION, FORCE_DENSE_CONVERSION
+        from config import ENABLE_GPU_OPTIMIZATION, FORCE_DENSE_CONVERSION, CPU_N_JOBS, CPU_MAX_JOBS, CPU_OPTIMIZATION
         
         if ENABLE_GPU_OPTIMIZATION or FORCE_DENSE_CONVERSION:
             print("\n🚀 ENABLING GPU OPTIMIZATION...")
@@ -214,6 +211,20 @@ def run_training(step1_config, step2_config, step3_config):
             print("   • Using sparse matrices (BoW, TF-IDF) for memory efficiency")
             print("   • GPU acceleration disabled to save memory")
             print("   • Models will use CPU with sparse matrices (faster for most cases)")
+        
+        # CPU Multithreading Configuration
+        if CPU_OPTIMIZATION:
+            import os
+            cpu_count = os.cpu_count()
+            optimal_jobs = min(CPU_MAX_JOBS, cpu_count) if CPU_N_JOBS == -1 else CPU_N_JOBS
+            print(f"\n🔄 CPU MULTITHREADING ENABLED...")
+            print(f"   • Available CPU cores: {cpu_count}")
+            print(f"   • Using parallel jobs: {optimal_jobs}")
+            print(f"   • This will significantly speed up training on CPU")
+        else:
+            print("\n🖥️ SINGLE-THREADED CPU MODE...")
+            print("   • Using single-threaded processing")
+            print("   • Enable CPU_OPTIMIZATION=True for better performance")
         
         # Execute training
         result = execute_streamlit_training(
@@ -303,7 +314,7 @@ def main():
     # Chọn mode
     print("\n🔧 Training Mode Selection:")
     print("   1. Quick Mode (3 models, 2 vectorization, ~2-3 minutes)")
-    print("   2. Full Mode (7 models, 3 vectorization, ~5-10 minutes)")
+    print("   2. Full Mode (4 models, 3 vectorization, ~5-10 minutes)")
     
     try:
         choice = input("\nEnter your choice (1 or 2, default=1): ").strip()

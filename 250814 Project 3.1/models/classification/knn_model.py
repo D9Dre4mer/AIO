@@ -53,36 +53,72 @@ class KNNModel(BaseModel):
         
     def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
             y: np.ndarray, use_gpu: bool = False) -> 'KNNModel':
-        """Fit KNN model to training data with FAISS GPU acceleration"""
+        """Fit KNN model to training data with memory-efficient handling"""
         
-        # Convert sparse to dense if needed for FAISS
-        if sparse.issparse(X):
-            print("🔄 Converting sparse matrix to dense for FAISS GPU acceleration...")
-            X = X.toarray()
+        # Check if we have a large dataset that would cause memory issues
+        n_samples, n_features = X.shape
+        memory_estimate_gb = (n_samples * n_features * 4) / (1024**3)  # 4 bytes per float32
+        is_sparse = sparse.issparse(X)
         
-        # Choose implementation with smart fallback: FAISS GPU → FAISS CPU → scikit-learn
-        if self.faiss_available and use_gpu:
-            if self.faiss_gpu_available:
-                print("🚀 Using FAISS GPU-accelerated KNN")
-                return self._fit_faiss_gpu(X, y)
+        # Strategy: Different handling for embeddings vs TF-IDF/BOW
+        if is_sparse:
+            # Sparse matrices (TF-IDF/BOW) - prioritize memory efficiency
+            if memory_estimate_gb > 1.0:
+                print(f"⚠️ Large sparse dataset detected ({memory_estimate_gb:.1f}GB estimated)")
+                print(f"🔄 Using scikit-learn with sparse matrices for memory efficiency")
+                return self._fit_sklearn(X, y)
+            elif memory_estimate_gb > 0.5:
+                print(f"⚠️ Medium sparse dataset detected ({memory_estimate_gb:.1f}GB estimated)")
+                print(f"🔄 Using scikit-learn with sparse matrices (avoiding dense conversion)")
+                return self._fit_sklearn(X, y)
             else:
-                print("🖥️ Using FAISS CPU-accelerated KNN (GPU not available)")
-                return self._fit_faiss_cpu(X, y)
-        elif self.faiss_available:
-            print("🖥️ Using FAISS CPU-accelerated KNN")
-            return self._fit_faiss_cpu(X, y)
+                # Small sparse dataset - can try FAISS
+                if self.faiss_available:
+                    print("🔄 Converting sparse matrix to dense for FAISS...")
+                    X = X.toarray()
+                    if use_gpu and self.faiss_gpu_available:
+                        print("🚀 Using FAISS GPU-accelerated KNN")
+                        return self._fit_faiss_gpu(X, y)
+                    else:
+                        print("🖥️ Using FAISS CPU-accelerated KNN")
+                        return self._fit_faiss_cpu(X, y)
+                else:
+                    print("⚠️ Using scikit-learn KNN (FAISS not available)")
+                    return self._fit_sklearn(X, y)
         else:
-            print("⚠️ Using scikit-learn KNN (FAISS not available)")
-            return self._fit_sklearn(X, y)
+            # Dense matrices (Embeddings) - prioritize performance with FAISS
+            if self.faiss_available:
+                if use_gpu and self.faiss_gpu_available:
+                    print("🚀 Using FAISS GPU-accelerated KNN for embeddings")
+                    return self._fit_faiss_gpu(X, y)
+                else:
+                    print("🖥️ Using FAISS CPU-accelerated KNN for embeddings")
+                    return self._fit_faiss_cpu(X, y)
+            else:
+                print("⚠️ Using scikit-learn KNN (FAISS not available)")
+                return self._fit_sklearn(X, y)
     
     def predict(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
-        """Make predictions on new data with FAISS GPU acceleration"""
+        """Make predictions on new data with memory-efficient handling"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
         
-        # Convert sparse to dense if needed for FAISS
-        if sparse.issparse(X):
-            X = X.toarray()
+        # Check memory requirements for conversion
+        n_samples, n_features = X.shape
+        memory_estimate_gb = (n_samples * n_features * 4) / (1024**3)
+        
+        # For large datasets, use scikit-learn directly with sparse matrices
+        if memory_estimate_gb > 1.0 and sparse.issparse(X):
+            print(f"⚠️ Large prediction dataset ({memory_estimate_gb:.1f}GB), using scikit-learn")
+            return self.model.predict(X)
+        
+        # Convert sparse to dense only if memory allows and FAISS is being used
+        if sparse.issparse(X) and (self.use_faiss_gpu or self.use_faiss_cpu):
+            if memory_estimate_gb < 0.5:  # Only convert if < 500MB
+                X = X.toarray()
+            else:
+                print(f"⚠️ Sparse matrix too large for FAISS, using scikit-learn")
+                return self.model.predict(X)
         
         # Choose implementation based on what was used for fitting
         if self.use_faiss_gpu and self.faiss_gpu_res is not None:
@@ -93,13 +129,26 @@ class KNNModel(BaseModel):
             return self.model.predict(X)
     
     def predict_proba(self, X: Union[np.ndarray, sparse.csr_matrix]) -> np.ndarray:
-        """Get prediction probabilities with FAISS GPU acceleration"""
+        """Get prediction probabilities with memory-efficient handling"""
         if not self.is_fitted:
             raise ValueError("Model must be fitted before making predictions")
         
-        # Convert sparse to dense if needed for FAISS
-        if sparse.issparse(X):
-            X = X.toarray()
+        # Check memory requirements for conversion
+        n_samples, n_features = X.shape
+        memory_estimate_gb = (n_samples * n_features * 4) / (1024**3)
+        
+        # For large datasets, use scikit-learn directly with sparse matrices
+        if memory_estimate_gb > 1.0 and sparse.issparse(X):
+            print(f"⚠️ Large prediction dataset ({memory_estimate_gb:.1f}GB), using scikit-learn")
+            return self.model.predict_proba(X)
+        
+        # Convert sparse to dense only if memory allows and FAISS is being used
+        if sparse.issparse(X) and (self.use_faiss_gpu or self.use_faiss_cpu):
+            if memory_estimate_gb < 0.5:  # Only convert if < 500MB
+                X = X.toarray()
+            else:
+                print(f"⚠️ Sparse matrix too large for FAISS, using scikit-learn")
+                return self.model.predict_proba(X)
         
         # Choose implementation based on what was used for fitting
         if self.use_faiss_gpu and self.faiss_gpu_res is not None:
@@ -128,13 +177,55 @@ class KNNModel(BaseModel):
         X_test: Union[np.ndarray, sparse.csr_matrix], 
         y_test: np.ndarray
     ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
-        """Train and test KNN model"""
+        """Train and test KNN model with memory optimization"""
         
-        # Fit the model
+        # Check if we need batch processing for large datasets
+        n_train_samples = X_train.shape[0]
+        n_test_samples = X_test.shape[0]
+        
+        # For very large datasets, use batch processing
+        if n_train_samples > 100000 or n_test_samples > 50000:
+            print(f"🔄 Large dataset detected (train: {n_train_samples:,}, test: {n_test_samples:,})")
+            print(f"🔄 Using memory-optimized training and testing")
+            return self._train_and_test_batch(X_train, y_train, X_test, y_test)
+        
+        # Standard training for smaller datasets
+        self.fit(X_train, y_train)
+        y_pred = self.predict(X_test)
+        metrics = ModelMetrics.compute_classification_metrics(y_test, y_pred)
+        
+        return y_pred, metrics['accuracy'], metrics['classification_report']
+    
+    def _train_and_test_batch(
+        self, 
+        X_train: Union[np.ndarray, sparse.csr_matrix], 
+        y_train: np.ndarray, 
+        X_test: Union[np.ndarray, sparse.csr_matrix], 
+        y_test: np.ndarray,
+        batch_size: int = 10000
+    ) -> Tuple[np.ndarray, float, Dict[str, Any]]:
+        """Train and test KNN model using batch processing for large datasets"""
+        
+        print(f"🔄 Training KNN with batch processing (batch_size={batch_size:,})")
+        
+        # Fit the model on training data
         self.fit(X_train, y_train)
         
-        # Make predictions
-        y_pred = self.predict(X_test)
+        # Make predictions in batches to avoid memory issues
+        n_test_samples = X_test.shape[0]
+        y_pred = np.zeros(n_test_samples, dtype=int)
+        
+        print(f"🔄 Making predictions in batches of {batch_size:,}")
+        for i in range(0, n_test_samples, batch_size):
+            batch_end = min(i + batch_size, n_test_samples)
+            X_batch = X_test[i:batch_end]
+            
+            # Make predictions for this batch
+            y_pred[i:batch_end] = self.predict(X_batch)
+            
+            # Show progress
+            progress = (batch_end / n_test_samples) * 100
+            print(f"   📊 Prediction progress: {progress:.1f}% ({batch_end:,}/{n_test_samples:,})")
         
         # Compute metrics
         metrics = ModelMetrics.compute_classification_metrics(y_test, y_pred)

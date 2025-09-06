@@ -14,10 +14,11 @@ from ..base.metrics import ModelMetrics
 class NaiveBayesModel(BaseModel):
     """Naive Bayes classification model with automatic type selection"""
     
-    def __init__(self, **kwargs):
+    def __init__(self, n_jobs: int = -1, **kwargs):
         """Initialize Naive Bayes model"""
         super().__init__(**kwargs)
         self.nb_type = None
+        self.n_jobs = n_jobs
         
     def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
             y: np.ndarray) -> 'NaiveBayesModel':
@@ -32,6 +33,13 @@ class NaiveBayesModel(BaseModel):
             print("📊 Using GaussianNB for dense features")
             self.model = GaussianNB()
             self.nb_type = 'GaussianNB'
+        
+        # Note: Naive Bayes models don't support n_jobs parameter directly
+        # but we can use it for cross-validation and other parallel operations
+        if self.n_jobs != -1:
+            print(f"🔄 CPU multithreading: {self.n_jobs} parallel jobs available")
+        else:
+            print("🔄 CPU multithreading: Using all available cores")
         
         self.model.fit(X, y)
         

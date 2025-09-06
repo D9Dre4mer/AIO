@@ -1,0 +1,124 @@
+\documentclass[border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,decorations.pathreplacing,shadows}
+
+\begin{document}
+
+\begin{tikzpicture}[
+    % Define styles
+    model_box/.style={
+        rectangle,
+        draw=green!80!black,
+        fill=green!20,
+        text width=2.8cm,
+        text centered,
+        minimum height=2.2cm,
+        rounded corners=8pt,
+        drop shadow,
+        line width=1.5pt
+    },
+    performance_bar/.style={
+        rectangle,
+        draw=orange!80!black,
+        fill=orange!30,
+        text width=1cm,
+        text centered,
+        minimum height=0.4cm,
+        rounded corners=3pt,
+        line width=1pt
+    },
+    time_bar/.style={
+        rectangle,
+        draw=green!70!black,
+        fill=green!25,
+        text width=0.8cm,
+        text centered,
+        minimum height=0.4cm,
+        rounded corners=3pt,
+        line width=1pt
+    },
+    arrow/.style={
+        ->,
+        thick,
+        orange!80!black,
+        line width=2pt
+    }
+]
+
+% Title
+\node[font=\Large\bfseries, text width=12cm, text centered] at (6,8) {
+    Model Performance Comparison
+};
+
+% Top 3 models
+\node[model_box] (knn_emb) at (1,6) {
+    \textbf{KNN + Embeddings}\\[0.2cm]
+    \small
+    🥇 90.9\% accuracy\\
+    22.9s training\\
+    Best performer
+};
+
+\node[model_box] (nb_tfidf) at (4,6) {
+    \textbf{Naive Bayes + TF-IDF}\\[0.2cm]
+    \small
+    🥈 88.7\% accuracy\\
+    0.17s training\\
+    Fastest
+};
+
+\node[model_box] (ensemble) at (7,6) {
+    \textbf{Ensemble Learning}\\[0.2cm]
+    \small
+    🥉 88.2\% accuracy\\
+    3204s training\\
+    Most stable
+};
+
+% Performance bars
+\node[font=\small] at (1,4.5) {Accuracy:};
+\node[performance_bar] at (1,4) {90.9\%};
+\node[performance_bar] at (4,4) {88.7\%};
+\node[performance_bar] at (7,4) {88.2\%};
+
+% Time bars
+\node[font=\small] at (1,3.5) {Time:};
+\node[time_bar] at (1,3) {22.9s};
+\node[time_bar] at (4,3) {0.17s};
+\node[time_bar] at (7,3) {3204s};
+
+% Other models
+\node[model_box] (knn_bow) at (1,1.5) {
+    \textbf{KNN + BoW}\\[0.2cm]
+    \small
+    85.2\% accuracy\\
+    498.6s training
+};
+
+\node[model_box] (dt_emb) at (4,1.5) {
+    \textbf{Decision Tree + Embeddings}\\[0.2cm]
+    \small
+    77.2\% accuracy\\
+    730.6s training
+};
+
+\node[model_box] (kmeans) at (7,1.5) {
+    \textbf{K-Means + BoW}\\[0.2cm]
+    \small
+    52.4\% accuracy\\
+    238.6s training
+};
+
+% Performance indicators
+\node[font=\small, text width=12cm, text centered, green!60] at (6,5.5) {
+    Key Improvements: 5-100x processing speed • 50-80% memory reduction • 10-50x GPU acceleration
+};
+
+% Memory optimization
+\node[font=\small, text width=12cm, text centered, blue!60] at (6,0.5) {
+    Memory Usage: Before 8-16GB RAM → After 2-4GB RAM (50-80% reduction)
+};
+
+\end{tikzpicture}
+
+\end{document}

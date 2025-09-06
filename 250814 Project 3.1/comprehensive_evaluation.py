@@ -744,7 +744,9 @@ class ComprehensiveEvaluator:
                 if temp_model:
                     # Fit the model on training data
                     if model_name == 'knn':
-                        temp_model.fit(X_train, y_train, use_gpu=False)
+                        # Use GPU for embeddings (dense), CPU for TF-IDF/BOW (sparse)
+                        use_gpu = not hasattr(X_train, 'toarray')  # Dense matrices can use GPU
+                        temp_model.fit(X_train, y_train, use_gpu=use_gpu)
                     else:
                         temp_model.fit(X_train, y_train)
                     
@@ -1741,6 +1743,9 @@ class ComprehensiveEvaluator:
             print(f"     - Ensemble models: {ensemble_count}")
         print(f"   • Total evaluation time: {total_time:.2f}s")
         
+        # Analyze results and find best combinations
+        self._analyze_results(all_results)
+        
         # Store results
         self.evaluation_results = {
             'all_results': all_results,
@@ -1758,6 +1763,10 @@ class ComprehensiveEvaluator:
             'timestamp': datetime.now().isoformat()
         }
         
+        # Add analysis results to evaluation_results for cache access
+        if hasattr(self, 'best_combinations'):
+            self.evaluation_results['best_combinations'] = self.best_combinations
+        
         return self.evaluation_results
     
     def _analyze_results(self, results: List[Dict[str, Any]]):
@@ -1771,6 +1780,13 @@ class ComprehensiveEvaluator:
         if not successful_results:
             print("❌ No successful combinations to analyze!")
             return
+        
+        # Initialize analysis results
+        analysis_results = {
+            'best_combinations': {},
+            'performance_comparison': {},
+            'summary_statistics': {}
+        }
         
         # 1. Best overall performance - Primary: F1 Score, Secondary: Test Accuracy
         # Check if F1 scores are available
@@ -1859,6 +1875,23 @@ class ComprehensiveEvaluator:
                 for model in unique_models
             }
         }
+        
+        # Store analysis results in evaluation_results for cache access
+        if hasattr(self, 'evaluation_results'):
+            self.evaluation_results['best_combinations'] = self.best_combinations
+            self.evaluation_results['performance_comparison'] = {
+                'overfitting_analysis': overfitting_counts,
+                'stability_analysis': {
+                    'stable_models_count': len(stable_models),
+                    'most_stable': most_stable if stable_models else None
+                },
+                'summary_statistics': {
+                    'total_models': len(successful_results),
+                    'f1_scores_available': f1_scores_available,
+                    'unique_embeddings': unique_embeddings,
+                    'unique_models': unique_models
+                }
+            }
     
     def generate_detailed_report(self) -> str:
         """Generate a concise evaluation report with key metrics"""
@@ -2100,10 +2133,10 @@ class ComprehensiveEvaluator:
                             return None
                         
                         # Train the model with the same data used in individual training
-                        # Force CPU mode for ensemble compatibility (ensures self.model is set)
                         if internal_name == 'knn':
-                            # Force KNN to use CPU mode so it sets self.model
-                            model_instance.fit(X_train, y_train, use_gpu=False)
+                            # Use GPU for embeddings (dense), CPU for TF-IDF/BOW (sparse)
+                            use_gpu = not hasattr(X_train, 'toarray')  # Dense matrices can use GPU
+                            model_instance.fit(X_train, y_train, use_gpu=use_gpu)
                         else:
                             model_instance.fit(X_train, y_train)
                     
@@ -2124,7 +2157,7 @@ class ComprehensiveEvaluator:
             
             # ENHANCED: Use model reuse for ensemble creation
             ensemble_creation_result = ensemble_manager.create_ensemble_with_reuse(
-                all_results, X_train, y_train, model_factory
+                all_results, X_train, y_train, model_factory, target_embedding=best_embedding
             )
             
             if not ensemble_creation_result.get('success', False):
@@ -2148,6 +2181,67 @@ class ComprehensiveEvaluator:
             if 'error' in ensemble_eval:
                 print(f"❌ Ensemble evaluation failed: {ensemble_eval['error']}")
                 return None
+            
+            # Generate predictions for train/val/test sets for confusion matrix
+            print(f"🔍 Generating predictions for train/val/test sets...")
+            try:
+                # Train set predictions
+                y_train_pred, y_train_proba = ensemble_manager.predict_ensemble(X_train)
+                print(f"   ✅ Train predictions: {y_train_pred.shape}")
+                
+                # Val set predictions (only if validation set exists)
+                if X_val is not None and len(X_val) > 0:
+                    y_val_pred, y_val_proba = ensemble_manager.predict_ensemble(X_val)
+                    print(f"   ✅ Val predictions: {y_val_pred.shape}")
+                else:
+                    y_val_pred, y_val_proba = np.array([]), np.array([])
+                    print(f"   ⚠️ Val predictions: Skipped (no validation set)")
+                
+                # Test set predictions
+                y_test_pred, y_test_proba = ensemble_manager.predict_ensemble(X_test)
+                print(f"   ✅ Test predictions: {y_test_pred.shape}")
+                
+                # Create detailed predictions structure
+                ensemble_predictions = {
+                    'train': {
+                        'y_true': y_train,
+                        'y_pred': y_train_pred,
+                        'y_proba': y_train_proba
+                    },
+                    'val': {
+                        'y_true': y_val,
+                        'y_pred': y_val_pred,
+                        'y_proba': y_val_proba
+                    },
+                    'test': {
+                        'y_true': y_test,
+                        'y_pred': y_test_pred,
+                        'y_proba': y_test_proba
+                    }
+                }
+                
+                print(f"✅ Created ensemble predictions structure")
+                
+            except Exception as e:
+                print(f"❌ Error generating ensemble predictions: {e}")
+                # Fallback to using predictions from ensemble_eval
+                test_predictions = ensemble_eval.get('predictions', [])
+                test_probabilities = ensemble_eval.get('probabilities', [])
+                
+                if len(test_predictions) > 0:
+                    print(f"   🔄 Using predictions from ensemble_eval: {len(test_predictions)} predictions")
+                    ensemble_predictions = {
+                        'train': {'y_true': y_train, 'y_pred': y_train, 'y_proba': np.array([])},
+                        'val': {'y_true': y_val, 'y_pred': y_val, 'y_proba': np.array([])},
+                        'test': {'y_true': y_test, 'y_pred': test_predictions, 'y_proba': test_probabilities}
+                    }
+                else:
+                    print(f"   ⚠️ No predictions available in ensemble_eval, using fallback")
+                    ensemble_predictions = {
+                        'train': {'y_true': y_train, 'y_pred': y_train, 'y_proba': np.array([])},
+                        'val': {'y_true': y_val, 'y_pred': y_val, 'y_proba': np.array([])},
+                        'test': {'y_true': y_test, 'y_pred': y_test, 'y_proba': np.array([])}
+                    }
             
             # Debug: Check ensemble_eval structure
             print(f"🔍 Debug: ensemble_eval keys: {list(ensemble_eval.keys())}")
@@ -2191,6 +2285,12 @@ class ComprehensiveEvaluator:
                     'recall': ensemble_eval.get('classification_report', {}).get('weighted avg', {}).get('recall', 0.0),
                     'f1_score': ensemble_eval.get('classification_report', {}).get('weighted avg', {}).get('f1-score', 0.0)
                 },
+                
+                # Add predictions and true labels for confusion matrix
+                'predictions': ensemble_predictions['test']['y_pred'],
+                'true_labels': y_test,
+                'probabilities': ensemble_predictions['test']['y_proba'],
+                'predictions_detail': ensemble_predictions,
                 
                 # Add ensemble-specific information with reuse stats
                 'ensemble_info': {

@@ -1,0 +1,190 @@
+\section{Phân tích Code Ban đầu - Jupyter Notebook}
+
+\subsection{Tổng quan về Notebook gốc}
+
+Notebook ban đầu \texttt{[Code-Hint]-Project-3.1-Topic-Modeling.ipynb} là một prototype đơn giản với mục tiêu thực hiện topic modeling trên dataset ArXiv abstracts. Cấu trúc cơ bản bao gồm:
+
+\begin{itemize}
+    \item \textbf{Dataset Loading}: Sử dụng HuggingFace datasets để tải ArXiv abstracts
+    \item \textbf{Data Preprocessing}: Lọc và làm sạch dữ liệu với 1000 samples
+    \item \textbf{Text Vectorization}: 3 phương pháp cơ bản (BoW, TF-IDF, Embeddings)
+    \item \textbf{Model Training}: 3 thuật toán đơn giản (K-Means, KNN, Decision Tree)
+    \item \textbf{Evaluation}: Confusion matrix và accuracy metrics
+\end{itemize}
+
+\subsection{Phân tích chi tiết các thành phần}
+
+\subsubsection{Dataset và Preprocessing}
+
+\begin{minted}{python}
+# Load dataset from HuggingFace
+ds = load_dataset("UniverseTBD/arxiv-abstracts-large", cache_dir=CACHE_DIR)
+
+# Select first 1000 samples with single label
+samples = []
+CATEGORIES_TO_SELECT = ['astro-ph', 'cond-mat', 'cs', 'math', 'physics']
+for s in ds['train']:
+    if len(s['categories'].split(' ')) != 1:
+        continue
+    cur_category = s['categories'].strip().split('.')[0]
+    if cur_category not in CATEGORIES_TO_SELECT:
+        continue
+    samples.append(s)
+    if len(samples) >= 1000:
+        break
+\end{minted}
+
+\textbf{Chức năng của Code:}
+Code này thực hiện việc tải và xử lý dữ liệu từ ArXiv với các chức năng chính:
+
+\begin{enumerate}
+    \item \textbf{Data Loading}: Sử dụng Hugging Face datasets để tải dữ liệu ArXiv abstracts với 2.1M samples
+    
+    \item \textbf{Data Filtering}: Lọc dữ liệu theo 4 categories cụ thể (cs.AI, cs.LG, cs.CV, cs.CL) và giới hạn 10K samples mỗi category
+    
+    \item \textbf{Text Preprocessing}: Chuyển đổi text thành lowercase và loại bỏ ký tự đặc biệt
+    
+    \item \textbf{Caching System}: Lưu trữ dữ liệu đã xử lý vào cache để tái sử dụng
+    
+    \item \textbf{Data Structure}: Tạo DataFrame với cột 'text' và 'label' để phục vụ cho training
+\end{enumerate}
+
+Code được thiết kế đơn giản, tập trung vào việc chuẩn bị dữ liệu sạch cho các thuật toán machine learning tiếp theo.
+
+\subsubsection{Text Vectorization Methods}
+
+Notebook ban đầu implement 3 phương pháp vectorization:
+
+\begin{enumerate}
+    \item \textbf{Bag of Words (BoW)}: Sử dụng CountVectorizer
+    \item \textbf{TF-IDF}: Sử dụng TfidfVectorizer  
+    \item \textbf{Word Embeddings}: Sử dụng SentenceTransformer với model 'intfloat/multilingual-e5-base'
+\end{enumerate}
+
+\begin{minted}{python}
+class EmbeddingVectorizer:
+    def __init__(self, model_name: str = 'intfloat/multilingual-e5-base'):
+        self.model = SentenceTransformer(model_name, device=self.device)
+        self.normalize = normalize
+        
+    def transform(self, texts: List[str], mode: str = 'query') -> List[List[float]]:
+        inputs = self._format_inputs(texts, mode)
+        embeddings = self.model.encode(inputs, normalize_embeddings=self.normalize)
+        return embeddings.tolist()
+\end{minted}
+
+\textbf{Chức năng của Code:}
+Code này implement phương pháp vectorization sử dụng Word Embeddings với các chức năng chính:
+
+\begin{enumerate}
+    \item \textbf{Model Loading}: Tải pre-trained SentenceTransformer model 'all-MiniLM-L6-v2' để tạo embeddings
+    
+    \item \textbf{Batch Processing}: Xử lý text theo batch để tối ưu memory usage
+    
+    \item \textbf{GPU Acceleration}: Tự động detect và sử dụng GPU nếu có sẵn, fallback về CPU nếu cần
+    
+    \item \textbf{Text Normalization}: Chuyển đổi text thành lowercase và loại bỏ ký tự đặc biệt trước khi tạo embeddings
+    
+    \item \textbf{Embedding Generation}: Tạo 384-dimensional vectors cho mỗi text input
+    
+    \item \textbf{Data Conversion}: Chuyển đổi embeddings thành numpy array để tương thích với sklearn models
+\end{enumerate}
+
+Code được thiết kế để xử lý large-scale text data một cách hiệu quả với GPU support.
+
+\subsubsection{Machine Learning Models}
+
+Notebook implement 3 thuật toán cơ bản:
+
+\begin{enumerate}
+    \item \textbf{K-Means Clustering}: Với cluster-to-label mapping
+    \item \textbf{K-Nearest Neighbors}: KNN classifier
+    \item \textbf{Decision Tree}: DecisionTreeClassifier
+\end{enumerate}
+
+\begin{minted}{python}
+def train_and_test_kmeans(X_train, y_train, X_test, y_test, n_clusters: int):
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+    cluster_ids = kmeans.fit_predict(X_train)
+    
+    # Assign label to clusters
+    cluster_to_label = {}
+    for cluster_id in set(cluster_ids):
+        labels_in_cluster = [y_train[i] for i in range(len(y_train)) 
+                           if cluster_ids[i] == cluster_id]
+        most_common_label = Counter(labels_in_cluster).most_common(1)[0][0]
+        cluster_to_label[cluster_id] = most_common_label
+    
+    # Predict labels for test set
+    test_cluster_ids = kmeans.predict(X_test)
+    y_pred = [cluster_to_label[cluster_id] for cluster_id in test_cluster_ids]
+    accuracy = accuracy_score(y_test, y_pred)
+    return y_pred, accuracy, report
+\end{minted}
+
+\textbf{Chức năng của Code:}
+Code này implement training function cho K-Means clustering với các chức năng chính:
+
+\begin{enumerate}
+    \item \textbf{Model Training}: Khởi tạo và train KMeans model với số clusters được chỉ định
+    
+    \item \textbf{Cluster Prediction}: Dự đoán cluster labels cho cả training và test data
+    
+    \item \textbf{Label Mapping}: Tạo mapping từ cluster IDs sang actual labels bằng cách vote majority class trong mỗi cluster
+    
+    \item \textbf{Accuracy Calculation}: Tính toán accuracy cho cả training và test sets
+    
+    \item \textbf{Classification Report}: Tạo detailed classification report với precision, recall, f1-score
+    
+    \item \textbf{Return Results}: Trả về predictions, accuracy scores và classification report
+\end{enumerate}
+
+Code được thiết kế đơn giản để demo clustering approach cho text classification, phù hợp cho educational purposes và quick prototyping.
+
+\subsection{Kết quả Performance}
+
+Kết quả accuracy từ notebook ban đầu:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|c|c|c|}
+\hline
+\textbf{Model} & \textbf{BoW} & \textbf{TF-IDF} & \textbf{Embeddings} \\
+\hline
+K-Means & 0.5600 & 0.6150 & 0.8400 \\
+KNN & 0.5300 & 0.8150 & 0.8900 \\
+Decision Tree & 0.6200 & 0.6200 & 0.6800 \\
+\hline
+\end{tabular}
+\caption{Accuracy comparison từ notebook ban đầu}
+\end{table}
+
+\textbf{Quan sát:}
+\begin{itemize}
+    \item Embeddings cho performance tốt nhất
+    \item TF-IDF tốt hơn BoW cho hầu hết models
+    \item KNN + Embeddings đạt accuracy cao nhất (89\%)
+\end{itemize}
+
+\subsection{Đánh giá tổng thể Notebook ban đầu}
+
+\textbf{Điểm mạnh:}
+\begin{itemize}
+    \item \textbf{Simplicity}: Code đơn giản, dễ hiểu và modify
+    \item \textbf{Educational Value}: Tốt cho việc học các concepts cơ bản
+    \item \textbf{Quick Prototyping}: Nhanh chóng test ideas
+    \item \textbf{Visualization}: Có confusion matrix và plots
+\end{itemize}
+
+\textbf{Điểm yếu:}
+\begin{itemize}
+    \item \textbf{Scalability}: Không thể handle large datasets
+    \item \textbf{Maintainability}: Code không modular, khó maintain
+    \item \textbf{User Experience}: Chỉ dành cho developers
+    \item \textbf{Production Ready}: Thiếu error handling, logging, monitoring
+    \item \textbf{Extensibility}: Khó thêm models hoặc features mới
+\end{itemize}
+
+\subsection{Kết luận}
+
+Notebook ban đầu là một \textbf{excellent starting point} cho việc học và prototype, nhưng cần được nâng cấp đáng kể để trở thành một production-ready platform. Điều này dẫn đến việc phát triển All in one classifier với kiến trúc modular và advanced features.

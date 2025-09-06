@@ -1,0 +1,111 @@
+\documentclass[border=10pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,decorations.pathreplacing}
+
+\begin{document}
+
+\begin{tikzpicture}[
+    % Define styles
+    component/.style={
+        rectangle,
+        draw=green!80!black,
+        fill=green!20,
+        text width=3.2cm,
+        text centered,
+        minimum height=2.2cm,
+        rounded corners=8pt,
+        drop shadow,
+        line width=1.5pt
+    },
+    arrow/.style={
+        ->,
+        thick,
+        orange!80!black,
+        line width=2pt
+    },
+    label/.style={
+        text width=2.5cm,
+        text centered,
+        font=\small
+    }
+]
+
+% Top row components
+\node[component] (data_loader) at (0,4) {
+    \textbf{Data Loader}\\[0.2cm]
+    \small
+    • Hugging Face\\
+    • CSV/JSON\\
+    • Auto caching
+};
+
+\node[component] (text_encoders) at (4,4) {
+    \textbf{Text Encoders}\\[0.2cm]
+    \small
+    • BoW/TF-IDF\\
+    • Word Embeddings\\
+    • GPU support
+};
+
+\node[component] (model_factory) at (8,4) {
+    \textbf{Model Factory}\\[0.2cm]
+    \small
+    • KNN/DT/NB\\
+    • K-Means\\
+    • Ensemble
+};
+
+% Bottom row components
+\node[component] (preprocessing) at (0,0) {
+    \textbf{Preprocessing}\\[0.2cm]
+    \small
+    • Text cleaning\\
+    • Tokenization\\
+    • Stop words
+};
+
+\node[component] (vectorization) at (4,0) {
+    \textbf{Vectorization}\\[0.2cm]
+    \small
+    • 3 methods\\
+    • Memory opt\\
+    • GPU accel
+};
+
+\node[component] (training) at (8,0) {
+    \textbf{Training}\\[0.2cm]
+    \small
+    • Auto tuning\\
+    • Cross-val\\
+    • Error handling
+};
+
+% Horizontal arrows (top row)
+\draw[arrow] (data_loader) -- (text_encoders);
+\draw[arrow] (text_encoders) -- (model_factory);
+
+% Vertical arrows
+\draw[arrow] (data_loader) -- (preprocessing);
+\draw[arrow] (text_encoders) -- (vectorization);
+\draw[arrow] (model_factory) -- (training);
+
+% Add flow indicators
+\node[font=\Large, blue!70] at (2,4.5) {▶};
+\node[font=\Large, blue!70] at (6,4.5) {▶};
+\node[font=\Large, blue!70] at (2,2) {▼};
+\node[font=\Large, blue!70] at (6,2) {▼};
+\node[font=\Large, blue!70] at (10,2) {▼};
+
+% Add title
+\node[font=\Large\bfseries, text width=12cm, text centered] at (4,6) {
+    AIO Classifier - Modular Architecture
+};
+
+% Add flow description
+\node[font=\small, text width=12cm, text centered, blue!60] at (4,-1.5) {
+    Data flows through the system: Load → Encode → Model → Process → Vectorize → Train
+};
+
+\end{tikzpicture}
+
+\end{document}

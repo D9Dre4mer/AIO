@@ -1,0 +1,152 @@
+% Encoding và font cho tiếng Việt
+\usepackage{polyglossia}
+\setmainlanguage{vietnamese}
+\setotherlanguage{english}
+
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Times New Roman}
+\setmonofont{Times New Roman}[Scale=MatchLowercase]
+
+% Toán học và ký hiệu
+\usepackage{amsmath, amssymb, amsfonts}
+
+% Cấu hình trang
+\usepackage{geometry}
+\geometry{left=2.5cm, right=2.5cm, top=2.5cm, bottom=2.5cm}
+
+% Header/Footer
+\usepackage{fancyhdr}
+\setlength{\headheight}{40 pt}
+\pagestyle{fancy}
+\fancyhead[LO,L]{GRID034 (AIO)}
+\fancyhead[CO,C]{}
+\fancyhead[RO,R]{\today}
+\fancyfoot[CO,C]{\thepage}
+
+% Hình ảnh
+\usepackage{graphicx}
+\usepackage{subcaption}
+
+% Listings - mã lệnh có hỗ trợ tiếng Việt
+\usepackage{listings}
+\usepackage{float}
+
+% Màu sắc cho listings
+\usepackage{xcolor}
+\definecolor{codebg}{rgb}{0.97,0.97,0.97}
+\definecolor{codeblue}{rgb}{0,0,0.8}
+\definecolor{codgreen}{rgb}{0,0.6,0}
+\definecolor{codred}{rgb}{0.8,0,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\footnotesize,
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    commentstyle=\color{codgreen},
+    keywordstyle=\color{codeblue}\bfseries,
+    stringstyle=\color{codred},
+    captionpos=b,
+    tabsize=4,
+    columns=fixed,
+    keepspaces=true,
+    inputencoding=utf8x,
+    literate=%
+    {á}{{\'a}}1 {à}{{\`a}}1 {ả}{{\h{a}}}1 {ã}{{\~a}}1 {ạ}{{\d{a}}}1
+    {ă}{{\u{a}}}1 {ắ}{{\u{\'a}}}1 {ằ}{{\u{\`a}}}1 {ẳ}{{\u{\h{a}}}}1 {ẵ}{{\u{\~a}}}1 {ặ}{{\u{\d{a}}}}1
+    {â}{{\^a}}1 {ấ}{{\^{\'a}}}1 {ầ}{{\^{\`a}}}1 {ẩ}{{\^{\h{a}}}}1 {ẫ}{{\^{\~a}}}1 {ậ}{{\^{\d{a}}}}1
+    {đ}{{\dj}}1 {Đ}{{\DJ}}1
+    {é}{{\'e}}1 {è}{{\`e}}1 {ẻ}{{\h{e}}}1 {ẽ}{{\~e}}1 {ẹ}{{\d{e}}}1
+    {ê}{{\^e}}1 {ế}{{\^{\'e}}}1 {ề}{{\^{\`e}}}1 {ể}{{\^{\h{e}}}}1 {ễ}{{\^{\~e}}}1 {ệ}{{\^{\d{e}}}}1
+    {í}{{\'i}}1 {ì}{{\`i}}1 {ỉ}{{\h{i}}}1 {ĩ}{{\~i}}1 {ị}{{\d{i}}}1
+    {ó}{{\'o}}1 {ò}{{\`o}}1 {ỏ}{{\h{o}}}1 {õ}{{\~o}}1 {ọ}{{\d{o}}}1
+    {ô}{{\^o}}1 {ố}{{\^{\'o}}}1 {ồ}{{\^{\`o}}}1 {ổ}{{\^{\h{o}}}}1 {ỗ}{{\^{\~o}}}1 {ộ}{{\^{\d{o}}}}1
+    {ơ}{{\ohorn}}1 {ớ}{{\'\ohorn}}1 {ờ}{{\`\ohorn}}1 {ợ}{{\d\ohorn}}1 {ở}{{\h\ohorn}}1 {ỡ}{{\~\ohorn}}1
+    {ú}{{\'u}}1 {ù}{{\`u}}1 {ủ}{{\h{u}}}1 {ũ}{{\~u}}1 {ụ}{{\d{u}}}1
+    {ư}{{\uhorn}}1 {ứ}{{\'\uhorn}}1 {ừ}{{\`\uhorn}}1 {ự}{{\d\uhorn}}1 {ử}{{\h\uhorn}}1 {ữ}{{\~\uhorn}}1
+    {ý}{{\'y}}1 {ỳ}{{\`y}}1 {ỷ}{{\h{y}}}1 {ỹ}{{\~y}}1 {ỵ}{{\d{y}}}1
+}
+\lstset{style=mystyle}
+
+\usepackage{minted}
+\setminted{
+    fontsize=\footnotesize,
+    breaklines=true,
+    breakanywhere=true,
+    linenos=true,
+    frame=lines,
+    framesep=2mm,
+    bgcolor=codebg
+}
+
+% Bibliography setup
+\usepackage[style=authoryear,backend=biber,sorting=none,language=english]{biblatex}
+\addbibresource{references.bib}
+
+% Configure citation style to show author names
+\DeclareFieldFormat{citehyperref}{%
+  \DeclareFieldAlias{bibhyperref}{noformat}% Avoid nested links
+}
+\DeclareFieldFormat{textcitehyperref}{%
+  \DeclareFieldAlias{bibhyperref}{noformat}% Avoid nested links
+}
+
+% Ensure author names are displayed in citations
+\renewcommand{\cite}[1]{\textcite{#1}}
+
+% Configure bibliography display
+\renewcommand{\mkbibnamefamily}[1]{\textsc{#1}}
+\renewcommand{\mkbibnamegiven}[1]{\textsc{#1}}
+
+% Hyperref setup
+\usepackage[hidelinks]{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan
+}
+
+% Các package bổ sung
+\usepackage{parskip}
+\usepackage{enumitem}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{makecell}
+\usepackage{multirow}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{cancel}
+\usepackage{titlesec}
+\usepackage{blindtext}
+\usepackage{datetime}
+\usepackage{placeins}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage[table]{xcolor}
+\usepackage[bottom]{footmisc}
+\newdateformat{mydate}{\THEDAY/\THEMONTH/\THEYEAR}
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.5em}{}
+\usepackage{tcolorbox}  % For the tcolorbox environment
+\usepackage{tikz}       % For diagrams and flowcharts
+\usetikzlibrary{shapes,arrows,positioning}
+
+% Unicode special characters
+\usepackage{newunicodechar}
+\newunicodechar{✔}{\checkmark}
+\newunicodechar{❌}{\texttimes} % approximate
+\newunicodechar{⇒}{\ensuremath{\Rightarrow}}
+
+% Custom command
+\newcommand{\code}[1]{\texttt{#1}}
+
+% Thông tin tài liệu
+\author{}
+\date{\mydate\today}

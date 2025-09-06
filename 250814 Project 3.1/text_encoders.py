@@ -246,10 +246,18 @@ class TextVectorizer:
         vectors = self.bow_vectorizer.fit_transform(texts)
         print(f"📊 BoW Features: {vectors.shape[1]:,} | Sparsity: {1 - vectors.nnz / (vectors.shape[0] * vectors.shape[1]):.3f}")
         
-        # Apply SVD if needed
-        if vectors.shape[1] > BOW_TFIDF_SVD_THRESHOLD:
-            print(f"🔧 Applying SVD to BoW: {vectors.shape[1]:,} → {BOW_TFIDF_SVD_COMPONENTS} dimensions")
-            n_components = min(BOW_TFIDF_SVD_COMPONENTS, vectors.shape[1] - 1, vectors.shape[0] - 1)
+        # Apply SVD if needed - use more aggressive reduction for large datasets
+        n_samples = vectors.shape[0]
+        if vectors.shape[1] > BOW_TFIDF_SVD_THRESHOLD or n_samples > 100000:
+            # For large datasets, use more aggressive SVD reduction
+            if n_samples > 200000:
+                svd_components = min(200, BOW_TFIDF_SVD_COMPONENTS)  # Very aggressive for 300k+ samples
+                print(f"🔧 Large dataset detected ({n_samples:,} samples), using aggressive SVD reduction")
+            else:
+                svd_components = BOW_TFIDF_SVD_COMPONENTS
+            
+            print(f"🔧 Applying SVD to BoW: {vectors.shape[1]:,} → {svd_components} dimensions")
+            n_components = min(svd_components, vectors.shape[1] - 1, vectors.shape[0] - 1)
             self.bow_svd_model = TruncatedSVD(n_components=n_components, random_state=42)
             vectors = self.bow_svd_model.fit_transform(vectors)
             explained_variance = self.bow_svd_model.explained_variance_ratio_.sum()
@@ -275,10 +283,18 @@ class TextVectorizer:
         vectors = self.tfidf_vectorizer.fit_transform(texts)
         print(f"📊 TF-IDF Features: {vectors.shape[1]:,} | Sparsity: {1 - vectors.nnz / (vectors.shape[0] * vectors.shape[1]):.3f}")
         
-        # Apply SVD if needed
-        if vectors.shape[1] > BOW_TFIDF_SVD_THRESHOLD:
-            print(f"🔧 Applying SVD to TF-IDF: {vectors.shape[1]:,} → {BOW_TFIDF_SVD_COMPONENTS} dimensions")
-            n_components = min(BOW_TFIDF_SVD_COMPONENTS, vectors.shape[1] - 1, vectors.shape[0] - 1)
+        # Apply SVD if needed - use more aggressive reduction for large datasets
+        n_samples = vectors.shape[0]
+        if vectors.shape[1] > BOW_TFIDF_SVD_THRESHOLD or n_samples > 100000:
+            # For large datasets, use more aggressive SVD reduction
+            if n_samples > 200000:
+                svd_components = min(200, BOW_TFIDF_SVD_COMPONENTS)  # Very aggressive for 300k+ samples
+                print(f"🔧 Large dataset detected ({n_samples:,} samples), using aggressive SVD reduction")
+            else:
+                svd_components = BOW_TFIDF_SVD_COMPONENTS
+            
+            print(f"🔧 Applying SVD to TF-IDF: {vectors.shape[1]:,} → {svd_components} dimensions")
+            n_components = min(svd_components, vectors.shape[1] - 1, vectors.shape[0] - 1)
             self.tfidf_svd_model = TruncatedSVD(n_components=n_components, random_state=42)
             vectors = self.tfidf_svd_model.fit_transform(vectors)
             explained_variance = self.tfidf_svd_model.explained_variance_ratio_.sum()

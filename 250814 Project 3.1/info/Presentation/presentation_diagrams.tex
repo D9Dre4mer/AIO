@@ -1,0 +1,453 @@
+\documentclass[12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[vietnamese]{babel}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,decorations.pathreplacing,shadows}
+\usepackage{geometry}
+\geometry{a4paper, margin=2cm}
+\usepackage{float}
+\usepackage{afterpage}
+
+\title{AIO Classifier - Presentation Diagrams}
+\author{Project 3.1}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Kiến trúc Hệ thống Cơ bản}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    component/.style={
+        rectangle,
+        draw=green!80!black,
+        fill=green!20,
+        text width=3.2cm,
+        text centered,
+        minimum height=2.2cm,
+        rounded corners=8pt,
+        drop shadow,
+        line width=1.5pt
+    },
+    arrow/.style={
+        ->,
+        thick,
+        orange!80!black,
+        line width=2pt
+    }
+]
+
+% Top row components
+\node[component] (data_loader) at (0,5) {
+    \textbf{Data Loader}\\[0.3cm]
+    \small
+    • Hugging Face\\
+    • CSV/JSON\\
+    • Auto caching
+};
+
+\node[component] (text_encoders) at (4.5,5) {
+    \textbf{Text Encoders}\\[0.3cm]
+    \small
+    • BoW/TF-IDF\\
+    • Word Embeddings\\
+    • GPU support
+};
+
+\node[component] (model_factory) at (9,5) {
+    \textbf{Model Factory}\\[0.3cm]
+    \small
+    • KNN/DT/NB\\
+    • K-Means\\
+    • Ensemble
+};
+
+% Bottom row components
+\node[component] (preprocessing) at (0,1) {
+    \textbf{Preprocessing}\\[0.3cm]
+    \small
+    • Text cleaning\\
+    • Tokenization\\
+    • Stop words
+};
+
+\node[component] (vectorization) at (4.5,1) {
+    \textbf{Vectorization}\\[0.3cm]
+    \small
+    • 3 methods\\
+    • Memory opt\\
+    • GPU accel
+};
+
+\node[component] (training) at (9,1) {
+    \textbf{Training}\\[0.3cm]
+    \small
+    • Auto tuning\\
+    • Cross-val\\
+    • Error handling
+};
+
+% Arrows
+\draw[arrow] (data_loader) -- (text_encoders);
+\draw[arrow] (text_encoders) -- (model_factory);
+\draw[arrow] (data_loader) -- (preprocessing);
+\draw[arrow] (text_encoders) -- (vectorization);
+\draw[arrow] (model_factory) -- (training);
+
+% Add flow indicators
+\node[font=\Large, orange!80!black] at (2.25,5.5) {▶};
+\node[font=\Large, orange!80!black] at (6.75,5.5) {▶};
+\node[font=\Large, orange!80!black] at (2.25,3) {▼};
+\node[font=\Large, orange!80!black] at (6.75,3) {▼};
+\node[font=\Large, orange!80!black] at (11.25,3) {▼};
+
+\end{tikzpicture}
+\caption{Kiến trúc Modular của AIO Classifier}
+\end{figure}
+
+\vspace{1cm}
+
+\section{Kiến trúc Chi tiết với Core Components}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    main_component/.style={
+        rectangle,
+        draw=green!80!black,
+        fill=green!25,
+        text width=3.8cm,
+        text centered,
+        minimum height=2.8cm,
+        rounded corners=10pt,
+        drop shadow,
+        line width=1.5pt
+    },
+    sub_component/.style={
+        rectangle,
+        draw=orange!80!black,
+        fill=orange!20,
+        text width=3.2cm,
+        text centered,
+        minimum height=2.2cm,
+        rounded corners=8pt,
+        drop shadow,
+        line width=1.2pt
+    },
+    feature_box/.style={
+        rectangle,
+        draw=green!70!black,
+        fill=green!15,
+        text width=2.5cm,
+        text centered,
+        minimum height=1.5cm,
+        rounded corners=6pt,
+        drop shadow,
+        line width=1pt
+    },
+    arrow/.style={
+        ->,
+        thick,
+        orange!80!black,
+        line width=2pt
+    },
+    double_arrow/.style={
+        <->,
+        thick,
+        green!70!black,
+        line width=2pt
+    }
+]
+
+% Main components
+\node[main_component] (data_loader) at (0,7) {
+    \textbf{Data Loader}\\[0.4cm]
+    \small
+    • Hugging Face\\
+    • CSV/JSON\\
+    • Auto caching\\
+    • Memory optimization
+};
+
+\node[main_component] (text_encoders) at (6,7) {
+    \textbf{Text Encoders}\\[0.4cm]
+    \small
+    • BoW/TF-IDF\\
+    • Word Embeddings\\
+    • GPU support\\
+    • FAISS integration
+};
+
+\node[main_component] (model_factory) at (12,7) {
+    \textbf{Model Factory}\\[0.4cm]
+    \small
+    • KNN/DT/NB\\
+    • K-Means\\
+    • Ensemble\\
+    • Auto tuning
+};
+
+% Sub-components
+\node[sub_component] (preprocessing) at (0,3) {
+    \textbf{Preprocessing}\\[0.3cm]
+    \small
+    • Text cleaning\\
+    • Tokenization\\
+    • Stop words\\
+    • Data validation
+};
+
+\node[sub_component] (vectorization) at (6,3) {
+    \textbf{Vectorization}\\[0.3cm]
+    \small
+    • 3 methods\\
+    • Memory opt\\
+    • GPU accel\\
+    • SVD optimization
+};
+
+\node[sub_component] (training) at (12,3) {
+    \textbf{Training}\\[0.3cm]
+    \small
+    • Auto tuning\\
+    • Cross-val\\
+    • Error handling\\
+    • Progress tracking
+};
+
+% Feature boxes
+\node[feature_box] (base_model) at (3,0.5) {
+    \textbf{BaseModel}\\[0.2cm]
+    \small
+    Interface\\
+    GPU memory\\
+    Progress tracking
+};
+
+\node[feature_box] (ensemble) at (9,0.5) {
+    \textbf{Ensemble}\\[0.2cm]
+    \small
+    Voting strategy\\
+    Model reuse\\
+    Error reduction
+};
+
+\node[feature_box] (caching) at (6,-1.5) {
+    \textbf{Intelligent}\\[0.2cm]
+    \small
+    Caching system\\
+    Memory optimization\\
+    GPU acceleration
+};
+
+% Arrows
+\draw[arrow] (data_loader) -- (text_encoders);
+\draw[arrow] (text_encoders) -- (model_factory);
+\draw[arrow] (data_loader) -- (preprocessing);
+\draw[arrow] (text_encoders) -- (vectorization);
+\draw[arrow] (model_factory) -- (training);
+\draw[arrow] (preprocessing) -- (base_model);
+\draw[arrow] (training) -- (ensemble);
+\draw[arrow] (vectorization) -- (caching);
+\draw[double_arrow] (base_model) -- (ensemble);
+\draw[double_arrow] (ensemble) -- (caching);
+
+% Add flow indicators
+\node[font=\Large, orange!80!black] at (3,7.5) {▶};
+\node[font=\Large, orange!80!black] at (9,7.5) {▶};
+\node[font=\Large, orange!80!black] at (3,5) {▼};
+\node[font=\Large, orange!80!black] at (9,5) {▼};
+\node[font=\Large, orange!80!black] at (15,5) {▼};
+
+\end{tikzpicture}
+\caption{Kiến trúc Chi tiết với Core Components}
+\end{figure}
+
+\vspace{1cm}
+
+\section{So sánh Hiệu suất Models}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    model_box/.style={
+        rectangle,
+        draw=green!80!black,
+        fill=green!20,
+        text width=2.8cm,
+        text centered,
+        minimum height=2.2cm,
+        rounded corners=8pt,
+        drop shadow,
+        line width=1.5pt
+    },
+    performance_bar/.style={
+        rectangle,
+        draw=orange!80!black,
+        fill=orange!30,
+        text width=1cm,
+        text centered,
+        minimum height=0.4cm,
+        rounded corners=3pt,
+        line width=1pt
+    },
+    time_bar/.style={
+        rectangle,
+        draw=green!70!black,
+        fill=green!25,
+        text width=0.8cm,
+        text centered,
+        minimum height=0.4cm,
+        rounded corners=3pt,
+        line width=1pt
+    }
+]
+
+% Top 3 models
+\node[model_box] (knn_emb) at (2,8) {
+    \textbf{KNN + Embeddings}\\[0.3cm]
+    \small
+    🥇 90.9\% accuracy\\
+    22.9s training\\
+    Best performer
+};
+
+\node[model_box] (nb_tfidf) at (6,8) {
+    \textbf{Naive Bayes + TF-IDF}\\[0.3cm]
+    \small
+    🥈 88.7\% accuracy\\
+    0.17s training\\
+    Fastest
+};
+
+\node[model_box] (ensemble) at (10,8) {
+    \textbf{Ensemble Learning}\\[0.3cm]
+    \small
+    🥉 88.2\% accuracy\\
+    3204s training\\
+    Most stable
+};
+
+% Performance bars
+\node[font=\small, orange!80!black] at (2,6.5) {Accuracy:};
+\node[performance_bar] at (2,6) {90.9\%};
+\node[performance_bar] at (6,6) {88.7\%};
+\node[performance_bar] at (10,6) {88.2\%};
+
+% Time bars
+\node[font=\small, green!80!black] at (2,5.5) {Time:};
+\node[time_bar] at (2,5) {22.9s};
+\node[time_bar] at (6,5) {0.17s};
+\node[time_bar] at (10,5) {3204s};
+
+% Other models
+\node[model_box] (knn_bow) at (2,2.5) {
+    \textbf{KNN + BoW}\\[0.3cm]
+    \small
+    85.2\% accuracy\\
+    498.6s training
+};
+
+\node[model_box] (dt_emb) at (6,2.5) {
+    \textbf{Decision Tree + Embeddings}\\[0.3cm]
+    \small
+    77.2\% accuracy\\
+    730.6s training
+};
+
+\node[model_box] (kmeans) at (10,2.5) {
+    \textbf{K-Means + BoW}\\[0.3cm]
+    \small
+    52.4\% accuracy\\
+    238.6s training
+};
+
+\end{tikzpicture}
+\caption{So sánh Hiệu suất các Models}
+\end{figure}
+
+\vspace{1cm}
+
+\section{Workflow của AIO Classifier}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    step_box/.style={
+        rectangle,
+        draw=green!80!black,
+        fill=green!20,
+        text width=2.5cm,
+        text centered,
+        minimum height=1.8cm,
+        rounded corners=8pt,
+        drop shadow,
+        line width=1.5pt
+    },
+    arrow/.style={
+        ->,
+        thick,
+        orange!80!black,
+        line width=2pt
+    }
+]
+
+% Workflow steps
+\node[step_box] (step1) at (0,0) {
+    \textbf{Step 1}\\[0.2cm]
+    \small
+    Dataset\\
+    Selection
+};
+
+\node[step_box] (step2) at (3,0) {
+    \textbf{Step 2}\\[0.2cm]
+    \small
+    Column\\
+    Selection
+};
+
+\node[step_box] (step3) at (6,0) {
+    \textbf{Step 3}\\[0.2cm]
+    \small
+    Model\\
+    Configuration
+};
+
+\node[step_box] (step4) at (9,0) {
+    \textbf{Step 4}\\[0.2cm]
+    \small
+    Training\\
+    Execution
+};
+
+\node[step_box] (step5) at (12,0) {
+    \textbf{Step 5}\\[0.2cm]
+    \small
+    Results\\
+    Analysis
+};
+
+% Arrows
+\draw[arrow] (step1) -- (step2);
+\draw[arrow] (step2) -- (step3);
+\draw[arrow] (step3) -- (step4);
+\draw[arrow] (step4) -- (step5);
+
+% Add circular arrows for iteration
+\draw[arrow, bend right=30] (step5) to node[above, font=\small, orange!80!black] {Iterate} (step1);
+
+% Add step numbers
+\node[font=\Large, green!80!black] at (1.5,0.5) {▶};
+\node[font=\Large, green!80!black] at (4.5,0.5) {▶};
+\node[font=\Large, green!80!black] at (7.5,0.5) {▶};
+\node[font=\Large, green!80!black] at (10.5,0.5) {▶};
+
+\end{tikzpicture}
+\caption{Workflow 5 Bước của AIO Classifier}
+\end{figure}
+
+\end{document}

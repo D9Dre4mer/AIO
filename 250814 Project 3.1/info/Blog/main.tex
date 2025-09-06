@@ -1,0 +1,86 @@
+\documentclass[a4paper,12pt]{article}
+
+\input{preamble.tex} % Gọi preamble từ file riêng
+
+\begin{document}
+\fancyhead[L]{%
+    \includegraphics[height=1.2cm]{Logo/Logo.png}%
+}
+\newpage
+
+\begin{center}
+    \vspace*{2em}
+    {\LARGE\bfseries Blog Project improvements \par}
+    \vspace{0.5em}
+    {\Huge\bfseries Topic Modeling: Từ Code Đơn Giản Đến AIO Classifier Hoàn Chỉnh \par}
+    \vspace{1em}
+    {\Large\itshape Hành trình phát triển từ Jupyter Notebook đến All in one classifier \par}
+    \vspace{2em}
+    {\large\textbf{Tác giả:} GRID034} \\
+    \vspace{2em}
+    \hrule
+    \vspace{1.5em}
+\end{center}
+
+\vspace{1em}
+\noindent
+Dự án Topic Modeling đã trải qua một hành trình phát triển ấn tượng, từ một Jupyter Notebook đơn giản với vài thuật toán cơ bản đến một \textbf{All in one classifier} hoàn chỉnh với 15+ mô hình học máy, giao diện wizard tương tác, và hệ thống ensemble learning tiên tiến. Sự chuyển đổi này không chỉ thể hiện sự tiến bộ về mặt kỹ thuật mà còn phản ánh tư duy phát triển phần mềm chuyên nghiệp.
+
+\vspace{1em}
+\noindent
+Blog này sẽ phân tích chi tiết quá trình phát triển, bao gồm:
+
+\vspace{1em}
+\begin{enumerate}
+    \item \textbf{Phân tích Code Ban đầu}  
+    Đánh giá Jupyter Notebook gốc với 3 thuật toán cơ bản (K-Means, KNN, Decision Tree) và 3 phương pháp vectorization (BoW, TF-IDF, Embeddings).
+
+    \item \textbf{Kiến trúc Modular v4.0.0}  
+    Chuyển đổi từ code đơn lẻ sang kiến trúc modular với 7+ thuật toán, base classes, và factory pattern.
+
+    \item \textbf{Wizard Interface \& User Experience}  
+    Phát triển giao diện wizard 5 bước với session management, validation system, và responsive design.
+
+    \item \textbf{Advanced Features \& Optimization}  
+    GPU acceleration, intelligent caching system, ensemble learning, cross-validation, và performance optimization cho datasets lớn.
+
+    \item \textbf{Cải tiến Chi tiết cho từng Model}  
+    Phân tích chi tiết các cải tiến đã thực hiện với từng model và vectorization method, bao gồm performance improvements, code quality, và scalability enhancements.
+
+    \item \textbf{Mục tiêu của Dự án}  
+    Giải thích lý do và mục tiêu xây dựng bộ phân loại All-in-One, tương thích đa nền tảng và tối ưu hóa hiệu năng.
+
+    \item \textbf{Hướng phát triển trong tương lai}  
+    Đề xuất các hướng phát triển chiến lược bao gồm multi-feature datasets, advanced models, production-ready features, và user experience enhancements.
+\end{enumerate}
+
+\vspace{1em}
+\noindent\textbf{ Giá trị nhận được sau khi đọc Blog}
+\begin{itemize}
+    \item Hiểu quá trình phát triển từ prototype đến production-ready platform.  
+    \item Nắm vững kiến trúc modular và design patterns trong ML projects.  
+    \item Biết cách xây dựng user-friendly interfaces cho ML applications.  
+    \item Học được best practices về code organization và maintainability.  
+    \item Áp dụng được các kỹ thuật optimization cho large-scale ML systems.  
+\end{itemize}
+
+\input{projects/Project-Goals/main.tex}
+
+\input{projects/Project-Evolution/main}
+
+\input{projects/Modular-Architecture/main}
+
+\input{projects/Wizard-Interface/main}
+
+\input{projects/Advanced-Features/main}
+
+\input{projects/Model-Improvements/main}
+
+\input{projects/Future-Development/main.tex}
+
+\input{projects/Conclusion/main}
+
+% Bibliography
+\printbibliography[title={Tài liệu tham khảo}]
+
+\end{document}

@@ -2256,51 +2256,22 @@ class StreamlitTrainingPipeline:
     
     def _create_ensemble_confusion_matrix_from_cache(self, ensemble_result: Dict):
         """
-        Tạo confusion matrix cho Ensemble Learning từ dữ liệu base models
+        Tạo confusion matrix cho Ensemble Learning từ dữ liệu ensemble model
         """
         try:
             print(f"         🔍 Tạo confusion matrix cho Ensemble Learning...")
             print(f"         🔍 Ensemble result keys: {list(ensemble_result.keys())}")
             
-            ensemble_info = ensemble_result.get('ensemble_info', {})
-            print(f"         🔍 Ensemble info keys: {list(ensemble_info.keys())}")
-            individual_results = ensemble_info.get('individual_results', {})
-            print(f"         🔍 Individual results type: {type(individual_results)}")
-            print(f"         🔍 Individual results keys: {list(individual_results.keys()) if isinstance(individual_results, dict) else 'Not a dict'}")
+            # Lấy dữ liệu trực tiếp từ ensemble model (không phải từ base models)
+            predictions = ensemble_result.get('predictions', [])
+            true_labels = ensemble_result.get('true_labels', [])
+            label_mapping = ensemble_result.get('label_mapping', {})
             
-            if not individual_results:
-                print(f"         ❌ Không có individual results trong ensemble")
+            if not predictions or not true_labels:
+                print(f"         ❌ Không có predictions hoặc true_labels trong ensemble result")
                 return
             
-            # Tìm base model có dữ liệu đầy đủ nhất
-            best_model_key = None
-            best_model_data = None
-            
-            for model_key, model_data in individual_results.items():
-                if (isinstance(model_data, dict) and 
-                    'predictions' in model_data and 
-                    'true_labels' in model_data):
-                    
-                    if best_model_data is None:
-                        best_model_key = model_key
-                        best_model_data = model_data
-                    else:
-                        # Ưu tiên model có accuracy cao hơn
-                        if (model_data.get('test_accuracy', 0) > 
-                            best_model_data.get('test_accuracy', 0)):
-                            best_model_key = model_key
-                            best_model_data = model_data
-            
-            if best_model_data is None:
-                print(f"         ❌ Không tìm thấy base model nào có đủ dữ liệu")
-                return
-            
-            print(f"         ✅ Sử dụng dữ liệu từ base model: {best_model_key}")
-            
-            # Lấy dữ liệu từ base model
-            predictions = best_model_data['predictions']
-            true_labels = best_model_data['true_labels']
-            label_mapping = best_model_data.get('label_mapping', {})
+            print(f"         ✅ Sử dụng dữ liệu từ ensemble model với {len(predictions)} predictions")
             
             # Tạo confusion matrix cho ensemble
             embedding_name = ensemble_result.get('embedding_name', 'Unknown')

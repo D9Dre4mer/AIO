@@ -25,7 +25,7 @@ KNN_N_NEIGHBORS = 5
 # Memory optimization thresholds
 KMEANS_SVD_THRESHOLD = 20000  # Use SVD if features > 20K (was 10K)
 KMEANS_SVD_COMPONENTS = 2000  # Reduce to 2K dimensions (was 1K)
-MAX_VOCABULARY_SIZE = 50000   # Maximum vocabulary for BoW/TF-IDF
+MAX_VOCABULARY_SIZE = 30000   # Maximum vocabulary for BoW/TF-IDF (reduced for 300k samples)
 
 # BoW/TF-IDF SVD dimensionality reduction for speed optimization
 BOW_TFIDF_SVD_COMPONENTS = 400  # Reduce to 400 dimensions (300-500 range)
@@ -44,6 +44,11 @@ FORCE_DENSE_CONVERSION = False   # Force sparse->dense conversion for GPU
 ENABLE_RAPIDS_CUML = True        # Enable RAPIDS cuML for GPU acceleration
 RAPIDS_FALLBACK_TO_CPU = True    # Fallback to CPU if GPU not available
 RAPIDS_AUTO_DETECT_DEVICE = True # Automatically detect best device (GPU/CPU)
+
+# CPU Multithreading Settings
+CPU_N_JOBS = -1  # Use all available CPU cores (-1 = all cores)
+CPU_MAX_JOBS = 8  # Maximum number of parallel jobs (safety limit)
+CPU_OPTIMIZATION = True  # Enable CPU multithreading optimization
 
 # Output directories
 FIGURES_DIR = "pdf/Figures"

@@ -1,0 +1,16 @@
+﻿Model,Vectorization,F1 Score,Accuracy,Precision,Recall,Training Time (s)
+Knn,Bow,84.9%,85.2%,85.1%,85.2%,498.6
+Knn,Tfidf,85.9%,86.1%,86.0%,86.1%,416.9
+Knn,Embeddings,90.8%,90.9%,90.8%,90.9%,21.6
+Decision Tree,Bow,75.7%,75.7%,75.8%,75.7%,465
+Decision Tree,Tfidf,74.6%,74.5%,74.6%,74.5%,469
+Decision Tree,Embeddings,77.2%,77.2%,77.1%,77.2%,730.6
+Naive Bayes,Bow,88.3%,88.3%,88.4%,88.3%,0.2
+Naive Bayes,Tfidf,88.6%,88.7%,88.7%,88.7%,0.2
+Naive Bayes,Embeddings,83.4%,83.2%,84.2%,83.2%,3.2
+Kmeans,Bow,47.9%,52.4%,53.0%,52.4%,238.6
+Kmeans,Tfidf,71.2%,70.9%,77.7%,70.9%,234.1
+Kmeans,Embeddings,75.8%,75.6%,79.1%,75.6%,7
+Ensemble Learning,Bow,84.0%,84.0%,84.1%,84.0%,463.9
+Ensemble Learning,Tfidf,88.1%,88.2%,88.1%,88.2%,537.5
+Ensemble Learning,Embeddings,87.9%,87.9%,88.0%,87.9%,911.9
