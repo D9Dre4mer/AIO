@@ -1,0 +1,54 @@
+# Core Data Science & Machine Learning
+numpy>=2.2.6
+pandas>=2.3.2
+matplotlib>=3.10.1
+seaborn>=0.13.2
+scikit-learn>=1.7.1
+scipy>=1.16.1
+
+# Deep Learning & NLP (GPU-Enabled - CUDA 12.6)
+torch>=2.8.0+cu126
+torchvision>=0.23.0+cu126
+torchaudio>=2.8.0+cu126
+sentence-transformers>=5.1.0
+transformers>=4.55.4
+datasets>=4.0.0
+tokenizers>=0.21.4
+
+# GPU Acceleration Libraries
+cupy-cuda12x>=13.6.0
+faiss-gpu>=1.8.0
+
+# RAPIDS cuML for GPU-accelerated machine learning
+# Note: Install with conda for best compatibility:
+# conda install -c rapidsai -c nvidia -c conda-forge cuml=24.08 python=3.11 cuda-version=12.6
+# For CPU-only fallback: conda install -c rapidsai -c conda-forge cuml-cpu=24.08
+cuml-cpu>=24.08.0  # CPU fallback version
+
+# Text Processing
+nltk>=3.9.1
+stop-words>=2018.7.23
+regex>=2025.7.34
+
+# Network Analysis
+networkx>=3.5
+
+# Web Application Framework
+streamlit>=1.49.0
+
+# Data Visualization
+plotly>=6.3.0
+
+# Data Handling & Utilities
+pyarrow>=21.0.0
+huggingface-hub>=0.34.4
+tqdm>=4.67.1
+
+# Dependencies for HuggingFace ecosystem
+requests>=2.32.5
+pyyaml>=6.0.2
+filelock>=3.19.1
+
+# Built-in modules (no version needed)
+pathlib
+warnings

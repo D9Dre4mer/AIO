@@ -315,102 +315,30 @@ class StreamlitTrainingPipeline:
         return f"{human_name}_{config_hash_str}"
     
     def _check_cache(self, cache_key: str) -> Dict:
-        """Check if results exist in cache - NO TIME EXPIRY"""
+        """Check if results exist in cache"""
         if cache_key in self.cache_metadata:
             cache_info = self.cache_metadata[cache_key]
             cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
             
-            # Check if cache file exists (NO TIME EXPIRY)
+            # Check if cache file exists and is not expired
             if os.path.exists(cache_file):
                 cache_age = time.time() - cache_info['timestamp']
+                max_age = 24 * 60 * 60  # 24 hours
                 
-                try:
-                    with open(cache_file, 'rb') as f:
-                        cached_results = pickle.load(f)
-                    
-                    # Display cache hit information
-                    cache_name = cache_info.get('cache_name', cache_key)
-                    print(f"✅ Using cached results: {cache_name}")
-                    print(f"   Age: {cache_age/3600:.1f}h | File: {cache_key}")
-                    
-                    return cached_results
-                except Exception as e:
-                    print(f"Warning: Could not load cached results: {e}")
+                if cache_age < max_age:
+                    try:
+                        with open(cache_file, 'rb') as f:
+                            cached_results = pickle.load(f)
+                        
+                        # Display cache hit information
+                        cache_name = cache_info.get('cache_name', cache_key)
+                        print(f"✅ Using cached results: {cache_name}")
+                        print(f"   Age: {cache_age/3600:.1f}h | File: {cache_key}")
+                        
+                        return cached_results
+                    except Exception as e:
+                        print(f"Warning: Could not load cached results: {e}")
         
-        # If exact cache not found, try to find compatible cache
-        return self._find_compatible_cache(cache_key)
-    
-    def _find_compatible_cache(self, target_cache_key: str) -> Dict:
-        """Find compatible cache when exact match not found"""
-        print(f"🔍 Exact cache not found: {target_cache_key}")
-        print("🔍 Searching for compatible cache...")
-        
-        # Extract key info from target cache key
-        target_parts = target_cache_key.split('_')
-        target_samples = None
-        target_categories = None
-        
-        for part in target_parts:
-            if 'samples' in part:
-                target_samples = part
-            elif any(cat in part for cat in ['astro-ph', 'cond-mat', 'cs', 'math', 'physics']):
-                target_categories = part
-        
-        best_match = None
-        best_score = 0
-        
-        for cache_key, cache_info in self.cache_metadata.items():
-            cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
-            
-            if not os.path.exists(cache_file):
-                continue
-                
-            # Calculate compatibility score
-            score = 0
-            cache_parts = cache_key.split('_')
-            
-            # Check samples match
-            for part in cache_parts:
-                if 'samples' in part and target_samples and part == target_samples:
-                    score += 3
-                elif 'full' in part and target_samples and 'full' in target_samples:
-                    score += 3
-            
-            # Check categories match
-            for part in cache_parts:
-                if target_categories and part in target_categories:
-                    score += 2
-                elif any(cat in part for cat in ['astro-ph', 'cond-mat', 'cs']):
-                    score += 1
-            
-            # Check if it's a recent cache
-            cache_age = time.time() - cache_info['timestamp']
-            if cache_age < 7 * 24 * 3600:  # Within 7 days
-                score += 1
-            
-            if score > best_score:
-                best_score = score
-                best_match = (cache_key, cache_info)
-        
-        if best_match and best_score >= 2:  # Minimum compatibility threshold
-            cache_key, cache_info = best_match
-            cache_file = os.path.join(self.cache_dir, f"{cache_key}.pkl")
-            cache_age = time.time() - cache_info['timestamp']
-            
-            try:
-                with open(cache_file, 'rb') as f:
-                    cached_results = pickle.load(f)
-                
-                print(f"✅ Using compatible cache: {cache_key[:50]}...")
-                print(f"   Compatibility score: {best_score}/5")
-                print(f"   Age: {cache_age/3600:.1f}h")
-                print(f"   ⚠️  Note: Using cache with different config - results may vary")
-                
-                return cached_results
-            except Exception as e:
-                print(f"Warning: Could not load compatible cache: {e}")
-        
-        print("❌ No compatible cache found")
         return None
     
     def _prepare_results_for_cache(self, results: Dict) -> Dict:
