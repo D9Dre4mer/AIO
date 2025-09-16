@@ -2485,11 +2485,19 @@ def render_step4_wireframe():
             
             if cached_results:
                 st.toast("🎯 Using cached results! No need to retrain.")
+                
+                # Get comprehensive_results from the correct location in cache
+                comprehensive_results = []
+                if 'results' in cached_results and 'all_results' in cached_results['results']:
+                    comprehensive_results = cached_results['results']['all_results']
+                elif 'comprehensive_results' in cached_results:
+                    comprehensive_results = cached_results['comprehensive_results']
+                
                 result = {
                     'status': 'success',
                     'message': 'Using cached results',
                     'results': cached_results,
-                    'comprehensive_results': cached_results.get('comprehensive_results', []),
+                    'comprehensive_results': comprehensive_results,
                     'successful_combinations': cached_results.get('successful_combinations', 0),
                     'total_combinations': cached_results.get('total_combinations', 0),
                     'best_combinations': cached_results.get('best_combinations', {}),

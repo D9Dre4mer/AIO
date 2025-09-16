@@ -660,11 +660,12 @@ class EnsembleManager:
             
             # Skip cross-validation for ensemble when using pre-trained models
             # Since base models are already trained and validated, CV is redundant
-            print("📊 Skipping cross-validation for ensemble (using pre-trained models)...")
+            print("📊 Skipping cross-validation for ensemble (using cached results)...")
             print("   • Base models already trained and validated individually")
             print("   • Ensemble will use pre-trained model predictions directly")
+            print("   • CV accuracy will be calculated from base model results in comprehensive_evaluation.py")
             
-            # Use dummy CV scores for compatibility
+            # Use dummy CV scores for compatibility (will be calculated from base models)
             cv_mean = 0.0
             cv_std = 0.0
             

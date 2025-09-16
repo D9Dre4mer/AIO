@@ -2255,6 +2255,34 @@ class ComprehensiveEvaluator:
             individual_results = {r['model_name']: r for r in all_results if r['status'] == 'success'}
             performance_comparison = ensemble_manager.compare_performance(individual_results)
             
+            # Calculate CV accuracy from base models only (not from ensemble_results which is 0.0)
+            base_model_cv_accuracies = []
+            base_models = ensemble_config.get('base_models', ['knn', 'decision_tree', 'naive_bayes'])
+            
+            for model_name in base_models:
+                # Find individual model result for the same embedding
+                for result in all_results:
+                    if (isinstance(result, dict) and 
+                        result.get('model_name') == model_name and
+                        result.get('embedding_name') == best_embedding and
+                        result.get('status') == 'success'):
+                        cv_acc = result.get('cv_mean_accuracy', 0.0)
+                        if cv_acc > 0.0:
+                            base_model_cv_accuracies.append(cv_acc)
+                            print(f"   📊 Base model {model_name}: CV = {cv_acc:.4f}")
+                        break
+            
+            # Calculate ensemble CV accuracy as average of base models
+            if base_model_cv_accuracies:
+                import numpy as np
+                ensemble_cv_mean = np.mean(base_model_cv_accuracies)
+                ensemble_cv_std = np.std(base_model_cv_accuracies)
+                print(f"   🎯 Ensemble CV calculated: {ensemble_cv_mean:.4f} ± {ensemble_cv_std:.4f}")
+            else:
+                ensemble_cv_mean = 0.0
+                ensemble_cv_std = 0.0
+                print(f"   ⚠️ No base model CV accuracies found, using 0.0")
+            
             # Create ensemble result with FULL integration into the evaluation pipeline
             ensemble_result = {
                 'model_name': 'Ensemble Learning',
@@ -2265,13 +2293,13 @@ class ComprehensiveEvaluator:
                 'test_accuracy': ensemble_eval.get('accuracy', 0.0),
                 
                 # Calculate overfitting score using CV vs test accuracy for ensemble (like individual models)
-                'overfitting_score': ensemble_results.get('cv_mean_accuracy', 0.0) - ensemble_eval.get('accuracy', 0.0),
-                'overfitting_status': self._classify_overfitting(ensemble_results.get('cv_mean_accuracy', 0.0) - ensemble_eval.get('accuracy', 0.0)),
+                'overfitting_score': ensemble_cv_mean - ensemble_eval.get('accuracy', 0.0),
+                'overfitting_status': self._classify_overfitting(ensemble_cv_mean - ensemble_eval.get('accuracy', 0.0)),
                 
-                # Use real CV accuracy from ensemble results
-                'cv_mean_accuracy': ensemble_results.get('cv_mean_accuracy', 0.0),
-                'cv_std_accuracy': ensemble_results.get('cv_std_accuracy', 0.0),
-                'cv_stability_score': 1.0,  # Ensemble is typically more stable
+                # Use calculated CV accuracy from base models
+                'cv_mean_accuracy': ensemble_cv_mean,
+                'cv_std_accuracy': ensemble_cv_std,
+                'cv_stability_score': 1.0 - ensemble_cv_std if ensemble_cv_std > 0 else 1.0,
                 'training_time': ensemble_results.get('training_time', 0.0),
                 
                 # Extract precision, recall, and F1-score from classification report

@@ -18,6 +18,7 @@ tokenizers>=0.21.4
 # GPU Acceleration Libraries
 cupy-cuda12x>=13.6.0
 faiss-gpu>=1.8.0
+faiss-cpu>=1.12.0  # CPU fallback for cache loading
 
 # RAPIDS cuML for GPU-accelerated machine learning
 # Note: Install with conda for best compatibility:
