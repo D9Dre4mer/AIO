@@ -1,0 +1,95 @@
+# Advanced LightGBM Configuration
+project:
+  name: "Advanced LightGBM Optimization"
+  version: "1.0.0"
+  description: "Comprehensive LightGBM optimization with advanced techniques"
+
+# Data configuration
+data:
+  train_path: "../dataset_v3/fe_train.csv"
+  val_path: "../dataset_v3/fe_val.csv"
+  test_path: "../dataset_v3/fe_test.csv"
+  target_column: "target"
+  random_state: 42
+
+# Model configuration
+model:
+  objective: "binary"
+  metric: "binary_logloss"
+  boosting_type: "gbdt"
+  random_state: 42
+  verbose: -1
+
+# Hyperparameter optimization
+optimization:
+  n_trials: 200
+  timeout: 3600  # 1 hour
+  cv_folds: 5
+  direction: "maximize"
+  pruner: "median"
+  sampler: "tpe"
+
+# Feature engineering
+feature_engineering:
+  polynomial_degree: 2
+  interaction_only: false
+  include_bias: false
+  target_encoding: true
+  statistical_features: true
+  feature_selection: true
+  max_features: 50
+
+# Ensemble methods
+ensemble:
+  voting: true
+  stacking: true
+  blending: true
+  n_estimators: 100
+  cv_folds: 5
+
+# Cross-validation
+cross_validation:
+  strategy: "stratified"
+  n_splits: 5
+  shuffle: true
+  random_state: 42
+
+# Performance optimization
+performance:
+  use_gpu: true
+  n_jobs: -1
+  memory_optimization: true
+  speed_optimization: true
+  gpu_platform_id: 0
+  gpu_device_id: 0
+  gpu_use_dp: true
+  gpu_max_memory_usage: 0.8
+
+# Evaluation
+evaluation:
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "auc_roc"
+    - "log_loss"
+    - "matthews_corrcoef"
+    - "cohen_kappa"
+  
+  visualization:
+    roc_curve: true
+    precision_recall_curve: true
+    confusion_matrix: true
+    feature_importance: true
+    shap_plots: true
+
+# Output configuration
+output:
+  results_dir: "results"
+  models_dir: "models"
+  plots_dir: "results/plots"
+  logs_dir: "results/logs"
+  save_models: true
+  save_predictions: true
+  save_plots: true

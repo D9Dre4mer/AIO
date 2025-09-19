@@ -1,0 +1,42 @@
+# Advanced LightGBM Optimization Project Requirements
+# Tested and verified compatible versions (as of 2024)
+
+# Core ML libraries - exact versions for compatibility
+lightgbm==4.0.0
+scikit-learn==1.3.0
+numpy==1.26.4
+pandas==2.0.3
+scipy==1.10.1
+
+# Hyperparameter optimization
+optuna==3.4.0
+scikit-optimize==0.10.2
+
+# Model interpretability
+shap==0.42.0
+
+# Feature engineering
+category-encoders==2.6.0
+
+# Visualization
+matplotlib==3.7.2
+seaborn==0.12.2
+plotly==5.15.0
+
+# Data processing
+gdown==4.7.0
+tqdm==4.65.0
+
+# Performance optimization
+joblib==1.5.1
+
+# Utilities
+pyyaml==6.0.2
+
+# Additional dependencies for full functionality
+statsmodels==0.14.5
+patsy==1.0.1
+
+# Optional ensemble methods (uncomment if needed)
+# xgboost>=1.7.0
+# catboost>=1.2.0

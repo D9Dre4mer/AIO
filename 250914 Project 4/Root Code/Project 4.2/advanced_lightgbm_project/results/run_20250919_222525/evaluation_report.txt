@@ -1,0 +1,26 @@
+================================================================================
+COMPREHENSIVE MODEL EVALUATION REPORT
+================================================================================
+
+MODEL PERFORMANCE COMPARISON
+----------------------------------------
+Model                ACCURACY   PRECISION  RECALL     F1         AUC_ROC    MATTHEWS_CORRCOEF
+---------------------------------------------------------------------------------------------
+advanced_lightgbm    0.7742     0.7692     0.7143     0.7407     0.8655     0.5424     
+voting_soft          0.8387     0.8462     0.7857     0.8148     0.9118     0.6738     
+voting_hard          0.8387     0.8462     0.7857     0.8148     0.8340     0.6738     
+stacking             0.8387     0.8462     0.7857     0.8148     0.9076     0.6738     
+weighted             0.8710     0.9167     0.7857     0.8462     0.9076     0.7427     
+
+BEST MODEL ANALYSIS
+----------------------------------------
+Best ACCURACY: weighted (0.8710)
+Best PRECISION: weighted (0.9167)
+Best RECALL: voting_soft (0.7857)
+Best F1: weighted (0.8462)
+Best AUC_ROC: voting_soft (0.9118)
+Best MATTHEWS_CORRCOEF: weighted (0.7427)
+
+Overall Best Model: weighted (avg rank: 1.17)
+
+================================================================================

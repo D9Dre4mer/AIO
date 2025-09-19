@@ -1,0 +1,14 @@
+{
+  "voting_soft": {
+    "accuracy": 0.8666666666666667
+  },
+  "voting_hard": {
+    "accuracy": 0.9
+  },
+  "stacking": {
+    "accuracy": 0.9333333333333333
+  },
+  "weighted": {
+    "accuracy": 0.8666666666666667
+  }
+}
