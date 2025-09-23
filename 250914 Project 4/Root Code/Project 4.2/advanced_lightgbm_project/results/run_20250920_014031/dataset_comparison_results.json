@@ -1,0 +1,26 @@
+{
+  "raw": {
+    "val_accuracy": 0.9,
+    "test_accuracy": 0.7741935483870968,
+    "cv_score": 0.8226190476190475,
+    "best_n_estimators": 100
+  },
+  "fe": {
+    "val_accuracy": 0.8666666666666667,
+    "test_accuracy": 0.8064516129032258,
+    "cv_score": 0.8347789115646258,
+    "best_n_estimators": 200
+  },
+  "dt": {
+    "val_accuracy": 0.9,
+    "test_accuracy": 0.7741935483870968,
+    "cv_score": 0.8347789115646258,
+    "best_n_estimators": 100
+  },
+  "fe_dt": {
+    "val_accuracy": 0.9333333333333333,
+    "test_accuracy": 0.7741935483870968,
+    "cv_score": 0.8346938775510203,
+    "best_n_estimators": 100
+  }
+}

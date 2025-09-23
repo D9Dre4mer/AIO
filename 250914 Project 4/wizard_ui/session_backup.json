@@ -1,0 +1,30 @@
+{
+  "wizard_step": 1,
+  "wizard_data": {},
+  "wizard_progress": {},
+  "wizard_config": {
+    "auto_advance": true,
+    "validation_enabled": true,
+    "progress_tracking": true,
+    "session_persistence": true
+  },
+  "user_preferences": {
+    "theme": "light",
+    "compact_view": false,
+    "auto_save": true
+  },
+  "step_data": {
+    "step1_dataset": {},
+    "step2_preprocessing": {},
+    "step3_columns": {},
+    "step4_configuration": {},
+    "step5_training": {},
+    "step6_results": {},
+    "step7_inference": {}
+  },
+  "_metadata": {
+    "saved_at": "2025-09-15T19:31:11.481222",
+    "version": "1.0",
+    "source": "SessionManager.save_to_file"
+  }
+}

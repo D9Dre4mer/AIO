@@ -1,0 +1,27 @@
+LightGBM Dataset Comparison Report
+==================================================
+
+Dataset: RAW
+  Validation Accuracy: 0.9000
+  Test Accuracy: 0.7742
+  CV Score: 0.8226
+  Best n_estimators: 100
+
+Dataset: FE
+  Validation Accuracy: 0.8667
+  Test Accuracy: 0.8065
+  CV Score: 0.8348
+  Best n_estimators: 200
+
+Dataset: DT
+  Validation Accuracy: 0.9000
+  Test Accuracy: 0.7742
+  CV Score: 0.8348
+  Best n_estimators: 100
+
+Dataset: FE_DT
+  Validation Accuracy: 0.9333
+  Test Accuracy: 0.7742
+  CV Score: 0.8347
+  Best n_estimators: 100
+

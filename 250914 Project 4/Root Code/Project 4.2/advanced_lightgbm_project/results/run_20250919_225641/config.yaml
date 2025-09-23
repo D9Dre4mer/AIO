@@ -1,0 +1,75 @@
+cross_validation:
+  n_splits: 5
+  random_state: 42
+  shuffle: true
+  strategy: stratified
+data:
+  random_state: 42
+  target_column: target
+  test_path: ../dataset_v3/fe_test.csv
+  train_path: ../dataset_v3/fe_train.csv
+  val_path: ../dataset_v3/fe_val.csv
+ensemble:
+  blending: true
+  cv_folds: 5
+  n_estimators: 100
+  stacking: true
+  voting: true
+evaluation:
+  metrics:
+  - accuracy
+  - precision
+  - recall
+  - f1
+  - auc_roc
+  - log_loss
+  - matthews_corrcoef
+  - cohen_kappa
+  visualization:
+    confusion_matrix: true
+    feature_importance: true
+    precision_recall_curve: true
+    roc_curve: true
+    shap_plots: true
+feature_engineering:
+  feature_selection: true
+  include_bias: false
+  interaction_only: false
+  max_features: 50
+  polynomial_degree: 2
+  statistical_features: true
+  target_encoding: true
+model:
+  boosting_type: gbdt
+  metric: binary_logloss
+  objective: binary
+  random_state: 42
+  verbose: -1
+optimization:
+  cv_folds: 5
+  direction: maximize
+  n_trials: 200
+  pruner: median
+  sampler: tpe
+  timeout: 3600
+output:
+  logs_dir: results/logs
+  models_dir: models
+  plots_dir: results/plots
+  results_dir: results
+  save_models: true
+  save_plots: true
+  save_predictions: true
+performance:
+  gpu_device_id: 0
+  gpu_max_memory_usage: 0.8
+  gpu_platform_id: 0
+  gpu_use_dp: true
+  memory_optimization: true
+  n_jobs: -1
+  speed_optimization: true
+  use_gpu: true
+project:
+  description: Comprehensive LightGBM optimization with advanced techniques
+  name: Advanced LightGBM Optimization
+  version: 1.0.0
