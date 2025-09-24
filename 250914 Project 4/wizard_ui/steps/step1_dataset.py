@@ -36,12 +36,20 @@ class DatasetSelectionStep:
         4. ✅ Confirm data quality for modeling
         """)
         
-        # File upload section
-        uploaded_file = self._render_file_upload()
+        # Create tabs for different input modes
+        tab1, tab2 = st.tabs(["📁 Single File Upload", "🗂️ Multi-Input Data"])
         
-        # Dataset preview and validation
-        if uploaded_file:
-            self._render_dataset_processing(uploaded_file)
+        with tab1:
+            # File upload section
+            uploaded_file = self._render_file_upload()
+            
+            # Dataset preview and validation
+            if uploaded_file:
+                self._render_dataset_processing(uploaded_file)
+        
+        with tab2:
+            # Multi-input data section
+            self._render_multi_input_section()
         
         # Step completion
         self._render_step_completion()
@@ -252,3 +260,234 @@ class DatasetSelectionStep:
                 return False
         
         return True
+    
+    def _render_multi_input_section(self):
+        """Render multi-input data section with automatic type detection"""
+        st.subheader("🗂️ Multi-Input Data Configuration")
+        
+        st.markdown("""
+        Configure your dataset with multiple input features and automatic data type detection.
+        This mode supports numerical, categorical, and text features with flexible preprocessing.
+        """)
+        
+        # Option to upload multiple files or use single file with column selection
+        input_mode = st.radio(
+            "Select input mode:",
+            ["Column Selection from Single File", "Multiple File Upload"],
+            key="multi_input_mode"
+        )
+        
+        if input_mode == "Column Selection from Single File":
+            self._render_column_selection_mode()
+        else:
+            self._render_multiple_files_mode()
+    
+    def _render_column_selection_mode(self):
+        """Render column selection mode for multi-input"""
+        st.subheader("📊 Column Selection Mode")
+        
+        # File upload for column selection
+        uploaded_file = st.file_uploader(
+            "Upload dataset file for column analysis",
+            type=['csv', 'xlsx', 'xls', 'json'],
+            key="multi_input_file"
+        )
+        
+        if uploaded_file:
+            df = self.file_uploader.get_file_data(uploaded_file)
+            if df is not None:
+                self._render_column_configuration(df)
+    
+    def _render_multiple_files_mode(self):
+        """Render multiple files upload mode"""
+        st.subheader("📁 Multiple Files Mode")
+        
+        st.info("💡 This feature will be available in future updates.")
+        st.markdown("""
+        **Planned features:**
+        - Upload multiple feature files
+        - Automatic data alignment by index/key
+        - Cross-file validation
+        - Merged dataset creation
+        """)
+    
+    def _render_column_configuration(self, df):
+        """Render column configuration interface"""
+        st.subheader("🔧 Column Configuration")
+        
+        # Auto-detect data types using data_loader functionality
+        from data_loader import DataLoader
+        data_loader = DataLoader()
+        
+        # Get automatic type detection
+        type_mapping = data_loader.detect_data_types(df)
+        
+        # Display detected types
+        st.markdown("**🔍 Automatic Data Type Detection:**")
+        col1, col2, col3 = st.columns(3)
+        
+        numeric_cols = [col for col, dtype in type_mapping.items() if dtype == 'numeric']
+        categorical_cols = [col for col, dtype in type_mapping.items() if dtype == 'categorical']
+        text_cols = [col for col, dtype in type_mapping.items() if dtype == 'text']
+        
+        with col1:
+            st.success(f"📊 Numeric: {len(numeric_cols)}")
+            if numeric_cols:
+                st.write(", ".join(numeric_cols[:3]) + ("..." if len(numeric_cols) > 3 else ""))
+        
+        with col2:
+            st.info(f"🏷️ Categorical: {len(categorical_cols)}")
+            if categorical_cols:
+                st.write(", ".join(categorical_cols[:3]) + ("..." if len(categorical_cols) > 3 else ""))
+        
+        with col3:
+            st.warning(f"📝 Text: {len(text_cols)}")
+            if text_cols:
+                st.write(", ".join(text_cols[:3]) + ("..." if len(text_cols) > 3 else ""))
+        
+        # Input column selection
+        st.markdown("**📥 Select Input Features:**")
+        available_columns = list(df.columns)
+        
+        input_columns = st.multiselect(
+            "Choose columns to use as input features:",
+            available_columns,
+            default=[col for col in available_columns if col != data_loader.auto_detect_label_column(df, type_mapping)],
+            key="multi_input_columns"
+        )
+        
+        # Label column selection
+        st.markdown("**🎯 Select Target/Label Column:**")
+        suggested_label = data_loader.auto_detect_label_column(df, type_mapping)
+        
+        label_column = st.selectbox(
+            "Choose the target/label column:",
+            available_columns,
+            index=available_columns.index(suggested_label) if suggested_label in available_columns else 0,
+            key="multi_input_label"
+        )
+        
+        # Data preprocessing configuration
+        if input_columns and label_column:
+            self._render_preprocessing_config(df, input_columns, label_column, type_mapping)
+    
+    def _render_preprocessing_config(self, df, input_columns, label_column, type_mapping):
+        """Render preprocessing configuration"""
+        st.markdown("**⚙️ Data Preprocessing Configuration:**")
+        
+        with st.expander("🔧 Advanced Preprocessing Settings", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Numerical Features:**")
+                numeric_scaler = st.selectbox(
+                    "Scaling method:",
+                    ["standard", "minmax", "robust"],
+                    index=0,
+                    key="numeric_scaler"
+                )
+                
+                missing_numeric = st.selectbox(
+                    "Handle missing values:",
+                    ["mean", "median", "mode", "drop"],
+                    index=0,
+                    key="missing_numeric"
+                )
+            
+            with col2:
+                st.markdown("**Categorical/Text Features:**")
+                text_encoding = st.selectbox(
+                    "Encoding method:",
+                    ["label", "onehot", "target"],
+                    index=0,
+                    key="text_encoding"
+                )
+                
+                missing_text = st.selectbox(
+                    "Handle missing values:",
+                    ["mode", "drop", "mean", "median"],
+                    index=0,
+                    key="missing_text"
+                )
+        
+        # Process and validate data
+        if st.button("🔄 Process Multi-Input Data", key="process_multi_input"):
+            self._process_multi_input_data(df, input_columns, label_column, type_mapping)
+    
+    def _process_multi_input_data(self, df, input_columns, label_column, type_mapping):
+        """Process multi-input data and save to session"""
+        from data_loader import DataLoader
+        
+        with st.spinner("Processing multi-input data..."):
+            try:
+                data_loader = DataLoader()
+                
+                # Create preprocessing config
+                preprocessing_config = {
+                    'numeric_scaler': st.session_state.get('numeric_scaler', 'standard'),
+                    'text_encoding': st.session_state.get('text_encoding', 'label'),
+                    'missing_numeric': st.session_state.get('missing_numeric', 'mean'),
+                    'missing_text': st.session_state.get('missing_text', 'mode')
+                }
+                
+                # Validate data
+                validation_result = data_loader.validate_multi_input_data(df, input_columns, label_column)
+                
+                if validation_result.get('is_valid', True):
+                    # Process data
+                    processed_data = data_loader.preprocess_multi_input_data(
+                        df, input_columns, label_column, preprocessing_config
+                    )
+                    
+                    # Save to session
+                    self.session_manager.update_step_data(1, 'dataframe', processed_data['processed_df'])
+                    self.session_manager.update_step_data(1, 'input_columns', input_columns)
+                    self.session_manager.update_step_data(1, 'label_column', label_column)
+                    self.session_manager.update_step_data(1, 'type_mapping', type_mapping)
+                    self.session_manager.update_step_data(1, 'preprocessing_config', preprocessing_config)
+                    self.session_manager.update_step_data(1, 'is_multi_input', True)
+                    
+                    # Calculate quality score
+                    quality_score = self._calculate_multi_input_quality_score(processed_data, validation_result)
+                    self.session_manager.update_step_data(1, 'quality_score', quality_score)
+                    
+                    st.success("✅ Multi-input data processed successfully!")
+                    
+                    # Display processed data info
+                    st.info(f"""
+                    **📊 Processed Data Summary:**
+                    - Input features: {len(input_columns)}
+                    - Samples: {len(processed_data['processed_df'])}
+                    - Target column: {label_column}
+                    - Quality score: {quality_score:.2f}/5.0
+                    """)
+                    
+                    # Show preview
+                    st.markdown("**📋 Data Preview:**")
+                    st.dataframe(processed_data['processed_df'].head())
+                    
+                else:
+                    # Show validation errors
+                    st.error("❌ Data validation failed!")
+                    for issue in validation_result.get('issues', []):
+                        st.warning(f"⚠️ {issue}")
+                        
+            except Exception as e:
+                st.error(f"❌ Error processing multi-input data: {str(e)}")
+    
+    def _calculate_multi_input_quality_score(self, processed_data, validation_result):
+        """Calculate quality score for multi-input data"""
+        base_score = 3.0
+        
+        # Bonus for successful processing
+        if processed_data.get('processed_df') is not None:
+            base_score += 1.0
+        
+        # Bonus for no validation issues
+        if len(validation_result.get('issues', [])) == 0:
+            base_score += 1.0
+        
+        # Penalty for validation issues
+        base_score -= len(validation_result.get('issues', [])) * 0.2
+        
+        return max(0.0, min(5.0, base_score))

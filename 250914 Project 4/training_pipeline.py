@@ -12,17 +12,20 @@ import os
 import json
 import pickle
 import threading
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
+# Import cache manager
+from cache_manager import cache_manager
+
 # Import project modules
 try:
     from data_loader import DataLoader
     from text_encoders import TextVectorizer
-    from models import NewModelTrainer, validation_manager, model_factory
+    from models import validation_manager, model_factory
     from visualization import (
         plot_confusion_matrix,
         create_output_directories,
@@ -30,6 +33,7 @@ try:
         print_model_results
     )
     from comprehensive_evaluation import ComprehensiveEvaluator
+    from optuna_optimizer import OptunaOptimizer, optimize_model_with_optuna
 except ImportError as e:
     print(f"Warning: Could not import some modules: {e}")
     # Create dummy classes for fallback
@@ -37,14 +41,16 @@ except ImportError as e:
         pass
     class TextVectorizer:
         pass
-    class NewModelTrainer:
-        pass
     class validation_manager:
         pass
     class model_factory:
         pass
     class ComprehensiveEvaluator:
         pass
+    class OptunaOptimizer:
+        pass
+    def optimize_model_with_optuna(*args, **kwargs):
+        return None
 
 
 class StreamlitTrainingPipeline:
@@ -70,6 +76,10 @@ class StreamlitTrainingPipeline:
         self._ensure_cache_directory()
         self.cache_metadata_file = os.path.join(self.cache_dir, "cache_metadata.json")
         self.cache_metadata = self._load_cache_metadata()
+        
+        # Initialize Optuna optimizer
+        self.optuna_optimizer = None
+        self.optuna_config = None
     
     def stop_training(self):
         """Stop the current training process"""
@@ -88,6 +98,26 @@ class StreamlitTrainingPipeline:
             self._stop_event.clear()
             if self.training_status == "stopped":
                 self.training_status = "idle"
+    
+    def configure_optuna(self, optuna_config: Dict[str, Any]):
+        """Configure Optuna optimization settings
+        
+        Args:
+            optuna_config: Configuration dictionary for Optuna
+        """
+        self.optuna_config = optuna_config
+        
+        # Create Optuna optimizer if enabled
+        if optuna_config.get('enable', False):
+            try:
+                self.optuna_optimizer = OptunaOptimizer(optuna_config)
+                print(f"✅ Optuna optimization enabled: {optuna_config.get('trials', 100)} trials")
+            except ImportError:
+                print("⚠️ Optuna not available, skipping optimization")
+                self.optuna_optimizer = None
+        else:
+            self.optuna_optimizer = None
+            print("ℹ️ Optuna optimization disabled")
         
     def initialize_pipeline(self, df: pd.DataFrame, step1_data: Dict, 
                           step2_data: Dict, step3_data: Dict) -> Dict:
@@ -124,6 +154,11 @@ class StreamlitTrainingPipeline:
             selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
             selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
             cv_config = step3_data.get('cross_validation', {}) if step3_data and isinstance(step3_data, dict) else {}
+            optuna_config = step3_data.get('optuna', {}) if step3_data and isinstance(step3_data, dict) else {}
+            
+            # Configure Optuna if provided
+            if optuna_config:
+                self.configure_optuna(optuna_config)
             
             # Calculate total models to train
             self.total_models = len(selected_models) * len(selected_vectorization)
@@ -565,9 +600,8 @@ class StreamlitTrainingPipeline:
                 }
             }
             
-            # Save metadata with atomic write
-            self._save_cache_metadata()
-            print(f"✅ Results cached successfully: {cache_key}")
+            # DISABLED: Old cache system - using new per-model cache instead
+            print(f"🔄 Using new per-model cache system (old cache disabled)")
             
         except Exception as e:
             print(f"❌ Error saving to cache: {e}")
@@ -714,32 +748,9 @@ class StreamlitTrainingPipeline:
             self.current_cache_key = cache_key
 
             
-            cached_results = self._check_cache(cache_key)
-            
-            if cached_results:
-                print(f"✅ Using cached results for configuration: {cache_key[:8]}...")
-                self.training_status = "completed"
-                self.current_phase = "completed"
-                if progress_callback:
-                    progress_callback(self.current_phase, "Using cached results!", 1.0)
-                
-                return {
-                    'status': 'success',
-                    'message': 'Using cached results',
-                    'results': cached_results,
-                    'comprehensive_results': cached_results.get('all_results', []),
-                    'successful_combinations': cached_results.get('successful_combinations', 0),
-                    'total_combinations': cached_results.get('total_combinations', 0),
-                    'best_combinations': cached_results.get('best_combinations', {}),
-                    'total_models': cached_results.get('total_models', 0),
-                    'models_completed': cached_results.get('models_completed', 0),
-                    'elapsed_time': 0,  # No training time for cached results
-                    'evaluation_time': cached_results.get('evaluation_time', 0),
-                    'data_info': cached_results.get('data_info', {}),
-                    'embedding_info': cached_results.get('embedding_info', {}),
-                    'from_cache': True,
-                    'cache_key': cache_key
-                }
+            # DISABLED: Old cache system - using new per-model cache instead
+            print("🔄 Using new per-model cache system (old cache disabled)")
+            cached_results = None
 
             # Initialize pipeline
             self.current_phase = "initialization"
@@ -1612,6 +1623,14 @@ class StreamlitTrainingPipeline:
                 print(f"Warning: Invalid vectorization data structure for {model_name} with {vec_method}")
                 return None
             
+            # Check cache first
+            cache_result = self._check_model_cache(model_name, vec_method, vec_data, labels_dict, cv_folds, random_state, step3_data)
+            if cache_result:
+                print(f"✅ Cache HIT for {model_name}_{vec_method}")
+                return cache_result
+            
+            print(f"❌ Cache MISS for {model_name}_{vec_method} - Training new model")
+            
             # Check if labels_dict has the required structure
             if not isinstance(labels_dict, dict) or 'train' not in labels_dict:
                 print(f"Warning: Invalid labels structure for {model_name} with {vec_method}")
@@ -1684,14 +1703,47 @@ class StreamlitTrainingPipeline:
     
     def _train_sklearn_fallback(self, model_name: str, vec_method: str, 
                                vec_data: Dict, labels_dict: Dict, cv_folds: int, random_state: int, step3_data: Dict = None) -> Dict:
-        """Fallback training using sklearn models"""
+        """Fallback training using sklearn models with optional Optuna optimization"""
         
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.metrics import accuracy_score, classification_report
             
-            # Create model
-            model = self._create_sklearn_model(model_name, random_state, step3_data)
+            # Check if Optuna optimization is enabled for this model
+            use_optuna = (self.optuna_optimizer is not None and 
+                         self.optuna_config.get('enable', False) and
+                         self._is_optuna_compatible_model(model_name))
+            
+            if use_optuna:
+                print(f"🚀 Running Optuna optimization for {model_name}...")
+                
+                # Get model class for Optuna optimization
+                model_class = self._get_model_class(model_name)
+                if model_class:
+                    # Run Optuna optimization
+                    optuna_results = self.optuna_optimizer.optimize_model(
+                        model_name.lower().replace(' ', '_').replace('-', '_'),
+                        vec_data['train'], labels_dict['train'],
+                        vec_data['val'], labels_dict['val'],
+                        model_class
+                    )
+                    
+                    if optuna_results:
+                        print(f"✅ Optuna optimization completed for {model_name}")
+                        print(f"   Best score: {optuna_results['best_score']:.4f}")
+                        
+                        # Use best parameters to create final model
+                        best_params = optuna_results['best_params']
+                        model = self._create_sklearn_model(model_name, random_state, step3_data, best_params)
+                    else:
+                        print(f"⚠️ Optuna optimization failed for {model_name}, using default parameters")
+                        model = self._create_sklearn_model(model_name, random_state, step3_data)
+                else:
+                    print(f"⚠️ Model class not found for {model_name}, skipping Optuna optimization")
+                    model = self._create_sklearn_model(model_name, random_state, step3_data)
+            else:
+                # Create model without optimization
+                model = self._create_sklearn_model(model_name, random_state, step3_data)
             
             # Train model
             model.fit(vec_data['train'], labels_dict['train'])
@@ -1707,7 +1759,7 @@ class StreamlitTrainingPipeline:
                 labels_dict['test'], y_pred, output_dict=True
             )
             
-            return {
+            result = {
                 'labels': y_pred,
                 'accuracy': accuracy,
                 'report': report,
@@ -1715,12 +1767,299 @@ class StreamlitTrainingPipeline:
                 'model': model
             }
             
+            # Add Optuna results if available
+            if use_optuna and 'optuna_results' in locals():
+                result['optuna_results'] = optuna_results
+            
+            # Save to per-model cache
+            try:
+                # Prepare evaluation predictions for cache
+                eval_predictions = self._prepare_eval_predictions_for_cache(
+                    vec_data, labels_dict, model, vec_method
+                )
+                
+                # Save cache
+                cache_path = self._save_model_cache(
+                    model_name=model_name,
+                    vec_method=vec_method,
+                    vec_data=vec_data,
+                    labels_dict=labels_dict,
+                    cv_folds=cv_folds,
+                    random_state=random_state,
+                    model=model,
+                    params=model.get_params() if hasattr(model, 'get_params') else {},
+                    metrics={
+                        'accuracy': accuracy,
+                        'cv_scores': cv_scores.tolist() if 'cv_scores' in locals() else [],
+                        'cv_mean': cv_scores.mean() if 'cv_scores' in locals() else 0,
+                        'cv_std': cv_scores.std() if 'cv_scores' in locals() else 0
+                    },
+                    config={
+                        'model_name': model_name,
+                        'vec_method': vec_method,
+                        'cv_folds': cv_folds,
+                        'random_state': random_state
+                    },
+                    eval_predictions=eval_predictions,
+                    step3_data=step3_data
+                )
+                
+                if cache_path:
+                    result['cache_path'] = cache_path
+                    result['cache_saved'] = True
+                    
+            except Exception as cache_error:
+                print(f"Warning: Failed to save cache for {model_name}_{vec_method}: {cache_error}")
+                result['cache_saved'] = False
+            
+            return result
+            
         except Exception as e:
             print(f"Warning: Sklearn fallback failed: {e}")
             return None
     
-    def _create_sklearn_model(self, model_name: str, random_state: int, step3_data: Dict = None):
-        """Create sklearn model instance with configuration from Step 3"""
+    def _is_optuna_compatible_model(self, model_name: str) -> bool:
+        """Check if model is compatible with Optuna optimization"""
+        compatible_models = [
+            'Random Forest', 'AdaBoost', 'Gradient Boosting',
+            'XGBoost', 'LightGBM', 'CatBoost'
+        ]
+        return any(model in model_name for model in compatible_models)
+    
+    def _get_model_class(self, model_name: str):
+        """Get model class for Optuna optimization"""
+        try:
+            if 'Random Forest' in model_name:
+                from models.classification.random_forest_model import RandomForestModel
+                return RandomForestModel
+            elif 'AdaBoost' in model_name:
+                from models.classification.adaboost_model import AdaBoostModel
+                return AdaBoostModel
+            elif 'Gradient Boosting' in model_name:
+                from models.classification.gradient_boosting_model import GradientBoostingModel
+                return GradientBoostingModel
+            elif 'XGBoost' in model_name:
+                from models.classification.xgboost_model import XGBoostModel
+                return XGBoostModel
+            elif 'LightGBM' in model_name:
+                from models.classification.lightgbm_model import LightGBMModel
+                return LightGBMModel
+            elif 'CatBoost' in model_name:
+                from models.classification.catboost_model import CatBoostModel
+                return CatBoostModel
+            else:
+                return None
+        except ImportError as e:
+            print(f"Warning: Could not import model class for {model_name}: {e}")
+            return None
+    
+    def _check_model_cache(self, model_name: str, vec_method: str, vec_data: Dict, 
+                          labels_dict: Dict, cv_folds: int, random_state: int, 
+                          step3_data: Dict = None) -> Optional[Dict]:
+        """Check if model cache exists and is valid"""
+        try:
+            # Generate cache identifiers
+            model_key = self._get_model_key(model_name)
+            dataset_id = self._generate_dataset_id(vec_data, labels_dict)
+            config_hash = self._generate_config_hash(model_name, vec_method, cv_folds, random_state, step3_data)
+            dataset_fingerprint = self._generate_dataset_fingerprint(vec_data, labels_dict)
+            
+            # Check cache
+            cache_exists, cache_info = cache_manager.check_cache_exists(
+                model_key, dataset_id, config_hash, dataset_fingerprint
+            )
+            
+            if cache_exists:
+                # Load cached model
+                cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                
+                # Convert to expected format
+                result = {
+                    'model_name': model_name,
+                    'embedding_name': vec_method,
+                    'status': 'success',
+                    'model': cache_data['model'],
+                    'params': cache_data['params'],
+                    'metrics': cache_data['metrics'],
+                    'config': cache_data['config'],
+                    'eval_predictions': cache_data['eval_predictions'],
+                    'shap_sample': cache_data['shap_sample'],
+                    'feature_names': cache_data['feature_names'],
+                    'label_mapping': cache_data['label_mapping'],
+                    'cache_hit': True,
+                    'cache_path': cache_data['cache_path']
+                }
+                
+                return result
+            
+            return None
+            
+        except Exception as e:
+            print(f"Warning: Cache check failed for {model_name}_{vec_method}: {e}")
+            return None
+    
+    def _save_model_cache(self, model_name: str, vec_method: str, vec_data: Dict,
+                         labels_dict: Dict, cv_folds: int, random_state: int,
+                         model, params: Dict, metrics: Dict, config: Dict,
+                         eval_predictions: Optional[pd.DataFrame] = None,
+                         shap_sample: Optional[pd.DataFrame] = None,
+                         feature_names: Optional[List[str]] = None,
+                         label_mapping: Optional[Dict] = None,
+                         step3_data: Dict = None) -> str:
+        """Save model cache"""
+        try:
+            # Generate cache identifiers
+            model_key = self._get_model_key(model_name)
+            dataset_id = self._generate_dataset_id(vec_data, labels_dict)
+            config_hash = self._generate_config_hash(model_name, vec_method, cv_folds, random_state, step3_data)
+            dataset_fingerprint = self._generate_dataset_fingerprint(vec_data, labels_dict)
+            
+            # Save cache
+            cache_path = cache_manager.save_model_cache(
+                model_key=model_key,
+                dataset_id=dataset_id,
+                config_hash=config_hash,
+                dataset_fingerprint=dataset_fingerprint,
+                model=model,
+                params=params,
+                metrics=metrics,
+                config=config,
+                eval_predictions=eval_predictions,
+                shap_sample=shap_sample,
+                feature_names=feature_names,
+                label_mapping=label_mapping
+            )
+            
+            print(f"💾 Cache saved for {model_name}_{vec_method} at {cache_path}")
+            return cache_path
+            
+        except Exception as e:
+            print(f"Warning: Cache save failed for {model_name}_{vec_method}: {e}")
+            return ""
+    
+    def _get_model_key(self, model_name: str) -> str:
+        """Get model key for cache"""
+        # Map display names to cache keys
+        model_mapping = {
+            'Random Forest': 'random_forest',
+            'AdaBoost': 'adaboost',
+            'Gradient Boosting': 'gradient_boosting',
+            'XGBoost': 'xgboost',
+            'LightGBM': 'lightgbm',
+            'CatBoost': 'catboost',
+            'K-Nearest Neighbors': 'knn',
+            'Decision Tree': 'decision_tree',
+            'Naive Bayes': 'naive_bayes',
+            'SVM': 'svm',
+            'Logistic Regression': 'logistic_regression',
+            'Linear SVC': 'linear_svc',
+            'K-Means Clustering': 'kmeans'
+        }
+        return model_mapping.get(model_name, model_name.lower().replace(' ', '_'))
+    
+    def _generate_dataset_id(self, vec_data: Dict, labels_dict: Dict) -> str:
+        """Generate dataset ID for cache"""
+        # Use data shape and label info to generate ID
+        train_shape = vec_data.get('train', np.array([])).shape if 'train' in vec_data else (0, 0)
+        test_shape = vec_data.get('test', np.array([])).shape if 'test' in vec_data else (0, 0)
+        num_classes = len(set(labels_dict.get('train', []))) if 'train' in labels_dict else 0
+        
+        dataset_info = f"{train_shape[0]}x{train_shape[1]}_{test_shape[0]}x{test_shape[1]}_{num_classes}classes"
+        import hashlib
+        return hashlib.md5(dataset_info.encode()).hexdigest()[:8]
+    
+    def _generate_config_hash(self, model_name: str, vec_method: str, cv_folds: int,
+                             random_state: int, step3_data: Dict = None) -> str:
+        """Generate configuration hash for cache"""
+        config = {
+            'model_name': model_name,
+            'vec_method': vec_method,
+            'cv_folds': cv_folds,
+            'random_state': random_state,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        if step3_data:
+            config.update({
+                'optuna_enabled': step3_data.get('optuna', {}).get('enabled', False),
+                'optuna_trials': step3_data.get('optuna', {}).get('trials', 100),
+                'optuna_timeout': step3_data.get('optuna', {}).get('timeout', None)
+            })
+        
+        return cache_manager.generate_config_hash(config)
+    
+    def _generate_dataset_fingerprint(self, vec_data: Dict, labels_dict: Dict) -> str:
+        """Generate dataset fingerprint for cache"""
+        train_shape = vec_data.get('train', np.array([])).shape if 'train' in vec_data else (0, 0)
+        test_shape = vec_data.get('test', np.array([])).shape if 'test' in vec_data else (0, 0)
+        num_classes = len(set(labels_dict.get('train', []))) if 'train' in labels_dict else 0
+        
+        dataset_info = {
+            'train_shape': train_shape,
+            'test_shape': test_shape,
+            'num_classes': num_classes,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        return cache_manager.generate_dataset_fingerprint(
+            dataset_path="",
+            dataset_size=0,
+            num_rows=train_shape[0] + test_shape[0]
+        )
+    
+    def _prepare_eval_predictions_for_cache(self, vec_data: Dict, labels_dict: Dict, 
+                                          model, vec_method: str) -> pd.DataFrame:
+        """Prepare evaluation predictions for cache storage
+        
+        Args:
+            vec_data: Vectorized data
+            labels_dict: Labels dictionary
+            model: Trained model
+            vec_method: Vectorization method
+            
+        Returns:
+            DataFrame with evaluation predictions
+        """
+        try:
+            # Get test data
+            X_test = vec_data.get('test')
+            y_test = labels_dict.get('test')
+            
+            if X_test is None or y_test is None:
+                return None
+            
+            # Make predictions
+            if hasattr(model, 'predict_proba'):
+                y_pred_proba = model.predict_proba(X_test)
+                y_pred = model.predict(X_test)
+                
+                # Create DataFrame with probabilities
+                proba_df = pd.DataFrame(y_pred_proba, 
+                                      columns=[f'proba__class_{i}' for i in range(y_pred_proba.shape[1])])
+                
+                eval_df = pd.DataFrame({
+                    'y_true': y_test,
+                    'y_pred': y_pred
+                })
+                
+                # Combine with probabilities
+                eval_df = pd.concat([eval_df, proba_df], axis=1)
+                
+            else:
+                y_pred = model.predict(X_test)
+                eval_df = pd.DataFrame({
+                    'y_true': y_test,
+                    'y_pred': y_pred
+                })
+            
+            return eval_df
+            
+        except Exception as e:
+            print(f"Warning: Failed to prepare eval predictions: {e}")
+            return None
+    
+    def _create_sklearn_model(self, model_name: str, random_state: int, step3_data: Dict = None, optuna_params: Dict = None):
+        """Create sklearn model instance with configuration from Step 3 and optional Optuna parameters"""
         
         if 'K-Nearest Neighbors' in model_name:
             # Use custom KNN model with advanced optimization
@@ -1925,6 +2264,97 @@ class StreamlitTrainingPipeline:
             
             print(f"✅ [Linear SVC] Custom model created with advanced features")
             return lsvc_model
+        
+        # Enhanced ML Models with Optuna support
+        elif 'Random Forest' in model_name:
+            from models.classification.random_forest_model import RandomForestModel
+            
+            print(f"🎯 [Random Forest] Using enhanced model with Optuna support")
+            
+            # Use Optuna parameters if available
+            if optuna_params:
+                rf_model = RandomForestModel(**optuna_params, random_state=random_state)
+                print(f"✅ [Random Forest] Model created with Optuna parameters: {optuna_params}")
+            else:
+                rf_model = RandomForestModel(random_state=random_state)
+                print(f"✅ [Random Forest] Model created with default parameters")
+            
+            return rf_model
+        
+        elif 'AdaBoost' in model_name:
+            from models.classification.adaboost_model import AdaBoostModel
+            
+            print(f"🎯 [AdaBoost] Using enhanced model with Optuna support")
+            
+            # Use Optuna parameters if available
+            if optuna_params:
+                ab_model = AdaBoostModel(**optuna_params, random_state=random_state)
+                print(f"✅ [AdaBoost] Model created with Optuna parameters: {optuna_params}")
+            else:
+                ab_model = AdaBoostModel(random_state=random_state)
+                print(f"✅ [AdaBoost] Model created with default parameters")
+            
+            return ab_model
+        
+        elif 'Gradient Boosting' in model_name:
+            from models.classification.gradient_boosting_model import GradientBoostingModel
+            
+            print(f"🎯 [Gradient Boosting] Using enhanced model with Optuna support")
+            
+            # Use Optuna parameters if available
+            if optuna_params:
+                gb_model = GradientBoostingModel(**optuna_params, random_state=random_state)
+                print(f"✅ [Gradient Boosting] Model created with Optuna parameters: {optuna_params}")
+            else:
+                gb_model = GradientBoostingModel(random_state=random_state)
+                print(f"✅ [Gradient Boosting] Model created with default parameters")
+            
+            return gb_model
+        
+        elif 'XGBoost' in model_name:
+            from models.classification.xgboost_model import XGBoostModel
+            
+            print(f"🎯 [XGBoost] Using enhanced model with GPU support and Optuna")
+            
+            # Use Optuna parameters if available
+            if optuna_params:
+                xgb_model = XGBoostModel(**optuna_params, random_state=random_state)
+                print(f"✅ [XGBoost] Model created with Optuna parameters: {optuna_params}")
+            else:
+                xgb_model = XGBoostModel(random_state=random_state)
+                print(f"✅ [XGBoost] Model created with default parameters")
+            
+            return xgb_model
+        
+        elif 'LightGBM' in model_name:
+            from models.classification.lightgbm_model import LightGBMModel
+            
+            print(f"🎯 [LightGBM] Using enhanced model with GPU support and Optuna")
+            
+            # Use Optuna parameters if available
+            if optuna_params:
+                lgb_model = LightGBMModel(**optuna_params, random_state=random_state)
+                print(f"✅ [LightGBM] Model created with Optuna parameters: {optuna_params}")
+            else:
+                lgb_model = LightGBMModel(random_state=random_state)
+                print(f"✅ [LightGBM] Model created with default parameters")
+            
+            return lgb_model
+        
+        elif 'CatBoost' in model_name:
+            from models.classification.catboost_model import CatBoostModel
+            
+            print(f"🎯 [CatBoost] Using enhanced model with GPU support and Optuna")
+            
+            # Use Optuna parameters if available
+            if optuna_params:
+                cb_model = CatBoostModel(**optuna_params, random_state=random_state)
+                print(f"✅ [CatBoost] Model created with Optuna parameters: {optuna_params}")
+            else:
+                cb_model = CatBoostModel(random_state=random_state)
+                print(f"✅ [CatBoost] Model created with default parameters")
+            
+            return cb_model
         
         else:
             # Default to custom Decision Tree model

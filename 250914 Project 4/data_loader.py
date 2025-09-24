@@ -5,16 +5,23 @@ Handles dataset loading, preprocessing, and text cleaning
 
 import re
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 from collections import Counter
 
 import numpy as np
+import pandas as pd
 from datasets import load_dataset
 from sklearn.model_selection import train_test_split
 
 from config import (
     CACHE_DIR, MAX_SAMPLES, 
-    TEST_SIZE, RANDOM_STATE
+    TEST_SIZE, RANDOM_STATE,
+    DATA_PROCESSING_AUTO_DETECT_TYPES,
+    DATA_PROCESSING_NUMERIC_SCALER,
+    DATA_PROCESSING_TEXT_ENCODING,
+    DATA_PROCESSING_HANDLE_MISSING_NUMERIC,
+    DATA_PROCESSING_HANDLE_MISSING_TEXT,
+    DATA_PROCESSING_OUTLIER_METHOD
 )
 
 
@@ -972,3 +979,335 @@ class DataLoader:
     def get_sorted_labels(self) -> List[str]:
         """Get sorted list of labels"""
         return sorted(list(set([s['label'] for s in self.preprocessed_samples])))
+    
+    # Enhanced Multi-Input Data Processing Methods
+    
+    def detect_data_types(self, df) -> Dict[str, str]:
+        """
+        Auto-detect data types for columns in a DataFrame
+        
+        Args:
+            df: pandas DataFrame
+            
+        Returns:
+            Dict[str, str]: Column name -> data type mapping
+        """
+        type_mapping = {}
+        
+        for column in df.columns:
+            # Check if column can be converted to numeric
+            try:
+                pd.to_numeric(df[column], errors='raise')
+                type_mapping[column] = 'numeric'
+            except (ValueError, TypeError):
+                # Check if it's categorical (limited unique values)
+                unique_ratio = df[column].nunique() / len(df)
+                if unique_ratio < 0.05:  # Less than 5% unique values
+                    type_mapping[column] = 'categorical'
+                else:
+                    type_mapping[column] = 'text'
+        
+        return type_mapping
+    
+    def auto_detect_label_column(self, df, type_mapping: Dict[str, str]) -> str:
+        """
+        Auto-detect the best label column based on data characteristics
+        
+        Args:
+            df: pandas DataFrame
+            type_mapping: Column type mapping from detect_data_types
+            
+        Returns:
+            str: Suggested label column name
+        """
+        # Priority: categorical > numeric > text
+        categorical_cols = [col for col, dtype in type_mapping.items() if dtype == 'categorical']
+        numeric_cols = [col for col, dtype in type_mapping.items() if dtype == 'numeric']
+        
+        # Check categorical columns first
+        for col in categorical_cols:
+            unique_count = df[col].nunique()
+            if 2 <= unique_count <= 20:  # Good for classification
+                return col
+        
+        # Check numeric columns for binary classification
+        for col in numeric_cols:
+            unique_count = df[col].nunique()
+            if unique_count == 2:  # Binary numeric
+                return col
+        
+        # Fallback to first categorical or numeric column
+        if categorical_cols:
+            return categorical_cols[0]
+        elif numeric_cols:
+            return numeric_cols[0]
+        else:
+            return df.columns[0]  # Last resort
+    
+    def preprocess_multi_input_data(self, df, input_columns: List[str], 
+                                  label_column: str, 
+                                  preprocessing_config: Dict = None) -> Dict:
+        """
+        Preprocess multi-input data with automatic type detection and handling
+        
+        Args:
+            df: pandas DataFrame
+            input_columns: List of input column names
+            label_column: Name of label column
+            preprocessing_config: Optional preprocessing configuration
+            
+        Returns:
+            Dict containing processed data and metadata
+        """
+        import pandas as pd
+        from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
+        from sklearn.preprocessing import LabelEncoder, OneHotEncoder
+        from sklearn.impute import SimpleImputer
+        
+        if preprocessing_config is None:
+            preprocessing_config = {
+                'auto_detect_types': DATA_PROCESSING_AUTO_DETECT_TYPES,
+                'numeric_scaler': DATA_PROCESSING_NUMERIC_SCALER,
+                'text_encoding': DATA_PROCESSING_TEXT_ENCODING,
+                'handle_missing_numeric': DATA_PROCESSING_HANDLE_MISSING_NUMERIC,
+                'handle_missing_text': DATA_PROCESSING_HANDLE_MISSING_TEXT,
+                'outlier_method': DATA_PROCESSING_OUTLIER_METHOD
+            }
+        
+        print(f"🔧 [DATALOADER] Processing multi-input data:")
+        print(f"   • Input columns: {input_columns}")
+        print(f"   • Label column: {label_column}")
+        print(f"   • Total samples: {len(df):,}")
+        
+        # Auto-detect data types if enabled
+        if preprocessing_config.get('auto_detect_types', True):
+            type_mapping = self.detect_data_types(df[input_columns + [label_column]])
+            print(f"   • Auto-detected types: {type_mapping}")
+        else:
+            # Default all to text if auto-detection disabled
+            type_mapping = {col: 'text' for col in input_columns + [label_column]}
+        
+        # Separate columns by type
+        numeric_cols = [col for col in input_columns if type_mapping.get(col) == 'numeric']
+        categorical_cols = [col for col in input_columns if type_mapping.get(col) == 'categorical']
+        text_cols = [col for col in input_columns if type_mapping.get(col) == 'text']
+        
+        print(f"   • Numeric columns: {numeric_cols}")
+        print(f"   • Categorical columns: {categorical_cols}")
+        print(f"   • Text columns: {text_cols}")
+        
+        # Initialize preprocessing objects
+        scaler = None
+        if numeric_cols:
+            scaler_type = preprocessing_config.get('numeric_scaler', 'standard')
+            if scaler_type == 'minmax':
+                scaler = MinMaxScaler()
+            elif scaler_type == 'robust':
+                scaler = RobustScaler()
+            else:
+                scaler = StandardScaler()
+        
+        # Process numeric columns
+        processed_data = {}
+        feature_names = []
+        
+        if numeric_cols:
+            print(f"🔢 Processing {len(numeric_cols)} numeric columns...")
+            
+            # Handle missing values
+            missing_strategy = preprocessing_config.get('handle_missing_numeric', 'mean')
+            numeric_data = df[numeric_cols].copy()
+            
+            if missing_strategy != 'drop':
+                imputer = SimpleImputer(strategy=missing_strategy)
+                numeric_data = pd.DataFrame(
+                    imputer.fit_transform(numeric_data),
+                    columns=numeric_cols,
+                    index=numeric_data.index
+                )
+            
+            # Scale numeric data
+            if scaler:
+                scaled_data = scaler.fit_transform(numeric_data)
+                processed_data['numeric'] = scaled_data
+                feature_names.extend([f"{col}_scaled" for col in numeric_cols])
+            else:
+                processed_data['numeric'] = numeric_data.values
+                feature_names.extend(numeric_cols)
+        
+        # Process categorical columns
+        if categorical_cols:
+            print(f"🏷️ Processing {len(categorical_cols)} categorical columns...")
+            
+            categorical_data = df[categorical_cols].copy()
+            
+            # Handle missing values
+            missing_strategy = preprocessing_config.get('handle_missing_text', 'mode')
+            if missing_strategy != 'drop':
+                imputer = SimpleImputer(strategy=missing_strategy)
+                categorical_data = pd.DataFrame(
+                    imputer.fit_transform(categorical_data),
+                    columns=categorical_cols,
+                    index=categorical_data.index
+                )
+            
+            # Encode categorical data
+            encoding_method = preprocessing_config.get('text_encoding', 'label')
+            if encoding_method == 'onehot':
+                encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+                encoded_data = encoder.fit_transform(categorical_data)
+                processed_data['categorical'] = encoded_data
+                feature_names.extend(encoder.get_feature_names_out(categorical_cols))
+            else:  # label encoding
+                encoded_data = np.zeros((len(categorical_data), len(categorical_cols)))
+                for i, col in enumerate(categorical_cols):
+                    le = LabelEncoder()
+                    encoded_data[:, i] = le.fit_transform(categorical_data[col].astype(str))
+                processed_data['categorical'] = encoded_data
+                feature_names.extend([f"{col}_encoded" for col in categorical_cols])
+        
+        # Process text columns (basic text processing)
+        if text_cols:
+            print(f"📝 Processing {len(text_cols)} text columns...")
+            
+            text_data = df[text_cols].copy()
+            
+            # Basic text preprocessing
+            for col in text_cols:
+                text_data[col] = text_data[col].astype(str).str.lower()
+                text_data[col] = text_data[col].str.replace(r'[^\w\s]', '', regex=True)
+                text_data[col] = text_data[col].str.replace(r'\s+', ' ', regex=True)
+            
+            processed_data['text'] = text_data.values
+            feature_names.extend([f"{col}_processed" for col in text_cols])
+        
+        # Combine all features
+        all_features = []
+        for data_type, data in processed_data.items():
+            all_features.append(data)
+        
+        if all_features:
+            X = np.hstack(all_features)
+        else:
+            X = np.array([]).reshape(len(df), 0)
+        
+        # Process label column
+        label_data = df[label_column].copy()
+        
+        # Handle missing values in label
+        missing_strategy = preprocessing_config.get('handle_missing_text', 'mode')
+        if missing_strategy != 'drop':
+            imputer = SimpleImputer(strategy=missing_strategy)
+            label_data = pd.Series(
+                imputer.fit_transform(label_data.values.reshape(-1, 1)).flatten(),
+                index=label_data.index
+            )
+        
+        # Encode labels
+        if type_mapping.get(label_column) == 'numeric':
+            y = label_data.values
+        else:
+            le = LabelEncoder()
+            y = le.fit_transform(label_data.astype(str))
+        
+        print(f"✅ Multi-input preprocessing completed:")
+        print(f"   • Final feature matrix shape: {X.shape}")
+        print(f"   • Label shape: {y.shape}")
+        print(f"   • Feature names: {len(feature_names)} features")
+        
+        return {
+            'X': X,
+            'y': y,
+            'feature_names': feature_names,
+            'type_mapping': type_mapping,
+            'scaler': scaler,
+            'label_encoder': le if type_mapping.get(label_column) != 'numeric' else None,
+            'input_columns': input_columns,
+            'label_column': label_column,
+            'preprocessing_config': preprocessing_config
+        }
+    
+    def validate_multi_input_data(self, df, input_columns: List[str], 
+                                 label_column: str) -> Dict[str, Any]:
+        """
+        Validate multi-input data and return quality metrics
+        
+        Args:
+            df: pandas DataFrame
+            input_columns: List of input column names
+            label_column: Name of label column
+            
+        Returns:
+            Dict containing validation results and warnings
+        """
+        validation_results = {
+            'is_valid': True,
+            'warnings': [],
+            'errors': [],
+            'quality_metrics': {}
+        }
+        
+        # Check if columns exist
+        missing_inputs = [col for col in input_columns if col not in df.columns]
+        if missing_inputs:
+            validation_results['errors'].append(f"Missing input columns: {missing_inputs}")
+            validation_results['is_valid'] = False
+        
+        if label_column not in df.columns:
+            validation_results['errors'].append(f"Missing label column: {label_column}")
+            validation_results['is_valid'] = False
+        
+        if not validation_results['is_valid']:
+            return validation_results
+        
+        # Check for missing values in label
+        label_missing_ratio = df[label_column].isnull().sum() / len(df)
+        if label_missing_ratio > 0.5:
+            validation_results['warnings'].append(
+                f"Label column has {label_missing_ratio:.1%} missing values (>50%)"
+            )
+        
+        # Check for high correlation between input columns
+        numeric_inputs = []
+        for col in input_columns:
+            try:
+                pd.to_numeric(df[col], errors='raise')
+                numeric_inputs.append(col)
+            except (ValueError, TypeError):
+                pass
+        
+        if len(numeric_inputs) > 1:
+            corr_matrix = df[numeric_inputs].corr().abs()
+            high_corr_pairs = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    if corr_matrix.iloc[i, j] > 0.95:
+                        high_corr_pairs.append(
+                            (corr_matrix.columns[i], corr_matrix.columns[j], corr_matrix.iloc[i, j])
+                        )
+            
+            if high_corr_pairs:
+                validation_results['warnings'].append(
+                    f"High correlation (>0.95) between input columns: {high_corr_pairs}"
+                )
+        
+        # Check class balance
+        if df[label_column].dtype == 'object' or df[label_column].nunique() < 20:
+            class_counts = df[label_column].value_counts()
+            min_class_ratio = class_counts.min() / class_counts.max()
+            if min_class_ratio < 0.1:
+                validation_results['warnings'].append(
+                    f"Severe class imbalance detected (ratio: {min_class_ratio:.3f})"
+                )
+        
+        # Calculate quality metrics
+        validation_results['quality_metrics'] = {
+            'total_samples': len(df),
+            'input_columns_count': len(input_columns),
+            'label_missing_ratio': label_missing_ratio,
+            'unique_labels': df[label_column].nunique(),
+            'numeric_inputs': len(numeric_inputs),
+            'text_inputs': len(input_columns) - len(numeric_inputs)
+        }
+        
+        return validation_results

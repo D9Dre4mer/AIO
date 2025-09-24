@@ -10,7 +10,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
-import pandas as pd
 from typing import Dict, List, Tuple, Any, Union
 from scipy import sparse
 import time
@@ -19,13 +18,9 @@ from datetime import datetime
 # Import project modules
 from data_loader import DataLoader
 from text_encoders import TextVectorizer
-from models import NewModelTrainer, validation_manager, ModelMetrics
-
-# Import visualization
-from visualization import create_output_directories
+from models import ModelMetrics
 
 # Progress tracking removed - using simple progress indicators instead
-
 
 class ComprehensiveEvaluator:
     """
@@ -56,23 +51,34 @@ class ComprehensiveEvaluator:
         # Initialize components - Use provided DataLoader or create new one
         if data_loader is not None:
             self.data_loader = data_loader
-            print(f"✅ [COMPREHENSIVE_EVALUATOR] Using provided DataLoader with labels: {getattr(data_loader, 'id_to_label', {})}")
+            labels = getattr(data_loader, 'id_to_label', {})
+            print(f"✅ [COMPREHENSIVE_EVALUATOR] Using provided DataLoader with labels: {labels}")
         else:
             self.data_loader = DataLoader()
-            print(f"⚠️ [COMPREHENSIVE_EVALUATOR] Created new DataLoader (no labels transferred)")
+            print("⚠️ [COMPREHENSIVE_EVALUATOR] Created new DataLoader (no labels transferred)")
         
         self.text_vectorizer = TextVectorizer()
         
         # Import model components
         from models import model_factory, validation_manager as vm
         
-        self.model_trainer = NewModelTrainer(
-            cv_folds=cv_folds,
-            validation_size=0.0,  # No separate validation set - CV will handle it
-            test_size=test_size,
-            model_factory=model_factory,
-            validation_manager=vm
-        )
+        # Import cache manager
+        try:
+            from cache_manager import cache_manager
+            self.cache_manager = cache_manager
+            self.cache_enabled = True
+            print("✅ Cache manager loaded successfully")
+        except ImportError:
+            self.cache_manager = None
+            self.cache_enabled = False
+            print("⚠️ Cache manager not available")
+        
+        # Store model factory and validation manager
+        self.model_factory = model_factory
+        self.validation_manager = vm
+        
+        # Add cache helper methods
+        self._add_cache_methods()
         
         # Results storage
         self.evaluation_results = {}
@@ -309,13 +315,12 @@ class ComprehensiveEvaluator:
             # Convert DataFrame to DataLoader format
             self.data_loader.samples = []
             
-            # CRITICAL: Get actual column names from Step 2 configuration
-            # Check if we have step2_data with column configuration
-            step2_data = getattr(self, 'step2_data', None)
-            if step2_data and 'text_column' in step2_data and 'label_column' in step2_data:
-                text_col = step2_data['text_column']
-                label_col = step2_data['label_column']
-                print(f"🔍 Using Step 2 column config: text='{text_col}', label='{label_col}'")
+            # CRITICAL: Get actual column names from Step 1 configuration
+            # Check if we have step1_data with column configuration
+            if 'text_column' in self.step1_data and 'label_column' in self.step1_data:
+                text_col = self.step1_data['text_column']
+                label_col = self.step1_data['label_column']
+                print(f"🔍 Using Step 1 column config: text='{text_col}', label='{label_col}'")
             else:
                 # Fallback: try to guess column names
                 text_col = 'text' if 'text' in df.columns else df.columns[0]
@@ -379,6 +384,8 @@ class ComprehensiveEvaluator:
                 print(f"📊 Using sampling config: {actual_max_samples:,} samples")
             else:
                 actual_max_samples = max_samples
+                if isinstance(actual_max_samples, dict):
+                    actual_max_samples = actual_max_samples.get('num_samples', None)
                 print(f"📊 Using max_samples parameter: {actual_max_samples:,} samples" if actual_max_samples else "📊 No sample limit specified")
             
             # Discover categories first if not already done
@@ -465,16 +472,17 @@ class ComprehensiveEvaluator:
             requested_samples = self.step1_data['sampling_config'].get('num_samples')
             print(f"📊 Using requested samples from Step 1: {requested_samples}")
             
-            # Update test_size in model_trainer if requested_samples is provided
-            if requested_samples and hasattr(self, 'model_trainer'):
+            # Update test_size if requested_samples is provided
+            if requested_samples:
                 total_samples = len(self.data_loader.preprocessed_samples)
                 if total_samples > 0:
                     # Calculate test_size to get 20% of requested samples
                     target_test_samples = int(requested_samples * 0.2)
                     if total_samples >= requested_samples:
                         dynamic_test_size = target_test_samples / total_samples
-                        print(f"📊 Updating model_trainer.test_size: {self.model_trainer.test_size:.3f} → {dynamic_test_size:.3f}")
-                        self.model_trainer.test_size = dynamic_test_size
+                        print(f"📊 Using dynamic test size: {dynamic_test_size:.3f}")
+                        # Update test_size for data splitting
+                        self.test_size = dynamic_test_size
         
         X_train, X_test, y_train, y_test = self.data_loader.prepare_train_test_data(requested_samples)
         sorted_labels = self.data_loader.get_sorted_labels()
@@ -709,10 +717,90 @@ class ComprehensiveEvaluator:
             except ImportError:
                 pass  # PyTorch not available
             
-            y_test_pred, y_val_pred, y_test, val_acc, test_acc, test_metrics = \
-                self.model_trainer.train_validate_test_model(
-                    model_name, X_train, y_train, 
-                    X_val, y_val, X_test, y_test, step3_data
+            # Check cache first
+            print(f"     🔍 Checking cache for {model_name}...")
+            cached_result = self._check_model_cache(model_name, X_train, y_train, self.cv_folds, self.random_state, step3_data)
+            if cached_result:
+                print(f"     ✅ Cache HIT for {model_name}")
+            else:
+                print(f"     ❌ Cache MISS for {model_name}")
+            
+            if cached_result:
+                # Use cached model
+                model = cached_result['model']
+                val_acc = cached_result['metrics'].get('validation_accuracy', 0.0)
+                test_acc = cached_result['metrics'].get('test_accuracy', 0.0)
+                test_metrics = cached_result['metrics'].get('test_metrics', {})
+                
+                # Make predictions
+                y_test_pred = model.predict(X_test)
+                y_val_pred = model.predict(X_val) if X_val is not None else y_test_pred
+                
+                print(f"✅ Using cached model for {model_name}")
+            else:
+                # Train new model
+                print(f"🚀 Training new model: {model_name}")
+                
+                # Create model
+                model = self.model_factory.create_model(model_name)
+                
+                # Train model
+                model.fit(X_train, y_train)
+                
+                # Make predictions
+                y_test_pred = model.predict(X_test)
+                y_val_pred = model.predict(X_val) if X_val is not None else y_test_pred
+                
+                # Calculate metrics
+                from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+                
+                # Use test data for validation if validation data is not available
+                if y_val is not None and len(y_val) > 0:
+                    val_acc = accuracy_score(y_val, y_val_pred)
+                else:
+                    # Use test data for validation when validation data is not available
+                    val_acc = accuracy_score(y_test, y_test_pred)
+                
+                test_acc = accuracy_score(y_test, y_test_pred)
+                
+                test_metrics = {
+                    'accuracy': test_acc,
+                    'precision': precision_score(y_test, y_test_pred, average='weighted'),
+                    'recall': recall_score(y_test, y_test_pred, average='weighted'),
+                    'f1_score': f1_score(y_test, y_test_pred, average='weighted')
+                }
+                
+                # Save to cache
+                eval_predictions = None
+                if X_test is not None and y_test is not None:
+                    eval_predictions = self._prepare_eval_predictions_for_cache(X_test, y_test, model)
+                    if eval_predictions is not None:
+                        print(f"     ✅ Eval predictions prepared: {eval_predictions.shape}")
+                    else:
+                        print(f"     ⚠️ Eval predictions failed to prepare")
+                else:
+                    print(f"     ⚠️ Cannot prepare eval predictions: X_test={X_test is not None}, y_test={y_test is not None}")
+                
+                self._save_model_cache(
+                    model_name=model_name,
+                    X_train=X_train,
+                    y_train=y_train,
+                    cv_folds=self.cv_folds,
+                    random_state=self.random_state,
+                    model=model,
+                    params=getattr(model, 'get_params', lambda: {})(),
+                    metrics={
+                        'validation_accuracy': val_acc,
+                        'test_accuracy': test_acc,
+                        'test_metrics': test_metrics
+                    },
+                    config={
+                        'model_name': model_name,
+                        'cv_folds': self.cv_folds,
+                        'random_state': self.random_state
+                    },
+                    eval_predictions=eval_predictions,
+                    step3_data=step3_data
                 )
             training_time = time.time() - start_time
             
@@ -830,9 +918,8 @@ class ComprehensiveEvaluator:
                 )
                 
                 # Use CV folds for evaluation
-                cv_results = self.model_trainer.cross_validate_with_precomputed_embeddings(
-                    model_name, cv_folds, ['accuracy', 'precision', 'recall', 'f1']
-                )
+                # TODO: Implement CV evaluation without model_trainer
+                cv_results = {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
             else:
                 # For embeddings, use pre-computed CV embeddings for fair comparison
                 print(f"     🔧 CV using pre-computed {embedding_name} embeddings for {model_name} (fair comparison)")
@@ -844,17 +931,15 @@ class ComprehensiveEvaluator:
                 if hasattr(self, 'cv_embeddings_cache') and self.cv_embeddings_cache:
                     # Use cached pre-computed embeddings
                     print(f"     ✅ Using pre-computed CV embeddings for {model_name}")
-                    cv_results = self.model_trainer.cross_validate_with_precomputed_embeddings(
-                        model_name, self.cv_embeddings_cache, ['accuracy', 'precision', 'recall', 'f1']
-                    )
+                    # TODO: Implement CV evaluation without model_trainer
+                    cv_results = {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
                     
                     # ENHANCED: Also evaluate on test data from CV cache
                     if cv_results and 'fold_results' in cv_results:
                         print(f"     🔍 CV cache contains test data, evaluating on test set...")
                         # Get test evaluation from CV cache
-                        test_eval = self.model_trainer.validation_manager.evaluate_test_data_from_cv_cache(
-                            temp_model, self.cv_embeddings_cache, ['accuracy', 'precision', 'recall', 'f1']
-                        )
+                        # TODO: Implement test evaluation without model_trainer
+                        test_eval = None
                         if test_eval:
                             # Update cv_results with test evaluation
                             cv_results['test_evaluation'] = test_eval
@@ -864,9 +949,8 @@ class ComprehensiveEvaluator:
                 else:
                     # Fallback to old method if cache not available
                     print(f"     ⚠️  Fallback: CV embeddings cache not found, using standard CV")
-                    cv_results = self.model_trainer.cross_validate_model(
-                        model_name, X_train, y_train, ['accuracy', 'precision', 'recall', 'f1']
-                    )
+                    # TODO: Implement CV evaluation without model_trainer
+                    cv_results = {'accuracy': 0.0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}
             
             # Calculate ML Standard CV Accuracy (training vs validation/test accuracy)
             # This provides ML standard overfitting detection
@@ -949,7 +1033,7 @@ class ComprehensiveEvaluator:
                 'f1_score': test_metrics.get('f1_score', 0.0),  # ← Thêm F1 score từ test set
                 
                 # ENHANCED: Store trained model instance for ensemble reuse
-                'trained_model': getattr(self.model_trainer, 'current_model', None),
+                'trained_model': model,  # Use the trained model directly
                 
                 # Overfitting analysis
                 'overfitting_score': overfitting_score,
@@ -1426,6 +1510,11 @@ class ComprehensiveEvaluator:
             self.step2_data = step2_data
             print(f"📊 Received Step 2 data with keys: {list(step2_data.keys())}")
         
+        # Get ensemble_config from step3_data if not provided
+        if ensemble_config is None and step3_data:
+            ensemble_config = step3_data.get('ensemble_learning', {})
+            print(f"📊 Using ensemble_config from step3_data: {ensemble_config}")
+        
         data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt, sampling_config, preprocessing_config)
         
         # Store data_dict for later use
@@ -1517,7 +1606,13 @@ class ComprehensiveEvaluator:
                 'Naive Bayes': 'naive_bayes',
                 'Support Vector Machine': 'svm',
                 'Logistic Regression': 'logistic_regression',
-                'Linear SVC': 'linear_svc'
+                'Linear SVC': 'linear_svc',
+                'Random Forest': 'random_forest',
+                'AdaBoost': 'adaboost',
+                'Gradient Boosting': 'gradient_boosting',
+                'XGBoost': 'xgboost',
+                'LightGBM': 'lightgbm',
+                'CatBoost': 'catboost'
             }
             models_to_evaluate = [model_mapping.get(model, model) for model in selected_models]
             print(f"🔍 Model mapping: {selected_models} -> {models_to_evaluate}")
@@ -1614,6 +1709,15 @@ class ComprehensiveEvaluator:
                         embedding_data = embeddings[embedding_name]
                         
                         # Progress tracking removed - using overall testing progress
+                        
+                        # Debug: Check data shapes
+                        print(f"     🔍 Debug - Data shapes:")
+                        print(f"       X_train: {embedding_data['X_train'].shape if hasattr(embedding_data['X_train'], 'shape') else len(embedding_data['X_train']) if embedding_data['X_train'] is not None else 'None'}")
+                        print(f"       X_val: {embedding_data['X_val'].shape if hasattr(embedding_data['X_val'], 'shape') else len(embedding_data['X_val']) if embedding_data['X_val'] is not None else 'None'}")
+                        print(f"       X_test: {embedding_data['X_test'].shape if hasattr(embedding_data['X_test'], 'shape') else len(embedding_data['X_test']) if embedding_data['X_test'] is not None else 'None'}")
+                        print(f"       y_train: {len(data_dict['y_train'])}")
+                        print(f"       y_val: {len(data_dict['y_val'])}")
+                        print(f"       y_test: {len(data_dict['y_test'])}")
                         
                         result = self.evaluate_single_combination(
                             model_name=model_name,
@@ -1996,6 +2100,7 @@ class ComprehensiveEvaluator:
                              ensemble_config: Dict[str, Any],
                              step3_data: Dict[str, Any],
                              target_embedding: str = None) -> Dict[str, Any]:
+        import numpy as np
         """
         Train ensemble model using StackingClassifier with specific embedding
         
@@ -2012,6 +2117,115 @@ class ComprehensiveEvaluator:
         """
         try:
             print(f"🚀 Training Ensemble Model...")
+            
+            # Check ensemble cache first
+            if self.cache_enabled:
+                try:
+                    # Get data for cache check
+                    X_train = data_dict.get('X_train')
+                    y_train = data_dict.get('y_train')
+                    
+                    if X_train is not None and y_train is not None:
+                        # Generate cache identifiers for ensemble
+                        # Determine ensemble type based on final estimator
+                        final_estimator_type = ensemble_config.get('final_estimator', 'logistic_regression')
+                        if final_estimator_type == 'logistic_regression':
+                            ensemble_type = 'stacking'
+                        elif final_estimator_type == 'voting':
+                            ensemble_type = 'voting'
+                        else:
+                            ensemble_type = 'stacking'  # Default to stacking
+                        
+                        ensemble_model_key = f"{ensemble_type}_ensemble_{target_embedding}"
+                        dataset_id = self._generate_dataset_id(X_train, y_train)
+                        config_hash = self._generate_config_hash(
+                            ensemble_model_key, 
+                            ensemble_config.get('cv_folds', 5), 
+                            ensemble_config.get('random_state', 42), 
+                            step3_data
+                        )
+                        dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
+                        
+                        # Check cache
+                        cache_exists, cache_info = self.cache_manager.check_cache_exists(
+                            ensemble_model_key, dataset_id, config_hash, dataset_fingerprint
+                        )
+                        
+                        if cache_exists:
+                            print(f"✅ Cache HIT for ensemble_{target_embedding}")
+                            print(f"   📁 Cache path: {cache_info.get('cache_dir', 'Unknown')}")
+                            
+                            # Load cached ensemble model
+                            cached_model, cached_params, cached_metrics, cached_config, cached_eval_predictions, cached_shap_sample, cached_feature_names, cached_label_mapping = self.cache_manager.load_model_cache(
+                                ensemble_model_key, dataset_id, config_hash, dataset_fingerprint
+                            )
+                            
+                            if cached_model is not None:
+                                print(f"✅ Using cached ensemble model")
+                                
+                                # Create ensemble result from cache
+                                ensemble_result = {
+                                    'model_name': 'Ensemble Learning',
+                                    'embedding_name': target_embedding,
+                                    'combination_key': f"Ensemble_{target_embedding}",
+                                    'status': 'success',
+                                    'validation_accuracy': cached_metrics.get('validation_accuracy', 0.0),
+                                    'test_accuracy': cached_metrics.get('test_accuracy', 0.0),
+                                    'overfitting_score': 0.0,  # Will be calculated from CV
+                                    'overfitting_status': 'cv_not_available',
+                                    'cv_mean_accuracy': 0.0,
+                                    'cv_std_accuracy': 0.0,
+                                    'cv_stability_score': 1.0,
+                                    'training_time': 0.0,  # Cached, no training time
+                                    'precision': cached_metrics.get('test_metrics', {}).get('precision', 0.0),
+                                    'recall': cached_metrics.get('test_metrics', {}).get('recall', 0.0),
+                                    'f1_score': cached_metrics.get('test_metrics', {}).get('f1_score', 0.0),
+                                    'test_metrics': cached_metrics.get('test_metrics', {}),
+                                    'predictions': cached_eval_predictions.get('y_pred', []) if cached_eval_predictions is not None else [],
+                                    'true_labels': cached_eval_predictions.get('y_true', []) if cached_eval_predictions is not None else [],
+                                    'probabilities': cached_eval_predictions.get('y_proba', []) if cached_eval_predictions is not None else [],
+                                    'predictions_detail': {
+                                        'train': {'y_true': [], 'y_pred': [], 'y_proba': []},
+                                        'val': {'y_true': [], 'y_pred': [], 'y_proba': []},
+                                        'test': {
+                                            'y_true': cached_eval_predictions.get('y_true', []) if cached_eval_predictions is not None else [],
+                                            'y_pred': cached_eval_predictions.get('y_pred', []) if cached_eval_predictions is not None else [],
+                                            'y_proba': cached_eval_predictions.get('y_proba', []) if cached_eval_predictions is not None else []
+                                        }
+                                    },
+                                    'ensemble_info': {
+                                        'base_models': cached_params.get('base_models', []),
+                                        'final_estimator': cached_params.get('final_estimator', 'logistic_regression'),
+                                        'performance_comparison': {},
+                                        'individual_results': {},
+                                        'model_reuse_stats': {
+                                            'models_reused': cached_params.get('base_models', []),
+                                            'models_retrained': [],
+                                            'reuse_errors': [],
+                                            'total_models_reused': len(cached_params.get('base_models', [])),
+                                            'total_models_retrained': 0,
+                                            'reuse_percentage': 100.0
+                                        }
+                                    }
+                                }
+                                
+                                print(f"✅ Ensemble Learning completed from cache!")
+                                print(f"   • Test Accuracy: {ensemble_result['test_accuracy']:.4f}")
+                                print(f"   • Base Models: {', '.join(cached_params.get('base_models', []))}")
+                                print(f"   • Final Estimator: {cached_params.get('final_estimator', 'logistic_regression')}")
+                                
+                                return ensemble_result
+                            else:
+                                print(f"⚠️ Cache exists but failed to load ensemble model")
+                        else:
+                            print(f"❌ Cache MISS for {ensemble_model_key}")
+                    else:
+                        print(f"⚠️ Cannot check ensemble cache: X_train={X_train is not None}, y_train={y_train is not None}")
+                        
+                except Exception as e:
+                    print(f"⚠️ Error checking ensemble cache: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Debug: Show all available results
             print(f"🔍 Debug: Available successful results:")
@@ -2344,6 +2558,84 @@ class ComprehensiveEvaluator:
             print(f"   • Test Accuracy: {ensemble_result['test_accuracy']:.4f}")
             print(f"   • Training Time: {ensemble_result['training_time']:.2f}s")
             
+            # Save ensemble model cache
+            if self.cache_enabled:
+                try:
+                    print(f"💾 Saving ensemble model cache...")
+                    
+                    # Prepare ensemble model for caching
+                    ensemble_model_data = {
+                        'ensemble_manager': ensemble_manager,
+                        'base_models': required_models_internal,
+                        'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
+                        'cv_folds': ensemble_config.get('cv_folds', 5),
+                        'random_state': ensemble_config.get('random_state', 42)
+                    }
+                    
+                    # Generate cache identifiers for ensemble
+                    # Determine ensemble type based on final estimator
+                    final_estimator_type = ensemble_config.get('final_estimator', 'logistic_regression')
+                    if final_estimator_type == 'logistic_regression':
+                        ensemble_type = 'stacking'
+                    elif final_estimator_type == 'voting':
+                        ensemble_type = 'voting'
+                    else:
+                        ensemble_type = 'stacking'  # Default to stacking
+                    
+                    ensemble_model_key = f"{ensemble_type}_ensemble_{best_embedding}"
+                    dataset_id = self._generate_dataset_id(X_train, y_train)
+                    config_hash = self._generate_config_hash(
+                        ensemble_model_key, 
+                        ensemble_config.get('cv_folds', 5), 
+                        ensemble_config.get('random_state', 42), 
+                        step3_data
+                    )
+                    dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
+                    
+                    # Prepare eval predictions for ensemble
+                    eval_predictions = self._prepare_eval_predictions_for_cache(
+                        y_test, ensemble_predictions['test']['y_pred'], ensemble_predictions['test']['y_proba']
+                    )
+                    
+                    # Save ensemble cache
+                    self.cache_manager.save_model_cache(
+                        model_key=ensemble_model_key,
+                        dataset_id=dataset_id,
+                        config_hash=config_hash,
+                        dataset_fingerprint=dataset_fingerprint,
+                        model=ensemble_model_data,
+                        params={
+                            'base_models': list(required_models_internal),
+                            'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
+                            'cv_folds': ensemble_config.get('cv_folds', 5),
+                            'random_state': ensemble_config.get('random_state', 42),
+                            'embedding': best_embedding
+                        },
+                        metrics={
+                            'validation_accuracy': ensemble_result['validation_accuracy'],
+                            'test_accuracy': ensemble_result['test_accuracy'],
+                            'test_metrics': ensemble_result['test_metrics']
+                        },
+                        config={
+                            'model_name': f"ensemble_{best_embedding}",
+                            'base_models': list(required_models_internal),
+                            'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
+                            'cv_folds': ensemble_config.get('cv_folds', 5),
+                            'embedding': best_embedding
+                        },
+                        eval_predictions=eval_predictions,
+                        shap_sample=None,  # Ensemble doesn't support SHAP directly
+                        feature_names=None,  # Will be handled by base models
+                        label_mapping=self.data_loader.id_to_label
+                    )
+                    
+                    print(f"✅ Ensemble cache saved successfully!")
+                    
+                except Exception as e:
+                    print(f"⚠️ Failed to save ensemble cache: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
             # Note: ensemble_result will be added to all_results by the caller
             return ensemble_result
             
@@ -2352,6 +2644,209 @@ class ComprehensiveEvaluator:
             import traceback
             traceback.print_exc()
             return None
+
+
+    def _add_cache_methods(self):
+        """Add cache helper methods to comprehensive evaluator"""
+        
+        def _check_model_cache(model_name, X_train, y_train, cv_folds, random_state, step3_data=None):
+            """Check if model cache exists and is valid"""
+            if not self.cache_enabled:
+                return None
+                
+            try:
+                # Generate cache identifiers
+                model_key = self._get_model_key(model_name)
+                dataset_id = self._generate_dataset_id(X_train, y_train)
+                config_hash = self._generate_config_hash(model_name, cv_folds, random_state, step3_data)
+                dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
+                
+                # Check cache
+                cache_exists, cache_info = self.cache_manager.check_cache_exists(
+                    model_key, dataset_id, config_hash, dataset_fingerprint
+                )
+                
+                if cache_exists:
+                    # Load cached model
+                    cache_data = self.cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                    
+                    print(f"✅ Cache HIT for {model_name}")
+                    
+                    # Convert to expected format
+                    result = {
+                        'model_name': model_name,
+                        'status': 'success',
+                        'model': cache_data['model'],
+                        'params': cache_data['params'],
+                        'metrics': cache_data['metrics'],
+                        'config': cache_data['config'],
+                        'eval_predictions': cache_data['eval_predictions'],
+                        'shap_sample': cache_data['shap_sample'],
+                        'feature_names': cache_data['feature_names'],
+                        'label_mapping': cache_data['label_mapping'],
+                        'cache_hit': True,
+                        'cache_path': cache_data['cache_path']
+                    }
+                    
+                    return result
+                
+                return None
+                
+            except Exception as e:
+                print(f"Warning: Cache check failed for {model_name}: {e}")
+                return None
+        
+        def _save_model_cache(model_name, X_train, y_train, cv_folds, random_state,
+                             model, params, metrics, config,
+                             eval_predictions=None, shap_sample=None,
+                             feature_names=None, label_mapping=None, step3_data=None):
+            """Save model cache"""
+            if not self.cache_enabled:
+                return ""
+                
+            try:
+                # Generate cache identifiers
+                model_key = self._get_model_key(model_name)
+                dataset_id = self._generate_dataset_id(X_train, y_train)
+                config_hash = self._generate_config_hash(model_name, cv_folds, random_state, step3_data)
+                dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
+                
+                # Save cache
+                cache_path = self.cache_manager.save_model_cache(
+                    model_key=model_key,
+                    dataset_id=dataset_id,
+                    config_hash=config_hash,
+                    dataset_fingerprint=dataset_fingerprint,
+                    model=model,
+                    params=params,
+                    metrics=metrics,
+                    config=config,
+                    eval_predictions=eval_predictions,
+                    shap_sample=shap_sample,
+                    feature_names=feature_names,
+                    label_mapping=label_mapping
+                )
+                
+                print(f"💾 Cache saved for {model_name} at {cache_path}")
+                return cache_path
+                
+            except Exception as e:
+                print(f"Warning: Cache save failed for {model_name}: {e}")
+                return ""
+        
+        def _get_model_key(model_name):
+            """Get model key for cache"""
+            model_mapping = {
+                'random_forest': 'random_forest',
+                'adaboost': 'adaboost',
+                'gradient_boosting': 'gradient_boosting',
+                'xgboost': 'xgboost',
+                'lightgbm': 'lightgbm',
+                'catboost': 'catboost',
+                'knn': 'knn',
+                'decision_tree': 'decision_tree',
+                'naive_bayes': 'naive_bayes',
+                'svm': 'svm',
+                'logistic_regression': 'logistic_regression',
+                'linear_svc': 'linear_svc',
+                'kmeans': 'kmeans'
+            }
+            return model_mapping.get(model_name, model_name.lower().replace(' ', '_'))
+        
+        def _generate_dataset_id(X_train, y_train):
+            """Generate dataset ID for cache"""
+            import hashlib
+            if hasattr(X_train, 'shape'):
+                X_shape = X_train.shape
+            else:
+                X_shape = (0, 0)
+            
+            num_classes = len(set(y_train)) if len(y_train) > 0 else 0
+            
+            dataset_info = f"{X_shape[0]}x{X_shape[1]}_{num_classes}classes"
+            return hashlib.md5(dataset_info.encode()).hexdigest()[:8]
+        
+        def _generate_config_hash(model_name, cv_folds, random_state, step3_data=None):
+            """Generate configuration hash for cache"""
+            config = {
+                'model_name': model_name,
+                'cv_folds': cv_folds,
+                'random_state': random_state
+            }
+            
+            if step3_data:
+                config.update({
+                    'optuna_enabled': step3_data.get('optuna', {}).get('enabled', False),
+                    'optuna_trials': step3_data.get('optuna', {}).get('trials', 100),
+                    'optuna_timeout': step3_data.get('optuna', {}).get('timeout', None)
+                })
+            
+            return self.cache_manager.generate_config_hash(config)
+        
+        def _generate_dataset_fingerprint(X_train, y_train):
+            """Generate dataset fingerprint for cache"""
+            from datetime import datetime
+            if hasattr(X_train, 'shape'):
+                X_shape = X_train.shape
+            else:
+                X_shape = (0, 0)
+            
+            num_classes = len(set(y_train)) if len(y_train) > 0 else 0
+            
+            dataset_info = {
+                'X_shape': X_shape,
+                'num_classes': num_classes,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            return self.cache_manager.generate_dataset_fingerprint(
+                dataset_path="",
+                dataset_size=0,
+                num_rows=X_shape[0]
+            )
+        
+        def _prepare_eval_predictions_for_cache(X_test, y_test, model):
+            """Prepare evaluation predictions for cache storage"""
+            import pandas as pd
+            try:
+                # Make predictions
+                if hasattr(model, 'predict_proba'):
+                    y_pred_proba = model.predict_proba(X_test)
+                    y_pred = model.predict(X_test)
+                    
+                    # Create DataFrame with probabilities
+                    proba_df = pd.DataFrame(y_pred_proba, 
+                                          columns=[f'proba__class_{i}' for i in range(y_pred_proba.shape[1])])
+                    
+                    eval_df = pd.DataFrame({
+                        'y_true': y_test.flatten() if hasattr(y_test, 'flatten') else y_test,
+                        'y_pred': y_pred.flatten() if hasattr(y_pred, 'flatten') else y_pred
+                    })
+                    
+                    # Combine with probabilities
+                    eval_df = pd.concat([eval_df, proba_df], axis=1)
+                    
+                else:
+                    y_pred = model.predict(X_test)
+                    eval_df = pd.DataFrame({
+                        'y_true': y_test.flatten() if hasattr(y_test, 'flatten') else y_test,
+                        'y_pred': y_pred.flatten() if hasattr(y_pred, 'flatten') else y_pred
+                    })
+                
+                return eval_df
+                
+            except Exception as e:
+                print(f"Warning: Failed to prepare eval predictions: {e}")
+                return None
+        
+        # Bind methods to self
+        self._check_model_cache = _check_model_cache
+        self._save_model_cache = _save_model_cache
+        self._get_model_key = _get_model_key
+        self._generate_dataset_id = _generate_dataset_id
+        self._generate_config_hash = _generate_config_hash
+        self._generate_dataset_fingerprint = _generate_dataset_fingerprint
+        self._prepare_eval_predictions_for_cache = _prepare_eval_predictions_for_cache
 
 
 def main():

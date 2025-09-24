@@ -18,7 +18,6 @@ from .ensemble.stacking_classifier import EnsembleStackingClassifier
 from .utils.model_factory import ModelFactory
 from .utils.model_registry import ModelRegistry
 from .utils.validation_manager import ValidationManager
-from .new_model_trainer import NewModelTrainer
 
 # Import and register models first
 from .register_models import register_all_models
@@ -31,11 +30,6 @@ model_factory = ModelFactory(registry=model_registry)
 # Register all models in the global registry
 register_all_models(model_registry)
 
-# Create NewModelTrainer with instances
-new_model_trainer = NewModelTrainer(
-    model_factory=model_factory,
-    validation_manager=validation_manager
-)
 
 __all__ = [
     # New modular architecture
@@ -53,7 +47,6 @@ __all__ = [
     'ModelFactory',
     'ModelRegistry',
     'ValidationManager',
-    'NewModelTrainer',
     
     # Global instances
     'validation_manager',

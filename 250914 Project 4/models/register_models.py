@@ -10,6 +10,19 @@ from .classification.svm_model import SVMModel
 from .classification.logistic_regression_model import LogisticRegressionModel
 from .classification.linear_svc_model import LinearSVCModel
 
+# Enhanced ML Models
+from .classification.random_forest_model import RandomForestModel
+from .classification.adaboost_model import AdaBoostModel
+from .classification.gradient_boosting_model import GradientBoostingModel
+from .classification.xgboost_model import XGBoostModel
+from .classification.lightgbm_model import LightGBMModel
+from .classification.catboost_model import CatBoostModel
+
+# Import ModelRegistry
+from .utils.model_registry import ModelRegistry
+
+# Create global registry instance
+registry = ModelRegistry()
 
 def register_all_models(registry):
     """Register all available models in the registry"""
@@ -119,6 +132,108 @@ def register_all_models(registry):
         }
     )
     
+    # Enhanced ML Models Registration
+    
+    registry.register_model(
+        'random_forest',
+        RandomForestModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Random Forest classifier with ensemble learning',
+            'parameters': ['n_estimators', 'max_depth', 'max_features', 'min_samples_split', 'min_samples_leaf'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'supports_gpu': False,
+            'supports_oob_score': True
+        }
+    )
+    
+    registry.register_model(
+        'adaboost',
+        AdaBoostModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'AdaBoost classifier with adaptive boosting',
+            'parameters': ['n_estimators', 'learning_rate', 'algorithm'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'supports_gpu': False
+        }
+    )
+    
+    registry.register_model(
+        'gradient_boosting',
+        GradientBoostingModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Gradient Boosting classifier with sequential learning',
+            'parameters': ['n_estimators', 'learning_rate', 'max_depth', 'subsample'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'supports_gpu': False
+        }
+    )
+    
+    registry.register_model(
+        'xgboost',
+        XGBoostModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'XGBoost classifier with GPU acceleration support',
+            'parameters': ['n_estimators', 'max_depth', 'eta', 'subsample', 'colsample_bytree', 'min_child_weight'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'supports_gpu': True,
+            'gpu_params': ['tree_method', 'predictor']
+        }
+    )
+    
+    registry.register_model(
+        'lightgbm',
+        LightGBMModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'LightGBM classifier with GPU acceleration support',
+            'parameters': ['n_estimators', 'num_leaves', 'learning_rate', 'feature_fraction', 'bagging_fraction'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'supports_gpu': True,
+            'gpu_params': ['device_type']
+        }
+    )
+    
+    registry.register_model(
+        'catboost',
+        CatBoostModel,
+        {
+            'category': 'classification',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'CatBoost classifier with GPU acceleration support',
+            'parameters': ['iterations', 'depth', 'learning_rate', 'l2_leaf_reg', 'border_count'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'supports_gpu': True,
+            'gpu_params': ['task_type', 'devices']
+        }
+    )
+    
     print("✅ All models registered successfully!")
     print(f"📊 Available models: {registry.list_models()}")
     
@@ -128,6 +243,9 @@ def register_all_models(registry):
     for category, models in categories.items():
         print(f"  {category}: {', '.join(models)}")
 
+
+# Register all models in global registry
+register_all_models(registry)
 
 if __name__ == "__main__":
     # For standalone testing
