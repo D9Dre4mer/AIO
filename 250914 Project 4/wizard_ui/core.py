@@ -97,12 +97,12 @@ class WizardManager:
             ),
             3: StepInfo(
                 step_number=3,
-                title="Column Selection & Validation",
-                description="Select text and label columns",
+                title="Optuna Optimization & Stacking",
+                description="Configure hyperparameter optimization and ensemble learning",
                 status=StepStatus.PENDING,
                 validation_required=True,
                 dependencies=[2],
-                estimated_time="2-3 minutes"
+                estimated_time="5-10 minutes"
             ),
             4: StepInfo(
                 step_number=4,
@@ -115,12 +115,12 @@ class WizardManager:
             ),
             5: StepInfo(
                 step_number=5,
-                title="Training Execution & Monitoring",
-                description="Execute training and monitor progress",
+                title="SHAP Visualization & Model Interpretation",
+                description="Generate SHAP plots and confusion matrices",
                 status=StepStatus.PENDING,
                 validation_required=False,
                 dependencies=[4],
-                estimated_time="10-30 minutes"
+                estimated_time="5-15 minutes"
             ),
             6: StepInfo(
                 step_number=6,

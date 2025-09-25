@@ -312,6 +312,9 @@ class ComprehensiveEvaluator:
             df = self.step1_data['dataframe']
             print(f"📊 Pre-sampled data size: {len(df):,} samples")
             
+            # Set multi-input flag based on step1_data
+            self.data_loader.is_multi_input = self.step1_data.get('is_multi_input', False)
+            
             # Convert DataFrame to DataLoader format
             self.data_loader.samples = []
             
@@ -358,8 +361,16 @@ class ComprehensiveEvaluator:
             print(f"💡 Categories: {self.data_loader.selected_categories[:5]}...")
             
             # CRITICAL: Validate that we have valid data
-            valid_samples = [s for s in self.data_loader.samples if s['abstract'].strip() and s['categories'].strip()]
-            print(f"🔍 Valid samples (non-empty text & categories): {len(valid_samples):,}")
+            # For numeric data, check if we have valid categories (labels)
+            # For text data, check both text and categories
+            if hasattr(self.data_loader, 'is_multi_input') and self.data_loader.is_multi_input:
+                # Numeric data: only check categories (labels)
+                valid_samples = [s for s in self.data_loader.samples if s['categories'].strip()]
+                print(f"🔍 Valid samples (non-empty categories for numeric data): {len(valid_samples):,}")
+            else:
+                # Text data: check both text and categories
+                valid_samples = [s for s in self.data_loader.samples if s['abstract'].strip() and s['categories'].strip()]
+                print(f"🔍 Valid samples (non-empty text & categories): {len(valid_samples):,}")
             
             if len(valid_samples) == 0:
                 print("❌ ERROR: No valid samples found! All samples have empty text or categories.")

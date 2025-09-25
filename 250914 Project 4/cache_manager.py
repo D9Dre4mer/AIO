@@ -445,6 +445,10 @@ class CacheManager:
                 classifier._n_classes = 2  # Default to binary classification
             classifier._classes = list(range(classifier._n_classes))
             classifier._estimator_type = 'classifier'
+            # Set additional required attributes
+            classifier._evals_result = {}
+            classifier._train_set = None
+            classifier._valid_sets = None
             return classifier
         elif model_key in ['catboost']:
             import catboost as cb

@@ -39,6 +39,8 @@ class DataLoader:
         self.available_categories = []
         self.selected_categories = []
         self.category_stats = {}
+        # Multi-input data flag
+        self.is_multi_input = False
         
     def load_dataset(self, skip_csv_prompt: bool = False) -> None:
         """Load any dataset and automatically detect categories"""
