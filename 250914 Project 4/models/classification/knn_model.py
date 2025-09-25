@@ -1223,6 +1223,10 @@ class KNNModel(BaseModel):
             self.use_faiss_gpu = True
             self.is_fitted = True
             
+            # Set sklearn compatibility attributes
+            self.classes_ = np.unique(y)
+            self.n_features_in_ = X.shape[1]
+            
             return self
             
         except Exception as e:
@@ -1300,6 +1304,10 @@ class KNNModel(BaseModel):
             self.use_faiss_cpu = True
             self.is_fitted = True
             
+            # Set sklearn compatibility attributes
+            self.classes_ = np.unique(y)
+            self.n_features_in_ = X.shape[1]
+            
             print(f"✅ FAISS CPU index created with {len(X)} vectors, dimension {d}")
             print(f"🚀 Using {self.metric} metric on CPU (optimized)")
             
@@ -1324,6 +1332,10 @@ class KNNModel(BaseModel):
         self.model.fit(X, y)
         self.use_faiss_gpu = False
         self.is_fitted = True
+        
+        # Set sklearn compatibility attributes
+        self.classes_ = self.model.classes_
+        self.n_features_in_ = X.shape[1]
         
         return self
     

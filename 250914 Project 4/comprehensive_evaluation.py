@@ -521,7 +521,8 @@ class ComprehensiveEvaluator:
             'y_train': y_train_full,
             'y_val': y_val,
             'y_test': y_test,
-            'labels': sorted_labels
+            'labels': sorted_labels,
+            'dataset_info': f"dataset_{len(X_train_full)}samples_{len(sorted_labels)}classes"
         }
         
         # Store original texts for embedding CV (fix data leakage)
@@ -682,13 +683,15 @@ class ComprehensiveEvaluator:
     def evaluate_single_combination(self, 
                                   model_name: str, 
                                   embedding_name: str,
-                                  X_train: Union[np.ndarray, sparse.csr_matrix],
-                                  X_val: Union[np.ndarray, sparse.csr_matrix],
-                                  X_test: Union[np.ndarray, sparse.csr_matrix],
+                                  X_train: Union[np.ndarray, sparse.csr_matrix, List],
+                                  X_val: Union[np.ndarray, sparse.csr_matrix, List],
+                                  X_test: Union[np.ndarray, sparse.csr_matrix, List],
                                   y_train: np.ndarray,
                                   y_val: np.ndarray,
                                   y_test: np.ndarray,
-                                  step3_data: Dict = None) -> Dict[str, Any]:
+                                  step3_data: Dict = None,
+                                  selected_embeddings: List[str] = None,
+                                  feature_dimensions: Dict[str, int] = None) -> Dict[str, Any]:
         """
         Evaluate a single model-embedding combination
         
@@ -697,6 +700,15 @@ class ComprehensiveEvaluator:
         """
         combination_key = f"{model_name}_{embedding_name}"
         print(f"   🔍 Evaluating {combination_key}...")
+        
+        # Handle text data by converting to numerical representation for cache
+        if isinstance(X_train, list):
+            # Convert text data to numerical representation for cache consistency
+            import hashlib
+            X_train_hash = hashlib.md5(str(X_train).encode()).hexdigest()[:8]
+            X_train_for_cache = np.array([int(X_train_hash, 16)])  # Convert to numerical
+        else:
+            X_train_for_cache = X_train
         
         try:
             # Log KNN configuration if available
@@ -730,7 +742,7 @@ class ComprehensiveEvaluator:
             
             # Check cache first
             print(f"     🔍 Checking cache for {model_name}...")
-            cached_result = self._check_model_cache(model_name, X_train, y_train, self.cv_folds, self.random_state, step3_data)
+            cached_result = self._check_model_cache(model_name, X_train_for_cache, y_train, self.cv_folds, self.random_state, step3_data, selected_embeddings, feature_dimensions)
             if cached_result:
                 print(f"     ✅ Cache HIT for {model_name}")
             else:
@@ -743,6 +755,18 @@ class ComprehensiveEvaluator:
                 test_acc = cached_result['metrics'].get('test_accuracy', 0.0)
                 test_metrics = cached_result['metrics'].get('test_metrics', {})
                 
+                # Convert data types for cached model predictions
+                if hasattr(X_test, 'toarray'):  # Sparse matrix
+                    X_test = X_test.astype(np.float32)
+                elif isinstance(X_test, np.ndarray):
+                    X_test = X_test.astype(np.float32)
+                
+                if X_val is not None:
+                    if hasattr(X_val, 'toarray'):  # Sparse matrix
+                        X_val = X_val.astype(np.float32)
+                    elif isinstance(X_val, np.ndarray):
+                        X_val = X_val.astype(np.float32)
+                
                 # Make predictions
                 y_test_pred = model.predict(X_test)
                 y_val_pred = model.predict(X_val) if X_val is not None else y_test_pred
@@ -754,6 +778,40 @@ class ComprehensiveEvaluator:
                 
                 # Create model
                 model = self.model_factory.create_model(model_name)
+                
+                # Convert data types to float32 for better compatibility
+                if hasattr(X_train, 'toarray'):  # Sparse matrix
+                    X_train = X_train.astype(np.float32)
+                elif isinstance(X_train, np.ndarray):
+                    X_train = X_train.astype(np.float32)
+                
+                if hasattr(X_test, 'toarray'):  # Sparse matrix
+                    X_test = X_test.astype(np.float32)
+                elif isinstance(X_test, np.ndarray):
+                    X_test = X_test.astype(np.float32)
+                
+                if X_val is not None:
+                    if hasattr(X_val, 'toarray'):  # Sparse matrix
+                        X_val = X_val.astype(np.float32)
+                    elif isinstance(X_val, np.ndarray):
+                        X_val = X_val.astype(np.float32)
+                
+                print(f"     🔧 Converted data to float32 for compatibility")
+                
+                # Special handling for ensemble models
+                if model_name.startswith(('voting_ensemble', 'stacking_ensemble')):
+                    # Create base estimators for ensemble
+                    base_estimators = []
+                    for model_name_base in ['knn', 'decision_tree', 'naive_bayes']:
+                        try:
+                            model_class_base = self.model_factory.create_model(model_name_base)
+                            base_estimators.append((model_name_base, model_class_base))
+                        except Exception as e:
+                            print(f"Warning: Error creating {model_name_base}: {e}")
+                    
+                    # Create the ensemble classifier
+                    if base_estimators:
+                        model.create_ensemble_classifier(base_estimators)
                 
                 # Train model
                 model.fit(X_train, y_train)
@@ -794,7 +852,7 @@ class ComprehensiveEvaluator:
                 
                 self._save_model_cache(
                     model_name=model_name,
-                    X_train=X_train,
+                    X_train=X_train_for_cache,
                     y_train=y_train,
                     cv_folds=self.cv_folds,
                     random_state=self.random_state,
@@ -811,7 +869,9 @@ class ComprehensiveEvaluator:
                         'random_state': self.random_state
                     },
                     eval_predictions=eval_predictions,
-                    step3_data=step3_data
+                    step3_data=step3_data,
+                    selected_embeddings=selected_embeddings,
+                    feature_dimensions=feature_dimensions
                 )
             training_time = time.time() - start_time
             
@@ -1526,6 +1586,11 @@ class ComprehensiveEvaluator:
             ensemble_config = step3_data.get('ensemble_learning', {})
             print(f"📊 Using ensemble_config from step3_data: {ensemble_config}")
         
+        # Get selected_embeddings from step2_data if not provided
+        if selected_embeddings is None and step2_data:
+            selected_embeddings = step2_data.get('selected_embeddings', [])
+            print(f"📊 Using selected_embeddings from step2_data: {selected_embeddings}")
+        
         data_dict, sorted_labels = self.load_and_prepare_data(max_samples, skip_csv_prompt, sampling_config, preprocessing_config)
         
         # Store data_dict for later use
@@ -1730,6 +1795,14 @@ class ComprehensiveEvaluator:
                         print(f"       y_val: {len(data_dict['y_val'])}")
                         print(f"       y_test: {len(data_dict['y_test'])}")
                         
+                        # Calculate feature dimensions for cache key
+                        feature_dimensions = {}
+                        for emb_name, emb_data in embeddings.items():
+                            if hasattr(emb_data['X_train'], 'shape'):
+                                feature_dimensions[emb_name] = emb_data['X_train'].shape[1]
+                            elif isinstance(emb_data['X_train'], list):
+                                feature_dimensions[emb_name] = len(emb_data['X_train'][0]) if emb_data['X_train'] else 0
+                        
                         result = self.evaluate_single_combination(
                             model_name=model_name,
                             embedding_name=embedding_name,
@@ -1739,7 +1812,9 @@ class ComprehensiveEvaluator:
                             y_train=data_dict['y_train'],
                             y_val=data_dict['y_val'],
                             y_test=data_dict['y_test'],
-                            step3_data=step3_data
+                            step3_data=step3_data,
+                            selected_embeddings=selected_embeddings,
+                            feature_dimensions=feature_dimensions
                         )
                         
                         # Progress tracking removed - using overall testing progress
@@ -1816,7 +1891,8 @@ class ComprehensiveEvaluator:
                             embeddings=single_embedding,
                             ensemble_config=ensemble_config,
                             step3_data=step3_data,
-                            target_embedding=embedding_name
+                            target_embedding=embedding_name,
+                            selected_embeddings=selected_embeddings
                         )
                         
                         if ensemble_result:
@@ -2110,7 +2186,8 @@ class ComprehensiveEvaluator:
                              embeddings: Dict[str, Any], 
                              ensemble_config: Dict[str, Any],
                              step3_data: Dict[str, Any],
-                             target_embedding: str = None) -> Dict[str, Any]:
+                             target_embedding: str = None,
+                             selected_embeddings: List[str] = None) -> Dict[str, Any]:
         import numpy as np
         """
         Train ensemble model using StackingClassifier with specific embedding
@@ -2148,12 +2225,20 @@ class ComprehensiveEvaluator:
                             ensemble_type = 'stacking'  # Default to stacking
                         
                         ensemble_model_key = f"{ensemble_type}_ensemble_{target_embedding}"
-                        dataset_id = self._generate_dataset_id(X_train, y_train)
+                        # Handle text data for cache
+                        if isinstance(X_train, list):
+                            import hashlib
+                            X_train_hash = hashlib.md5(str(X_train).encode()).hexdigest()[:8]
+                            X_train_for_cache = np.array([int(X_train_hash, 16)])
+                        else:
+                            X_train_for_cache = X_train
+                        dataset_id = self._generate_dataset_id(X_train_for_cache, y_train)
                         config_hash = self._generate_config_hash(
                             ensemble_model_key, 
                             ensemble_config.get('cv_folds', 5), 
                             ensemble_config.get('random_state', 42), 
-                            step3_data
+                            step3_data,
+                            selected_embeddings
                         )
                         dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
                         
@@ -2594,12 +2679,20 @@ class ComprehensiveEvaluator:
                         ensemble_type = 'stacking'  # Default to stacking
                     
                     ensemble_model_key = f"{ensemble_type}_ensemble_{best_embedding}"
-                    dataset_id = self._generate_dataset_id(X_train, y_train)
+                    # Handle text data for cache
+                    if isinstance(X_train, list):
+                        import hashlib
+                        X_train_hash = hashlib.md5(str(X_train).encode()).hexdigest()[:8]
+                        X_train_for_cache = np.array([int(X_train_hash, 16)])
+                    else:
+                        X_train_for_cache = X_train
+                    dataset_id = self._generate_dataset_id(X_train_for_cache, y_train)
                     config_hash = self._generate_config_hash(
                         ensemble_model_key, 
                         ensemble_config.get('cv_folds', 5), 
                         ensemble_config.get('random_state', 42), 
-                        step3_data
+                        step3_data,
+                        selected_embeddings
                     )
                     dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
                     
@@ -2660,17 +2753,27 @@ class ComprehensiveEvaluator:
     def _add_cache_methods(self):
         """Add cache helper methods to comprehensive evaluator"""
         
-        def _check_model_cache(model_name, X_train, y_train, cv_folds, random_state, step3_data=None):
+        def _check_model_cache(model_name, X_train, y_train, cv_folds, random_state, step3_data=None, selected_embeddings=None, feature_dimensions=None):
             """Check if model cache exists and is valid"""
             if not self.cache_enabled:
                 return None
                 
             try:
-                # Generate cache identifiers
+                # Handle text data by converting to numerical representation for cache
+                if isinstance(X_train, list):
+                    # Convert text data to numerical representation for cache consistency
+                    # Use hash of text content as numerical representation
+                    import hashlib
+                    X_train_hash = hashlib.md5(str(X_train).encode()).hexdigest()[:8]
+                    X_train_for_cache = np.array([int(X_train_hash, 16)])  # Convert to numerical
+                else:
+                    X_train_for_cache = X_train
+                
+                # Generate cache identifiers using converted data
                 model_key = self._get_model_key(model_name)
-                dataset_id = self._generate_dataset_id(X_train, y_train)
-                config_hash = self._generate_config_hash(model_name, cv_folds, random_state, step3_data)
-                dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
+                dataset_id = self._generate_dataset_id(X_train_for_cache, y_train)
+                config_hash = self._generate_config_hash(model_name, cv_folds, random_state, step3_data, selected_embeddings, feature_dimensions)
+                dataset_fingerprint = self._generate_dataset_fingerprint(X_train_for_cache, y_train)
                 
                 # Check cache
                 cache_exists, cache_info = self.cache_manager.check_cache_exists(
@@ -2680,6 +2783,25 @@ class ComprehensiveEvaluator:
                 if cache_exists:
                     # Load cached model
                     cache_data = self.cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                    
+                    # Check feature compatibility before using cached model
+                    cached_model = cache_data['model']
+                    if hasattr(cached_model, 'n_features_in_') and hasattr(X_train, 'shape'):
+                        expected_features = cached_model.n_features_in_
+                        actual_features = X_train.shape[1]
+                        if expected_features != actual_features:
+                            print(f"⚠️ Feature mismatch: cached model expects {expected_features} features, got {actual_features}")
+                            print(f"   Skipping cache for {model_name} - will retrain with correct features")
+                            return None
+                    
+                    # Check label compatibility before using cached model
+                    if hasattr(cached_model, 'classes_') and cached_model.classes_ is not None:
+                        cached_classes = set(cached_model.classes_)
+                        current_classes = set(y_train)
+                        if cached_classes != current_classes:
+                            print(f"⚠️ Label mismatch: cached model expects labels {sorted(cached_classes)}, got {sorted(current_classes)}")
+                            print(f"   Skipping cache for {model_name} - will retrain with correct labels")
+                            return None
                     
                     print(f"✅ Cache HIT for {model_name}")
                     
@@ -2710,17 +2832,27 @@ class ComprehensiveEvaluator:
         def _save_model_cache(model_name, X_train, y_train, cv_folds, random_state,
                              model, params, metrics, config,
                              eval_predictions=None, shap_sample=None,
-                             feature_names=None, label_mapping=None, step3_data=None):
+                             feature_names=None, label_mapping=None, step3_data=None, selected_embeddings=None, feature_dimensions=None):
             """Save model cache"""
             if not self.cache_enabled:
                 return ""
                 
             try:
-                # Generate cache identifiers
+                # Handle text data by converting to numerical representation for cache
+                if isinstance(X_train, list):
+                    # Convert text data to numerical representation for cache consistency
+                    # Use hash of text content as numerical representation
+                    import hashlib
+                    X_train_hash = hashlib.md5(str(X_train).encode()).hexdigest()[:8]
+                    X_train_for_cache = np.array([int(X_train_hash, 16)])  # Convert to numerical
+                else:
+                    X_train_for_cache = X_train
+                
+                # Generate cache identifiers using converted data
                 model_key = self._get_model_key(model_name)
-                dataset_id = self._generate_dataset_id(X_train, y_train)
-                config_hash = self._generate_config_hash(model_name, cv_folds, random_state, step3_data)
-                dataset_fingerprint = self._generate_dataset_fingerprint(X_train, y_train)
+                dataset_id = self._generate_dataset_id(X_train_for_cache, y_train)
+                config_hash = self._generate_config_hash(model_name, cv_folds, random_state, step3_data, selected_embeddings, feature_dimensions)
+                dataset_fingerprint = self._generate_dataset_fingerprint(X_train_for_cache, y_train)
                 
                 # Save cache
                 cache_path = self.cache_manager.save_model_cache(
@@ -2765,25 +2897,47 @@ class ComprehensiveEvaluator:
             return model_mapping.get(model_name, model_name.lower().replace(' ', '_'))
         
         def _generate_dataset_id(X_train, y_train):
-            """Generate dataset ID for cache"""
+            """Generate dataset ID for cache - use consistent identifiers"""
             import hashlib
-            if hasattr(X_train, 'shape'):
-                X_shape = X_train.shape
+            
+            # Use consistent dataset identifier based on dataset metadata, not content
+            # This ensures cache reuse across different runs with same dataset
+            if hasattr(self, 'data_dict') and 'dataset_info' in self.data_dict:
+                # Use dataset metadata if available
+                dataset_info = self.data_dict['dataset_info']
             else:
-                X_shape = (0, 0)
+                # Fallback to basic info
+                if hasattr(X_train, 'shape'):
+                    X_shape = X_train.shape
+                elif isinstance(X_train, list):
+                    X_shape = (len(X_train), 0)  # Use list length
+                else:
+                    X_shape = (0, 0)
+                
+                num_classes = len(set(y_train)) if len(y_train) > 0 else 0
+                
+                # Use only essential info for consistency
+                dataset_info = f"dataset_{X_shape[0]}samples_{num_classes}classes"
             
-            num_classes = len(set(y_train)) if len(y_train) > 0 else 0
-            
-            dataset_info = f"{X_shape[0]}x{X_shape[1]}_{num_classes}classes"
             return hashlib.md5(dataset_info.encode()).hexdigest()[:8]
         
-        def _generate_config_hash(model_name, cv_folds, random_state, step3_data=None):
-            """Generate configuration hash for cache"""
+        def _generate_config_hash(model_name, cv_folds, random_state, step3_data=None, selected_embeddings=None, feature_dimensions=None):
+            """Generate configuration hash for cache using cache_manager"""
             config = {
                 'model_name': model_name,
                 'cv_folds': cv_folds,
                 'random_state': random_state
             }
+            
+            # Add vectorization method to config hash to distinguish between different embeddings
+            if selected_embeddings:
+                config['selected_embeddings'] = sorted(selected_embeddings)  # Sort for consistency
+                print(f"🔑 Including vectorization methods in cache key: {selected_embeddings}")
+            
+            # Add feature dimensions to distinguish between different feature spaces
+            if feature_dimensions:
+                config['feature_dimensions'] = sorted(feature_dimensions.items())  # Sort for consistency
+                print(f"🔑 Including feature dimensions in cache key: {feature_dimensions}")
             
             if step3_data:
                 config.update({
@@ -2795,25 +2949,39 @@ class ComprehensiveEvaluator:
             return self.cache_manager.generate_config_hash(config)
         
         def _generate_dataset_fingerprint(X_train, y_train):
-            """Generate dataset fingerprint for cache"""
-            from datetime import datetime
-            if hasattr(X_train, 'shape'):
-                X_shape = X_train.shape
+            """Generate dataset fingerprint for cache using cache_manager"""
+            # Use consistent dataset fingerprint based on dataset metadata, not content
+            # This ensures cache reuse across different runs with same dataset
+            
+            if hasattr(self, 'data_dict') and 'dataset_info' in self.data_dict:
+                # Use dataset metadata if available
+                dataset_info = self.data_dict['dataset_info']
             else:
-                X_shape = (0, 0)
+                # Use basic info for consistency
+                if hasattr(X_train, 'shape'):
+                    original_X_shape = (X_train.shape[0], 0)  # Only use row count
+                elif isinstance(X_train, list):
+                    original_X_shape = (len(X_train), 0)  # Use list length
+                else:
+                    original_X_shape = (0, 0)
+                
+                num_classes = len(set(y_train)) if len(y_train) > 0 else 0
+                
+                # Use only essential info for consistency
+                dataset_info = f"dataset_{original_X_shape[0]}samples_{num_classes}classes"
             
-            num_classes = len(set(y_train)) if len(y_train) > 0 else 0
-            
-            dataset_info = {
-                'X_shape': X_shape,
-                'num_classes': num_classes,
-                'timestamp': datetime.now().isoformat()
-            }
-            
+            # Use cache_manager to generate fingerprint
+            if hasattr(X_train, 'shape'):
+                num_rows = X_train.shape[0]
+            elif isinstance(X_train, list):
+                num_rows = len(X_train)
+            else:
+                num_rows = 0
+                
             return self.cache_manager.generate_dataset_fingerprint(
-                dataset_path="",
-                dataset_size=0,
-                num_rows=X_shape[0]
+                dataset_path=dataset_info,
+                dataset_size=len(dataset_info),
+                num_rows=num_rows
             )
         
         def _prepare_eval_predictions_for_cache(X_test, y_test, model):

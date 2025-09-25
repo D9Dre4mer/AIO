@@ -152,6 +152,25 @@ class OptunaOptimizer:
                 
                 # Create and train model
                 model = model_class(**params)
+                
+                # Special handling for ensemble models
+                if model_name.startswith(('voting_ensemble', 'stacking_ensemble')):
+                    # Create base estimators for ensemble
+                    base_estimators = []
+                    for model_name_base in ['knn', 'decision_tree', 'naive_bayes']:
+                        try:
+                            from models import model_registry
+                            model_class_base = model_registry.get_model(model_name_base)
+                            if model_class_base:
+                                model_instance_base = model_class_base()
+                                base_estimators.append((model_name_base, model_instance_base))
+                        except Exception as e:
+                            logger.warning(f"Error creating {model_name_base}: {e}")
+                    
+                    # Create the ensemble classifier
+                    if base_estimators:
+                        model.create_ensemble_classifier(base_estimators)
+                
                 model.fit(X_train, y_train)
                 
                 # Evaluate on validation set
@@ -210,6 +229,12 @@ class OptunaOptimizer:
             Dict containing search space configuration
         """
         search_spaces = {
+            # Ensemble models - minimal search space since they use base models
+            'voting_ensemble_hard': {},
+            'voting_ensemble_soft': {},
+            'stacking_ensemble_logistic_regression': {},
+            'stacking_ensemble_random_forest': {},
+            'stacking_ensemble_xgboost': {},
             'random_forest': {
                 'n_estimators': {'type': 'int', 'low': 50, 'high': 500},
                 'max_depth': {'type': 'int', 'low': 3, 'high': 20},
@@ -241,10 +266,10 @@ class OptunaOptimizer:
                 'colsample_bytree': {'type': 'float', 'low': 0.6, 'high': 1.0},
                 'min_child_weight': {'type': 'int', 'low': 1, 'high': 10},
                 'reg_lambda': {
-                    'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True
+                    'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True
                 },
                 'reg_alpha': {
-                    'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True
+                    'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True
                 }
             },
             'lightgbm': {
@@ -257,10 +282,10 @@ class OptunaOptimizer:
                 'bagging_fraction': {'type': 'float', 'low': 0.6, 'high': 1.0},
                 'min_child_samples': {'type': 'int', 'low': 5, 'high': 50},
                 'lambda_l1': {
-                    'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True
+                    'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True
                 },
                 'lambda_l2': {
-                    'type': 'float', 'low': 0.0, 'high': 10.0, 'log': True
+                    'type': 'float', 'low': 0.001, 'high': 10.0, 'log': True
                 }
             },
             'catboost': {

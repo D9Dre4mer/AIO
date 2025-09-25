@@ -24,7 +24,8 @@ class EnsembleStackingClassifier:
                  base_models: List[str] = None,
                  final_estimator: str = 'logistic_regression',
                  cv_folds: int = 5,
-                 random_state: int = 42):
+                 random_state: int = 42,
+                 **kwargs):
         """
         Initialize the stacking classifier
         
@@ -53,6 +54,11 @@ class EnsembleStackingClassifier:
         print(f"   • Base Models: {', '.join(self.base_models)}")
         print(f"   • Final Estimator: {final_estimator}")
         print(f"   • CV Folds: {cv_folds}")
+        
+        # Set sklearn compatibility attributes
+        self._estimator_type = "classifier"
+        self.classes_ = None
+        self.n_features_in_ = None
     
     def create_final_estimator(self) -> Any:
         """

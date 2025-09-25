@@ -21,6 +21,10 @@ from .classification.catboost_model import CatBoostModel
 # Import ModelRegistry
 from .utils.model_registry import ModelRegistry
 
+# Import ensemble models
+from .ensemble.stacking_classifier import EnsembleStackingClassifier
+from .ensemble.ensemble_manager import EnsembleManager
+
 # Create global registry instance
 registry = ModelRegistry()
 
@@ -231,6 +235,92 @@ def register_all_models(registry):
             'supports_probability': True,
             'supports_gpu': True,
             'gpu_params': ['task_type', 'devices']
+        }
+    )
+    
+    # Register ensemble models
+    registry.register_model(
+        'voting_ensemble_hard',
+        EnsembleStackingClassifier,
+        {
+            'category': 'ensemble',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Hard Voting Ensemble classifier',
+            'parameters': ['base_models', 'final_estimator'],
+            'supports_sparse': True,
+            'has_feature_importance': False,
+            'supports_probability': False,
+            'ensemble_type': 'voting',
+            'voting_type': 'hard'
+        }
+    )
+    
+    registry.register_model(
+        'voting_ensemble_soft',
+        EnsembleStackingClassifier,
+        {
+            'category': 'ensemble',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Soft Voting Ensemble classifier',
+            'parameters': ['base_models', 'final_estimator'],
+            'supports_sparse': True,
+            'has_feature_importance': False,
+            'supports_probability': True,
+            'ensemble_type': 'voting',
+            'voting_type': 'soft'
+        }
+    )
+    
+    registry.register_model(
+        'stacking_ensemble_logistic_regression',
+        EnsembleStackingClassifier,
+        {
+            'category': 'ensemble',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Stacking Ensemble with Logistic Regression final estimator',
+            'parameters': ['base_models', 'final_estimator', 'cv_folds'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'ensemble_type': 'stacking',
+            'final_estimator': 'logistic_regression'
+        }
+    )
+    
+    registry.register_model(
+        'stacking_ensemble_random_forest',
+        EnsembleStackingClassifier,
+        {
+            'category': 'ensemble',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Stacking Ensemble with Random Forest final estimator',
+            'parameters': ['base_models', 'final_estimator', 'cv_folds'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'ensemble_type': 'stacking',
+            'final_estimator': 'random_forest'
+        }
+    )
+    
+    registry.register_model(
+        'stacking_ensemble_xgboost',
+        EnsembleStackingClassifier,
+        {
+            'category': 'ensemble',
+            'task_type': 'supervised',
+            'data_type': 'mixed',
+            'description': 'Stacking Ensemble with XGBoost final estimator',
+            'parameters': ['base_models', 'final_estimator', 'cv_folds'],
+            'supports_sparse': True,
+            'has_feature_importance': True,
+            'supports_probability': True,
+            'ensemble_type': 'stacking',
+            'final_estimator': 'xgboost'
         }
     )
     

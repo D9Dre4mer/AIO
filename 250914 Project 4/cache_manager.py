@@ -292,7 +292,7 @@ class CacheManager:
             # Load model artifact
             model_ext = self._get_model_extension(model_key)
             model_file = cache_path / f"model.{model_ext}"
-            model = self._load_model_artifact(model_file, model_key)
+            model = self._load_model_artifact(model_file, model_key, config_hash)
             
             # Load params
             params_file = cache_path / self.cache_structure['params']
@@ -398,6 +398,18 @@ class CacheManager:
                 lgb_model.booster_.save_model(str(file_path))
             else:
                 lgb_model.save_model(str(file_path))
+            
+            # Save additional metadata for compatibility checking
+            metadata_file = file_path.parent / f"{file_path.stem}_metadata.json"
+            metadata = {
+                'vectorization_method': getattr(model, '_vectorization_method', 'unknown'),
+                'config_hash': getattr(model, '_config_hash', 'unknown'),
+                'n_features_in_': getattr(model, 'n_features_in_', 0),
+                'classes_': getattr(model, '_classes', []).tolist() if hasattr(getattr(model, '_classes', None), 'tolist') else getattr(model, '_classes', [])
+            }
+            import json
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
         elif model_key in ['catboost']:
             # Use CatBoost's native save method directly
             import catboost as cb
@@ -413,12 +425,13 @@ class CacheManager:
         else:
             joblib.dump(model, file_path)
     
-    def _load_model_artifact(self, file_path: Path, model_key: str):
+    def _load_model_artifact(self, file_path: Path, model_key: str, config_hash: str = None):
         """Load model artifact based on type
         
         Args:
             file_path: Path to model file
             model_key: Model identifier
+            config_hash: Configuration hash to check compatibility
             
         Returns:
             Loaded model object
@@ -449,6 +462,47 @@ class CacheManager:
             classifier._evals_result = {}
             classifier._train_set = None
             classifier._valid_sets = None
+            
+            # CRITICAL: Set the fitted flag properly
+            classifier.fitted_ = True
+            classifier._is_fitted = True
+            
+            # Set feature and class information
+            classifier.n_features_in_ = booster.num_feature()
+            # Don't set feature_name_ as it's a read-only property
+            
+            # Set classes properly - use _classes instead of classes_
+            import numpy as np
+            from sklearn.preprocessing import LabelEncoder
+            
+            if classifier._n_classes == 2:
+                classifier._classes = np.array([0, 1])
+            else:
+                classifier._classes = np.array(list(range(classifier._n_classes)))
+            
+            # Set LabelEncoder
+            classifier._le = LabelEncoder()
+            classifier._le.fit(classifier._classes)
+            
+            # Load metadata for compatibility checking
+            metadata_file = file_path.parent / f"{file_path.stem}_metadata.json"
+            if metadata_file.exists():
+                try:
+                    import json
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                    classifier._vectorization_method = metadata.get('vectorization_method', 'unknown')
+                    classifier._config_hash = metadata.get('config_hash', config_hash)
+                    classifier._cached_n_features = metadata.get('n_features_in_', 0)
+                    classifier._cached_classes = metadata.get('classes_', [])
+                except Exception as e:
+                    print(f"Warning: Could not load LightGBM metadata: {e}")
+                    classifier._vectorization_method = 'unknown'
+                    classifier._config_hash = config_hash
+            else:
+                classifier._vectorization_method = 'unknown'
+                classifier._config_hash = config_hash
+            
             return classifier
         elif model_key in ['catboost']:
             import catboost as cb

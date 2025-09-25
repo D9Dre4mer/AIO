@@ -44,6 +44,11 @@ class NaiveBayesModel(BaseModel):
         self.model.fit(X, y)
         
         self.is_fitted = True
+        
+        # Set sklearn compatibility attributes
+        self.classes_ = self.model.classes_
+        self.n_features_in_ = X.shape[1]
+        
         self.training_history.append({
             'action': 'fit',
             'n_samples': X.shape[0],

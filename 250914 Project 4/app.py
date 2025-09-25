@@ -1924,6 +1924,44 @@ def render_multi_input_section():
         st.error("❌ No columns found in the dataset.")
 
 
+def _check_for_text_data():
+    """Check if the current dataset contains text data that needs vectorization"""
+    try:
+        # Get data from Step 1
+        step1_data = session_manager.get_step_data(1)
+        if not step1_data or 'dataframe' not in step1_data:
+            return False
+        
+        df = step1_data['dataframe']
+        
+        # Check if any columns are text type
+        text_columns = []
+        for col in df.columns:
+            if df[col].dtype in ['object', 'string', 'category']:
+                # Check if it can be converted to numeric
+                try:
+                    pd.to_numeric(df[col], errors='raise')
+                    # If it can be converted to numeric, it's not text
+                    continue
+                except:
+                    # If it can't be converted to numeric, it's text
+                    text_columns.append(col)
+        
+        # Also check if we're in single input mode (text data)
+        if step1_data.get('is_single_input', False):
+            return True
+        
+        # Check if we have text columns in multi-input mode
+        if text_columns:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking for text data: {e}")
+        return False
+
+
 def render_step3_wireframe():
     """Render Step 3 - Optuna Optimization & Ensemble Configuration"""
     
@@ -1934,25 +1972,53 @@ def render_step3_wireframe():
     </h2>
     """, unsafe_allow_html=True)
     
-    # Create tabs for Optuna, Voting, Stacking, and Review
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "🎯 Optuna Configuration", 
-        "🗳️ Voting/Weight Ensemble", 
-        "🏗️ Stacking Ensemble", 
-        "📊 Review & Validate"
-    ])
+    # Check if we have text data to determine if vectorization tab should be shown
+    has_text_data = _check_for_text_data()
     
-    with tab1:
-        render_optuna_configuration()
-    
-    with tab2:
-        render_voting_weight_ensemble()
-    
-    with tab3:
-        render_stacking_configuration()
-    
-    with tab4:
-        render_review_validation()
+    # Create tabs dynamically based on data type
+    if has_text_data:
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🎯 Optuna Configuration", 
+            "🗳️ Voting/Weight Ensemble", 
+            "🏗️ Stacking Ensemble",
+            "🔤 Vectorization Methods",
+            "📊 Review & Validate"
+        ])
+        
+        with tab1:
+            render_optuna_configuration()
+        
+        with tab2:
+            render_voting_weight_ensemble()
+        
+        with tab3:
+            render_stacking_configuration()
+        
+        with tab4:
+            render_vectorization_configuration()
+        
+        with tab5:
+            render_review_validation()
+    else:
+        # No text data, show original tabs without vectorization
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "🎯 Optuna Configuration", 
+            "🗳️ Voting/Weight Ensemble", 
+            "🏗️ Stacking Ensemble", 
+            "📊 Review & Validate"
+        ])
+        
+        with tab1:
+            render_optuna_configuration()
+        
+        with tab2:
+            render_voting_weight_ensemble()
+        
+        with tab3:
+            render_stacking_configuration()
+        
+        with tab4:
+            render_review_validation()
     
     # Complete Step 3 button
     st.markdown("---")
@@ -2178,6 +2244,246 @@ def render_stacking_configuration():
         current_data = session_manager.get_step_data(3)
         current_data['stacking_config'] = {'enabled': False}
         session_manager.set_step_data(3, current_data)
+
+
+def render_vectorization_configuration():
+    """Render vectorization methods configuration for text data"""
+    st.subheader("🔤 Text Vectorization Methods")
+    
+    # Get data info
+    step1_data = session_manager.get_step_data(1)
+    if not step1_data or 'dataframe' not in step1_data:
+        st.error("❌ No dataset found. Please complete Step 1 first.")
+        return
+    
+    df = step1_data['dataframe']
+    
+    # Show text columns info
+    st.info("📝 **Text Data Detected**: The following text columns will be vectorized:")
+    
+    text_columns = []
+    for col in df.columns:
+        if df[col].dtype in ['object', 'string', 'category']:
+            try:
+                pd.to_numeric(df[col], errors='raise')
+                continue
+            except:
+                text_columns.append(col)
+    
+    if text_columns:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Text Columns:**")
+            for col in text_columns:
+                st.write(f"• {col}")
+        with col2:
+            st.write("**Sample Text:**")
+            sample_text = df[text_columns[0]].dropna().iloc[0] if len(df) > 0 else "No data"
+            st.text_area("", value=str(sample_text)[:200] + "..." if len(str(sample_text)) > 200 else str(sample_text), 
+                        height=100, disabled=True)
+    else:
+        st.warning("⚠️ No text columns detected in the dataset.")
+        return
+    
+    st.markdown("---")
+    
+    # Vectorization methods selection
+    st.markdown("**🎯 Select Vectorization Methods:**")
+    
+    # Available vectorization methods
+    vectorization_methods = {
+        "TF-IDF": {
+            "description": "Term Frequency-Inverse Document Frequency - Good for most text classification tasks",
+            "pros": ["Handles rare words well", "Good for classification", "Memory efficient"],
+            "cons": ["May lose word order", "Sparse representation"]
+        },
+        "Bag of Words (BoW)": {
+            "description": "Simple word counting - Fast and interpretable",
+            "pros": ["Fast processing", "Easy to understand", "Good baseline"],
+            "cons": ["Ignores word order", "Sensitive to frequent words"]
+        },
+        "Word Embeddings": {
+            "description": "Dense vector representations using pre-trained models",
+            "pros": ["Captures semantic meaning", "Dense representation", "Good for similarity"],
+            "cons": ["Requires more memory", "Slower processing", "May overfit on small datasets"]
+        }
+    }
+    
+    # Method selection with detailed info
+    selected_methods = []
+    
+    for method_name, method_info in vectorization_methods.items():
+        col1, col2 = st.columns([1, 4])
+        
+        with col1:
+            is_selected = st.checkbox(
+                f"**{method_name}**",
+                value=method_name == "TF-IDF",  # Default to TF-IDF
+                key=f"vectorization_{method_name.lower().replace(' ', '_').replace('(', '').replace(')', '')}"
+            )
+            if is_selected:
+                selected_methods.append(method_name)
+        
+        with col2:
+            with st.expander(f"ℹ️ {method_name} Details", expanded=False):
+                st.write(f"**Description:** {method_info['description']}")
+                
+                col_pros, col_cons = st.columns(2)
+                with col_pros:
+                    st.write("**✅ Pros:**")
+                    for pro in method_info['pros']:
+                        st.write(f"• {pro}")
+                
+                with col_cons:
+                    st.write("**❌ Cons:**")
+                    for con in method_info['cons']:
+                        st.write(f"• {con}")
+    
+    # Advanced configuration for selected methods
+    if selected_methods:
+        st.markdown("---")
+        st.markdown("**⚙️ Advanced Configuration:**")
+        
+        # TF-IDF Configuration
+        if "TF-IDF" in selected_methods:
+            with st.expander("🔧 TF-IDF Parameters", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    tfidf_max_features = st.number_input(
+                        "Max Features",
+                        min_value=100,
+                        max_value=50000,
+                        value=10000,
+                        key="tfidf_max_features",
+                        help="Maximum number of features to extract"
+                    )
+                
+                with col2:
+                    tfidf_ngram_range = st.selectbox(
+                        "N-gram Range",
+                        ["(1,1)", "(1,2)", "(1,3)", "(2,2)", "(2,3)"],
+                        index=1,  # Default to (1,2)
+                        key="tfidf_ngram_range",
+                        help="Range of n-grams to extract"
+                    )
+                
+                with col3:
+                    tfidf_min_df = st.number_input(
+                        "Min Document Frequency",
+                        min_value=1,
+                        max_value=10,
+                        value=2,
+                        key="tfidf_min_df",
+                        help="Minimum documents a word must appear in"
+                    )
+        
+        # BoW Configuration
+        if "Bag of Words (BoW)" in selected_methods:
+            with st.expander("🔧 BoW Parameters", expanded=True):
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    bow_max_features = st.number_input(
+                        "Max Features",
+                        min_value=100,
+                        max_value=50000,
+                        value=10000,
+                        key="bow_max_features",
+                        help="Maximum number of features to extract"
+                    )
+                
+                with col2:
+                    bow_ngram_range = st.selectbox(
+                        "N-gram Range",
+                        ["(1,1)", "(1,2)", "(1,3)", "(2,2)", "(2,3)"],
+                        index=0,  # Default to (1,1)
+                        key="bow_ngram_range",
+                        help="Range of n-grams to extract"
+                    )
+                
+                with col3:
+                    bow_min_df = st.number_input(
+                        "Min Document Frequency",
+                        min_value=1,
+                        max_value=10,
+                        value=2,
+                        key="bow_min_df",
+                        help="Minimum documents a word must appear in"
+                    )
+        
+        # Word Embeddings Configuration
+        if "Word Embeddings" in selected_methods:
+            with st.expander("🔧 Word Embeddings Parameters", expanded=True):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    embedding_model = st.selectbox(
+                        "Pre-trained Model",
+                        [
+                            "all-MiniLM-L6-v2",
+                            "all-mpnet-base-v2", 
+                            "paraphrase-MiniLM-L6-v2",
+                            "distilbert-base-nli-mean-tokens"
+                        ],
+                        index=0,
+                        key="embedding_model",
+                        help="Pre-trained sentence transformer model"
+                    )
+                
+                with col2:
+                    embedding_device = st.selectbox(
+                        "Device",
+                        ["auto", "cpu", "cuda"],
+                        index=0,
+                        key="embedding_device",
+                        help="Device to run embeddings on"
+                    )
+        
+        # Save configuration
+        vectorization_config = {
+            'selected_methods': selected_methods,
+            'tfidf': {
+                'max_features': tfidf_max_features if "TF-IDF" in selected_methods else 10000,
+                'ngram_range': eval(tfidf_ngram_range) if "TF-IDF" in selected_methods else (1, 2),
+                'min_df': tfidf_min_df if "TF-IDF" in selected_methods else 2
+            },
+            'bow': {
+                'max_features': bow_max_features if "Bag of Words (BoW)" in selected_methods else 10000,
+                'ngram_range': eval(bow_ngram_range) if "Bag of Words (BoW)" in selected_methods else (1, 1),
+                'min_df': bow_min_df if "Bag of Words (BoW)" in selected_methods else 2
+            },
+            'embeddings': {
+                'model_name': embedding_model if "Word Embeddings" in selected_methods else "all-MiniLM-L6-v2",
+                'device': embedding_device if "Word Embeddings" in selected_methods else "auto"
+            }
+        }
+        
+        # Merge with existing step data
+        current_data = session_manager.get_step_data(3)
+        current_data['vectorization_config'] = vectorization_config
+        session_manager.set_step_data(3, current_data)
+        
+        st.success(f"✅ Vectorization configuration saved for {len(selected_methods)} methods")
+        
+        # Show preview of what will be created
+        st.markdown("---")
+        st.markdown("**📊 Preview:**")
+        
+        total_features = 0
+        for method in selected_methods:
+            if method == "TF-IDF":
+                total_features += tfidf_max_features
+            elif method == "Bag of Words (BoW)":
+                total_features += bow_max_features
+            elif method == "Word Embeddings":
+                total_features += 384  # Typical embedding dimension
+        
+        st.info(f"**Estimated total features:** {total_features:,} (across {len(selected_methods)} methods)")
+        st.info(f"**Selected methods:** {', '.join(selected_methods)}")
+        
+    else:
+        st.warning("⚠️ Please select at least one vectorization method.")
 
 
 def render_review_validation():
@@ -2459,7 +2765,7 @@ def render_step4_wireframe():
                         'voting_config': step3_data.get('voting_config', {}),
                         'stacking_config': step3_data.get('stacking_config', {}),
                         'selected_models': selected_models,
-                        'selected_vectorization': ['TF-IDF'],  # Minimal vectorization for numeric
+                        'selected_vectorization': step3_data.get('vectorization_config', {}).get('selected_methods', ['TF-IDF']),
                         'ensemble_learning': {
                             'enabled': True,
                             'final_estimator': 'logistic_regression',
@@ -2495,7 +2801,7 @@ def render_step4_wireframe():
                         'voting_config': step3_data.get('voting_config', {}),
                         'stacking_config': step3_data.get('stacking_config', {}),
                         'selected_models': selected_models,
-                        'selected_vectorization': ['BoW', 'TF-IDF', 'Word Embeddings'],
+                        'selected_vectorization': step3_data.get('vectorization_config', {}).get('selected_methods', ['BoW', 'TF-IDF', 'Word Embeddings']),
                         'ensemble_learning': {
                             'enabled': True,
                             'final_estimator': 'logistic_regression',
