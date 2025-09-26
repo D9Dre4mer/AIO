@@ -324,12 +324,12 @@ def register_all_models(registry):
         }
     )
     
-    print("✅ All models registered successfully!")
-    print(f"📊 Available models: {registry.list_models()}")
+    print("All models registered successfully!")
+    print(f"Available models: {registry.list_models()}")
     
     # Print model categories
     categories = registry.get_model_categories()
-    print("\n📁 Model Categories:")
+    print("\nModel Categories:")
     for category, models in categories.items():
         print(f"  {category}: {', '.join(models)}")
 

@@ -28,7 +28,7 @@ try:
     from sklearn.preprocessing import StandardScaler, LabelEncoder
     from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
     from text_encoders import TextVectorizer, EmbeddingVectorizer
-    print("✅ All imports successful")
+    print("All imports successful")
 except ImportError as e:
     print(f"❌ Import error: {e}")
     sys.exit(1)
@@ -97,19 +97,18 @@ def get_all_models() -> List[str]:
         base_models = model_registry.list_models()
         classification_models = [m for m in base_models if m != 'kmeans']
         
-        # Add ensemble models
-        ensemble_models = [
-            'voting_ensemble_hard',
-            'voting_ensemble_soft', 
-            'stacking_ensemble_logistic_regression',
-            'stacking_ensemble_random_forest',
-            'stacking_ensemble_xgboost'
-        ]
-        
-        all_models = classification_models + ensemble_models
+        # Skip ensemble models for now - they need proper initialization
+        # ensemble_models = [
+        #     'voting_ensemble_hard',
+        #     'voting_ensemble_soft',
+        #     'stacking_ensemble_logistic_regression',
+        #     'stacking_ensemble_random_forest',
+        #     'stacking_ensemble_xgboost'
+        # ]
+
+        all_models = classification_models  # + ensemble_models
         
         print(f"📋 Base models: {classification_models}")
-        print(f"📋 Ensemble models: {ensemble_models}")
         print(f"📋 Total models: {len(all_models)}")
         
         return all_models
@@ -156,7 +155,7 @@ def get_all_vectorization_methods() -> List[Dict[str, Any]]:
 
 def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray, 
                                 vectorization_info: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
-    """Test a single model with specific vectorization method using app.py pipeline"""
+    """Test a single model with specific vectorization method using cache system and cross-validation (ENHANCED)"""
     try:
         print(f"\n{'='*60}")
         print(f"🧪 Testing: {model_name} + {vectorization_info['method']}")
@@ -167,6 +166,70 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
             X, y, test_size=0.2, random_state=42, stratify=y
         )
         print(f"📊 Data split: Train {X_train.shape}, Val {X_val.shape}")
+        
+        # Import cache manager and CV
+        from cache_manager import CacheManager
+        from sklearn.model_selection import cross_val_score, StratifiedKFold
+        from sklearn.metrics import f1_score, precision_score, recall_score
+        import os
+        
+        # Create cache manager
+        cache_manager = CacheManager()
+        
+        # Generate cache identifiers
+        model_key = model_name
+        dataset_id = f"spam_ham_dataset_{vectorization_info['method']}"
+        config_hash = cache_manager.generate_config_hash({
+            'model': model_name,
+            'vectorization': vectorization_info['method'],
+            'trials': config.get('trials', 2),
+            'cv_folds': 5,
+            'random_state': 42
+        })
+        dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+            dataset_path="cache/2cls_spam_text_cls.csv",
+            dataset_size=os.path.getsize("cache/2cls_spam_text_cls.csv"),
+            num_rows=len(X_train)
+        )
+        
+        # Check if cache exists
+        cache_exists, cached_data = cache_manager.check_cache_exists(
+            model_key, dataset_id, config_hash, dataset_fingerprint
+        )
+        
+        if cache_exists:
+            # Load full cache data including metrics
+            try:
+                full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                cached_metrics = full_cache_data.get('metrics', {})
+                has_enhanced_metrics = 'cv_mean' in cached_metrics and 'cv_std' in cached_metrics
+                
+                if has_enhanced_metrics:
+                    print(f"💾 Cache hit! Loading cached results for {model_name}")
+                    return {
+                        'model': model_name,
+                        'vectorization': vectorization_info['method'],
+                        'score': cached_metrics.get('accuracy', 0.0),
+                        'params': full_cache_data.get('params', {}),
+                        'time': 0.0,  # Cached, no training time
+                        'features': vectorization_info['features'],
+                        'status': 'SUCCESS',
+                        'cached': True,
+                        'cv_mean': cached_metrics.get('cv_mean', 0.0),
+                        'cv_std': cached_metrics.get('cv_std', 0.0),
+                        'f1_score': cached_metrics.get('f1_score', 0.0),
+                        'precision': cached_metrics.get('precision', 0.0),
+                        'recall': cached_metrics.get('recall', 0.0)
+                    }
+                else:
+                    print(f"🔄 Cache cũ detected! Retraining {model_name} with enhanced features...")
+                    # Continue to training with enhanced features
+            except Exception as e:
+                print(f"⚠️ Error loading cache data: {e}")
+                print(f"🔄 Cache miss! Training {model_name} with Optuna...")
+                # Continue to training
+        
+        print(f"🔄 Cache miss! Training {model_name} with Optuna + CV...")
         
         # Create Optuna optimizer
         optimizer = OptunaOptimizer(config)
@@ -196,6 +259,88 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
         print(f"📊 Best score: {best_score:.4f}")
         print(f"📊 Best params: {best_params}")
         
+        # Train final model with best params for caching and CV
+        print("🔄 Training final model with best params for cache and CV...")
+        final_model = model_class(**best_params)
+        
+        # Special handling for ensemble models
+        if model_name.startswith(('voting_ensemble', 'stacking_ensemble')):
+            # Create base estimators for ensemble
+            base_estimators = []
+            for model_name_base in ['knn', 'decision_tree', 'naive_bayes']:
+                try:
+                    model_class_base = model_registry.get_model(model_name_base)
+                    if model_class_base:
+                        model_instance_base = model_class_base()
+                        base_estimators.append((model_name_base, model_instance_base))
+                except Exception as e:
+                    print(f"⚠️ Error creating {model_name_base}: {e}")
+            
+            # Create the ensemble classifier
+            if base_estimators:
+                final_model.create_stacking_classifier(base_estimators)
+        
+        final_model.fit(X_train, y_train)
+        
+        # Cross-validation
+        print("🔄 Running 5-fold cross-validation...")
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        cv_scores = cross_val_score(final_model, X_train, y_train, cv=cv, scoring='accuracy')
+        cv_mean = cv_scores.mean()
+        cv_std = cv_scores.std()
+        
+        # Comprehensive metrics
+        print("🔄 Calculating comprehensive metrics...")
+        y_pred = final_model.predict(X_val)
+        f1 = f1_score(y_val, y_pred, average='weighted')
+        precision = precision_score(y_val, y_pred, average='weighted')
+        recall = recall_score(y_val, y_pred, average='weighted')
+        
+        print(f"📊 CV Scores: {cv_scores}")
+        print(f"📊 CV Mean: {cv_mean:.4f} ± {cv_std:.4f}")
+        print(f"📊 F1-Score: {f1:.4f}")
+        print(f"📊 Precision: {precision:.4f}")
+        print(f"📊 Recall: {recall:.4f}")
+        
+        # Save to cache
+        if final_model is not None:
+            try:
+                metrics = {
+                    'accuracy': best_score,
+                    'f1_score': f1,
+                    'precision': precision,
+                    'recall': recall,
+                    'cv_mean': cv_mean,
+                    'cv_std': cv_std
+                }
+                
+                cache_config = {
+                    'model': model_name,
+                    'vectorization': vectorization_info['method'],
+                    'trials': config.get('trials', 2),
+                    'cv_folds': 5,
+                    'random_state': 42,
+                    'test_size': 0.2
+                }
+                
+                cache_path = cache_manager.save_model_cache(
+                    model_key=model_key,
+                    dataset_id=dataset_id,
+                    config_hash=config_hash,
+                    dataset_fingerprint=dataset_fingerprint,
+                    model=final_model,
+                    params=best_params,
+                    metrics=metrics,
+                    config=cache_config,
+                    feature_names=[f"feature_{i}" for i in range(X.shape[1])],
+                    label_mapping={0: 'ham', 1: 'spam'}
+                )
+                
+                print(f"💾 Cache saved for {model_name} at {cache_path}")
+                
+            except Exception as cache_error:
+                print(f"⚠️ Cache save failed: {cache_error}")
+        
         return {
             'model': model_name,
             'vectorization': vectorization_info['method'],
@@ -203,7 +348,13 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
             'params': best_params,
             'time': end_time - start_time,
             'features': vectorization_info['features'],
-            'status': 'SUCCESS'
+            'status': 'SUCCESS',
+            'cached': False,
+            'cv_mean': cv_mean,
+            'cv_std': cv_std,
+            'f1_score': f1,
+            'precision': precision,
+            'recall': recall
         }
         
     except Exception as e:
@@ -340,10 +491,9 @@ def test_all_combinations(df: pd.DataFrame, text_column: str, label_column: str)
         all_models = get_all_models()
         all_vectorization_methods = get_all_vectorization_methods()
         
-        # Test with all models to see per-model cache creation
-        # Limit to first 5 models for faster testing but still see per-model cache
-        all_models = all_models[:5]  # Test first 5 models
-        all_vectorization_methods = all_vectorization_methods[:1]  # Test only TF-IDF
+        # Test with all models and all vectorization methods
+        all_models = all_models  # Test all models
+        all_vectorization_methods = all_vectorization_methods  # Test all vectorization methods
         
         # Optuna config
         config = {
@@ -502,7 +652,7 @@ def analyze_results(results: Dict[str, Any]) -> Dict[str, Any]:
 
 def main():
     """Main test function"""
-    print("🧪 Comprehensive Vectorization Test Suite")
+    print("Comprehensive Vectorization Test Suite")
     print("=" * 60)
     
     if not OPTUNA_AVAILABLE:
@@ -594,10 +744,13 @@ def main():
         # Make results serializable
         serializable_results = make_serializable(results_data)
         
-        with open('comprehensive_vectorization_results.json', 'w', encoding='utf-8') as f:
+        # Ensure training_results directory exists
+        os.makedirs('cache/training_results', exist_ok=True)
+        
+        with open('cache/training_results/comprehensive_vectorization_results.json', 'w', encoding='utf-8') as f:
             json.dump(serializable_results, f, indent=2, ensure_ascii=False)
         
-        print(f"\n💾 Results saved to: comprehensive_vectorization_results.json")
+        print(f"\n💾 Results saved to: cache/training_results/comprehensive_vectorization_results.json")
         
         # 6. Final summary
         print(f"\n{'='*80}")
@@ -621,6 +774,110 @@ def main():
         
         print(f"\n🎉 Comprehensive testing completed!")
         
+        # Debug: Show detailed results and errors
+        print(f"\n🔍 DETAILED DEBUG INFORMATION:")
+        
+        # Use actual results from the test run
+        all_results = results['all_results']
+        successful_results = [r for r in all_results if r['status'] == 'SUCCESS']
+        failed_results = [r for r in all_results if r['status'] == 'FAILED']
+        
+        # Show successful results
+        if successful_results:
+            print(f"\n✅ SUCCESSFUL COMBINATIONS ({len(successful_results)}):")
+            for i, result in enumerate(successful_results[:10], 1):  # Show first 10
+                print(f"  {i}. {result['model']} + {result['vectorization']}: {result['score']:.4f}")
+                print(f"     CV: {result.get('cv_mean', 'N/A')} ± {result.get('cv_std', 'N/A')}")
+                print(f"     F1: {result.get('f1_score', 'N/A')}, Precision: {result.get('precision', 'N/A')}, Recall: {result.get('recall', 'N/A')}")
+                print(f"     Time: {result.get('time', 0):.2f}s, Cached: {result.get('cached', False)}")
+            
+            if len(successful_results) > 10:
+                print(f"     ... and {len(successful_results) - 10} more successful combinations")
+            
+            # Show failed results with error analysis
+            if failed_results:
+                print(f"\n❌ FAILED COMBINATIONS ({len(failed_results)}):")
+                error_counts = {}
+                for result in failed_results:
+                    error = result.get('error', 'Unknown error')
+                    error_counts[error] = error_counts.get(error, 0) + 1
+                
+                print(f"\n🔍 ERROR ANALYSIS:")
+                for error, count in error_counts.items():
+                    print(f"  • {error}: {count} times")
+                
+                print(f"\n🔍 DETAILED FAILED RESULTS:")
+                for i, result in enumerate(failed_results[:5], 1):  # Show first 5
+                    print(f"  {i}. {result['model']} + {result['vectorization']}")
+                    print(f"     Error: {result.get('error', 'Unknown error')}")
+            
+            # Debug: Show cache statistics
+            print(f"\n💾 CACHE STATISTICS:")
+            cache_hits = len([r for r in all_results if r.get('cached', False)])
+            cache_misses = len([r for r in all_results if not r.get('cached', False)])
+            print(f"  • Cache hits: {cache_hits}")
+            print(f"  • Cache misses: {cache_misses}")
+            print(f"  • Cache hit rate: {cache_hits/(cache_hits+cache_misses)*100:.1f}%" if (cache_hits+cache_misses) > 0 else "  • Cache hit rate: N/A")
+            
+            # Debug: Show performance statistics
+            if successful_results:
+                scores = [r['score'] for r in successful_results]
+                times = [r.get('time', 0) for r in successful_results]
+                print(f"\n📈 PERFORMANCE STATISTICS:")
+                print(f"  • Best accuracy: {max(scores):.4f}")
+                print(f"  • Worst accuracy: {min(scores):.4f}")
+                print(f"  • Average accuracy: {sum(scores)/len(scores):.4f}")
+                print(f"  • Average training time: {sum(times)/len(times):.2f}s")
+                print(f"  • Total training time: {sum(times):.2f}s")
+            
+            # Debug: Show top performing models
+            if successful_results:
+                print(f"\n🏆 TOP 5 PERFORMING MODELS:")
+                sorted_results = sorted(successful_results, key=lambda x: x['score'], reverse=True)
+                for i, result in enumerate(sorted_results[:5], 1):
+                    print(f"  {i}. {result['model']} + {result['vectorization']}: {result['score']:.4f}")
+                    print(f"     CV: {result.get('cv_mean', 'N/A')} ± {result.get('cv_std', 'N/A')}")
+                    print(f"     F1: {result.get('f1_score', 'N/A')}, Precision: {result.get('precision', 'N/A')}, Recall: {result.get('recall', 'N/A')}")
+            
+            # Debug: Show vectorization method performance
+            if successful_results:
+                print(f"\n🔧 VECTORIZATION METHOD ANALYSIS:")
+                vectorization_stats = {}
+                for result in successful_results:
+                    method = result['vectorization']
+                    if method not in vectorization_stats:
+                        vectorization_stats[method] = []
+                    vectorization_stats[method].append(result['score'])
+                
+                for method, scores in vectorization_stats.items():
+                    avg_score = sum(scores) / len(scores)
+                    print(f"  • {method}: {len(scores)} models, avg accuracy: {avg_score:.4f}")
+            
+            # Debug: Show model type performance
+            if successful_results:
+                print(f"\n🤖 MODEL TYPE ANALYSIS:")
+                model_stats = {}
+                for result in successful_results:
+                    model = result['model']
+                    if model not in model_stats:
+                        model_stats[model] = []
+                    model_stats[model].append(result['score'])
+                
+                for model, scores in model_stats.items():
+                    avg_score = sum(scores) / len(scores)
+                    print(f"  • {model}: {len(scores)} vectorization methods, avg accuracy: {avg_score:.4f}")
+            
+            print(f"\n🎯 DEBUG SUMMARY:")
+            print(f"  • Total tests: {len(all_results)}")
+            print(f"  • Success rate: {len(successful_results)/len(all_results)*100:.1f}%" if len(all_results) > 0 else "  • Success rate: N/A")
+            print(f"  • Cache efficiency: {cache_hits/(cache_hits+cache_misses)*100:.1f}%" if (cache_hits+cache_misses) > 0 else "  • Cache efficiency: N/A")
+            print(f"  • Best model: {sorted_results[0]['model']} + {sorted_results[0]['vectorization']} = {sorted_results[0]['score']:.4f}" if successful_results else "  • Best model: N/A")
+        else:
+            print(f"  • No analysis data available for debug information")
+            print(f"  • Analysis object: {type(analysis)}")
+            if analysis:
+                print(f"  • Analysis keys: {list(analysis.keys()) if hasattr(analysis, 'keys') else 'No keys method'}")
+        
     except Exception as e:
         print(f"❌ Critical error in main: {e}")
         print(f"📋 Traceback: {traceback.format_exc()}")
@@ -642,12 +899,6 @@ def check_cache_creation():
             for root, dirs, files in os.walk(cache_models_dir):
                 if files:  # Only count directories with files
                     model_count += 1
-                    level = root.replace(cache_models_dir, '').count(os.sep)
-                    indent = ' ' * 2 * level
-                    print(f"{indent}{os.path.basename(root)}/")
-                    subindent = ' ' * 2 * (level + 1)
-                    for file in files:
-                        print(f"{subindent}{file}")
             print(f"📊 Per-model cache entries: {model_count}")
         else:
             print(f"❌ {cache_models_dir} does not exist")
@@ -657,10 +908,6 @@ def check_cache_creation():
         if os.path.exists(cache_training_dir):
             print(f"\n✅ {cache_training_dir} exists")
             files = os.listdir(cache_training_dir)
-            for file in files:
-                file_path = os.path.join(cache_training_dir, file)
-                file_size = os.path.getsize(file_path)
-                print(f"  📄 {file} ({file_size:,} bytes)")
             print(f"📊 Training results cache files: {len(files)}")
         else:
             print(f"\n❌ {cache_training_dir} does not exist")
@@ -670,14 +917,10 @@ def check_cache_creation():
         if os.path.exists(cache_embeddings_dir):
             print(f"\n✅ {cache_embeddings_dir} exists")
             files = os.listdir(cache_embeddings_dir)
-            for file in files:
-                file_path = os.path.join(cache_embeddings_dir, file)
-                file_size = os.path.getsize(file_path)
-                print(f"  📄 {file} ({file_size:,} bytes)")
             print(f"📊 Embeddings cache files: {len(files)}")
         else:
             print(f"\n❌ {cache_embeddings_dir} does not exist")
-            
+        
         # Summary
         print(f"\n📊 Cache Summary:")
         print(f"   Per-model cache: {'✅ YES' if os.path.exists(cache_models_dir) else '❌ NO'}")

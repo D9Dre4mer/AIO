@@ -796,12 +796,15 @@ def show_file_preview(df, file_extension):
         """, unsafe_allow_html=True)
 
 def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text):
-    """Train numeric data using project's ModelFactory (models/)"""
+    """Train numeric data using Optuna optimization with cache and cross-validation (ENHANCED)"""
     import time
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
     from sklearn.preprocessing import StandardScaler
-    from sklearn.metrics import accuracy_score
-    from models import model_factory
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from models import model_factory, model_registry
+    from optuna_optimizer import OptunaOptimizer
+    from cache_manager import CacheManager
+    import os
     
     try:
         # Remove duplicates (as in debug_streamlit_pipeline.py)
@@ -861,50 +864,383 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         model_results = {}
         training_times = {}
         
-        with log_container:
-            st.info(f"🤖 Training {len(selected_models)} models...")
+        # Initialize cache manager
+        cache_manager = CacheManager()
         
-        # Train selected models using ModelFactory
+        # Check if Optuna is enabled
+        optuna_enabled = optuna_config.get('enabled', False)
+        
+        with log_container:
+            if optuna_enabled:
+                st.info(f"🎯 Optuna optimization ENABLED for {len(selected_models)} models...")
+                st.info(f"📊 Trials: {optuna_config.get('n_trials', 50)}, Timeout: {optuna_config.get('timeout', 1800)}s")
+                st.info(f"🔄 Cross-validation: 5-fold stratified CV")
+                st.info(f"💾 Cache system: ENABLED")
+            else:
+                st.info(f"🤖 Training {len(selected_models)} models with default parameters...")
+                st.info(f"🔄 Cross-validation: 5-fold stratified CV")
+                st.info(f"💾 Cache system: ENABLED")
+        
+        # Train selected models with Optuna optimization, cache, and cross-validation
         for model_name in selected_models:
             mapped_name = model_name_mapping.get(model_name.lower(), model_name)
             
             try:
                 with log_container:
-                    st.info(f"🔄 Training {model_name}...")
+                    if optuna_enabled:
+                        st.info(f"🎯 Optimizing {model_name} with Optuna + Cache + CV...")
+                    else:
+                        st.info(f"🔄 Training {model_name} with default params + Cache + CV...")
                 
-                # Create model using ModelFactory
-                model = model_factory.create_model(mapped_name)
-                
-                # Train model
                 start_time = time.time()
-                model.fit(X_train_scaled, y_train)
-                training_time = time.time() - start_time
                 
-                # Get sklearn model from wrapper (for ensemble compatibility)
-                sklearn_model = model.model if hasattr(model, 'model') else model
+                # Generate cache identifiers
+                model_key = mapped_name
+                dataset_id = f"numeric_dataset_{len(input_columns)}_features"
+                config_hash = cache_manager.generate_config_hash({
+                    'model': mapped_name,
+                    'preprocessing': 'StandardScaler',
+                    'optuna_enabled': optuna_enabled,
+                    'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
+                    'cv_folds': 5,
+                    'random_state': 42
+                })
+                dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+                    dataset_path="numeric_data_in_memory",
+                    dataset_size=len(df_clean),
+                    num_rows=len(X_train_scaled)
+                )
                 
-                # Predict
-                y_pred = sklearn_model.predict(X_test_scaled)
-                accuracy = accuracy_score(y_test, y_pred)
+                # Check cache first
+                cache_exists, cached_data = cache_manager.check_cache_exists(
+                    model_key, dataset_id, config_hash, dataset_fingerprint
+                )
                 
-                model_results[model_name] = {
-                    'model': sklearn_model,  # Use sklearn model for ensemble
-                    'accuracy': accuracy,
-                    'predictions': y_pred,
-                    'true_labels': y_test,
-                    'training_time': training_time,
-                    'status': 'success'  # Add status field
-                }
+                if cache_exists:
+                    with log_container:
+                        st.info(f"💾 Cache HIT for {model_name}! Loading cached results...")
+                    
+                    # Load full cache data including metrics
+                    try:
+                        full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                        cached_model = full_cache_data.get('model')
+                        cached_metrics = full_cache_data.get('metrics', {})
+                        cached_params = full_cache_data.get('params', {})
+                        
+                        # Recreate model for prediction
+                        if cached_model:
+                            model_class = model_registry.get_model(mapped_name)
+                            if model_class:
+                                final_model = model_class(**cached_params)
+                                final_model.fit(X_train_scaled, y_train)
+                                sklearn_model = final_model.model if hasattr(final_model, 'model') else final_model
+                                
+                                # Predict for current test set
+                                y_pred = sklearn_model.predict(X_test_scaled)
+                                accuracy = accuracy_score(y_test, y_pred)
+                                
+                                model_results[model_name] = {
+                                    'model': sklearn_model,
+                                    'accuracy': accuracy,
+                                    'predictions': y_pred,
+                                    'true_labels': y_test,
+                                    'training_time': 0.0,  # Cached, no training time
+                                    'status': 'success',
+                                    'optuna_used': full_cache_data.get('optuna_used', False),
+                                    'best_params': cached_params,
+                                    'cv_scores': cached_metrics.get('cv_scores', []),
+                                    'cached': True
+                                }
+                                
+                                with log_container:
+                                    st.success(f"✅ {model_name}: {accuracy:.4f} (Cached, CV avg: {cached_metrics.get('cv_mean', 0):.4f})")
+                            else:
+                                raise ValueError(f"Cannot recreate model {mapped_name} from cache")
+                        else:
+                            raise ValueError("Cached model is None")
+                            
+                    except Exception as e:
+                        with log_container:
+                            st.warning(f"⚠️ Error loading cache data: {e}")
+                        # Continue to training
+                        cache_exists = False
+                
+                else:
+                    with log_container:
+                        st.info(f"🔄 Cache MISS for {model_name}! Training with Optuna + CV...")
+                    
+                    # Cache MISS - Train new model
+                    if optuna_enabled:
+                        # Use Optuna optimization with cross-validation
+                        try:
+                            # Get model class from registry
+                            model_class = model_registry.get_model(mapped_name)
+                            if not model_class:
+                                raise ValueError(f"Model {mapped_name} not found in registry")
+                            
+                            # Create Optuna optimizer
+                            optuna_config_standard = {
+                                'trials': optuna_config.get('n_trials', 50),
+                                'timeout': optuna_config.get('timeout', 1800),
+                                'direction': optuna_config.get('direction', 'maximize'),
+                                'metric': optuna_config.get('metric', 'accuracy')
+                            }
+                            
+                            optimizer = OptunaOptimizer(optuna_config_standard)
+                            
+                            # Optimize model
+                            optimization_result = optimizer.optimize_model(
+                                model_name=mapped_name,
+                                model_class=model_class,
+                                X_train=X_train_scaled,
+                                y_train=y_train,
+                                X_val=X_test_scaled,  # Use test set as validation
+                                y_val=y_test
+                            )
+                            
+                            best_score = optimization_result['best_score']
+                            best_params = optimization_result['best_params']
+                            
+                            # Train final model with best parameters
+                            final_model = model_class(**best_params)
+                            final_model.fit(X_train_scaled, y_train)
+                            
+                            # Get sklearn model from wrapper (for ensemble compatibility)
+                            sklearn_model = final_model.model if hasattr(final_model, 'model') else final_model
+                            
+                        except Exception as optuna_error:
+                            with log_container:
+                                st.warning(f"⚠️ Optuna optimization failed for {model_name}: {str(optuna_error)}")
+                                st.info(f"🔄 Falling back to default parameters...")
+                            
+                            # Fallback to default parameters
+                            model = model_factory.create_model(mapped_name)
+                            sklearn_model = model.model if hasattr(model, 'model') else model
+                            best_params = {}
+                            best_score = 0.0
+                    
+                    else:
+                        # Use default parameters
+                        model = model_factory.create_model(mapped_name)
+                        sklearn_model = model.model if hasattr(model, 'model') else model
+                        best_params = {}
+                        best_score = 0.0
+                    
+                    # Perform cross-validation
+                    with log_container:
+                        st.info(f"🔄 Performing 5-fold cross-validation...")
+                    
+                    cv_scores = cross_val_score(
+                        sklearn_model, X_train_scaled, y_train, 
+                        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
+                        scoring='accuracy'
+                    )
+                    
+                    cv_mean = cv_scores.mean()
+                    cv_std = cv_scores.std()
+                    
+                    # Train final model on full training set
+                    sklearn_model.fit(X_train_scaled, y_train)
+                    
+                    # Predict on test set
+                    y_pred = sklearn_model.predict(X_test_scaled)
+                    accuracy = accuracy_score(y_test, y_pred)
+                    
+                    # Calculate additional metrics
+                    f1 = f1_score(y_test, y_pred, average='weighted')
+                    precision = precision_score(y_test, y_pred, average='weighted')
+                    recall = recall_score(y_test, y_pred, average='weighted')
+                    
+                    training_time = time.time() - start_time
+                    
+                    # Prepare metrics for caching
+                    metrics = {
+                        'accuracy': accuracy,
+                        'f1_score': f1,
+                        'precision': precision,
+                        'recall': recall,
+                        'cv_mean': cv_mean,
+                        'cv_std': cv_std,
+                        'cv_scores': cv_scores.tolist()
+                    }
+                    
+                    # Save to cache
+                    try:
+                        cache_path = cache_manager.save_model_cache(
+                            model_key=model_key,
+                            dataset_id=dataset_id,
+                            config_hash=config_hash,
+                            dataset_fingerprint=dataset_fingerprint,
+                            model=sklearn_model,
+                            params=best_params,
+                            metrics=metrics,
+                            config={
+                                'model': mapped_name,
+                                'preprocessing': 'StandardScaler',
+                                'optuna_enabled': optuna_enabled,
+                                'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
+                                'cv_folds': 5,
+                                'random_state': 42
+                            },
+                            feature_names=input_columns,
+                            label_mapping={i: f'class_{i}' for i in sorted(set(y))}
+                        )
+                        
+                        with log_container:
+                            st.info(f"💾 Cache saved for {model_name} at {cache_path}")
+                    
+                    except Exception as cache_error:
+                        with log_container:
+                            st.warning(f"⚠️ Cache save failed for {model_name}: {cache_error}")
+                    
+                    # Store results
+                    model_results[model_name] = {
+                        'model': sklearn_model,
+                        'accuracy': accuracy,
+                        'predictions': y_pred,
+                        'true_labels': y_test,
+                        'training_time': training_time,
+                        'status': 'success',
+                        'optuna_used': optuna_enabled,
+                        'best_params': best_params,
+                        'best_score': best_score,
+                        'cv_scores': cv_scores.tolist(),
+                        'cv_mean': cv_mean,
+                        'cv_std': cv_std,
+                        'f1_score': f1,
+                        'precision': precision,
+                        'recall': recall,
+                        'cached': False
+                    }
+                    
+                    with log_container:
+                        st.success(f"✅ {model_name}: {accuracy:.4f} (CV: {cv_mean:.4f}±{cv_std:.4f}, {training_time:.2f}s)")
+                        if optuna_enabled and best_params:
+                            st.info(f"📊 Best params: {best_params}")
                 
                 training_times[model_name] = training_time
                 
-                with log_container:
-                    st.success(f"✅ {model_name}: {accuracy:.4f} ({training_time:.2f}s)")
-                
             except Exception as e:
-                st.warning(f"⚠️ {model_name} failed: {str(e)}")
+                with log_container:
+                    st.warning(f"⚠️ {model_name} failed: {str(e)}")
                 continue
         
+        # Test Voting Ensemble if enabled
+        if voting_config.get('enabled', False):
+            try:
+                with log_container:
+                    st.info("🗳️ Testing Voting Ensemble...")
+                
+                voting_models = []
+                for model_name in voting_config.get('models', []):
+                    if model_name in model_results:
+                        voting_models.append((model_name.lower(), model_results[model_name]['model']))
+                
+                if voting_models:
+                    from sklearn.ensemble import VotingClassifier
+                    voting_classifier = VotingClassifier(
+                        estimators=voting_models,
+                        voting=voting_config.get('voting_method', 'hard')
+                    )
+                    
+                    voting_classifier.fit(X_train_scaled, y_train)
+                    y_pred_voting = voting_classifier.predict(X_test_scaled)
+                    accuracy_voting = accuracy_score(y_test, y_pred_voting)
+                    
+                    model_results['voting_ensemble'] = {
+                        'model': voting_classifier,
+                        'accuracy': accuracy_voting,
+                        'predictions': y_pred_voting,
+                        'true_labels': y_test,
+                        'training_time': 0.0,
+                        'status': 'success',
+                        'optuna_used': False,
+                        'ensemble_type': 'voting'
+                    }
+                    
+                    with log_container:
+                        st.success(f"✅ Voting Ensemble: {accuracy_voting:.4f}")
+                else:
+                    with log_container:
+                        st.warning("⚠️ No models available for voting ensemble")
+            
+            except Exception as e:
+                with log_container:
+                    st.warning(f"⚠️ Voting ensemble failed: {str(e)}")
+        
+        # Test Stacking Ensemble if enabled
+        if stacking_config.get('enabled', False):
+            try:
+                with log_container:
+                    st.info("🏗️ Testing Stacking Ensemble...")
+                
+                stacking_models = []
+                for model_name in stacking_config.get('base_models', []):
+                    if model_name in model_results:
+                        stacking_models.append((model_name.lower(), model_results[model_name]['model']))
+                
+                if stacking_models:
+                    from sklearn.ensemble import StackingClassifier
+                    from sklearn.linear_model import LogisticRegression
+                    
+                    meta_learner = LogisticRegression()
+                    stacking_classifier = StackingClassifier(
+                        estimators=stacking_models,
+                        final_estimator=meta_learner,
+                        cv=stacking_config.get('cv_folds', 5)
+                    )
+                    
+                    stacking_classifier.fit(X_train_scaled, y_train)
+                    y_pred_stacking = stacking_classifier.predict(X_test_scaled)
+                    accuracy_stacking = accuracy_score(y_test, y_pred_stacking)
+                    
+                    model_results['stacking_ensemble'] = {
+                        'model': stacking_classifier,
+                        'accuracy': accuracy_stacking,
+                        'predictions': y_pred_stacking,
+                        'true_labels': y_test,
+                        'training_time': 0.0,
+                        'status': 'success',
+                        'optuna_used': False,
+                        'ensemble_type': 'stacking'
+                    }
+                    
+                    with log_container:
+                        st.success(f"✅ Stacking Ensemble: {accuracy_stacking:.4f}")
+                else:
+                    with log_container:
+                        st.warning("⚠️ No models available for stacking ensemble")
+            
+            except Exception as e:
+                with log_container:
+                    st.warning(f"⚠️ Stacking ensemble failed: {str(e)}")
+        
+        # Return results in the same format as original function
+        return {
+            'status': 'success',
+            'model_results': model_results,
+            'training_times': training_times,
+            'data_info': {
+                'original_size': original_size,
+                'clean_size': clean_size,
+                'features': len(input_columns),
+                'classes': len(set(y)),
+                'train_size': len(X_train),
+                'test_size': len(X_test)
+            },
+            'cache_enabled': True,
+            'cv_enabled': True,
+            'optuna_enabled': optuna_enabled
+        }
+        
+    except Exception as e:
+        st.error(f"❌ Training failed: {str(e)}")
+        return {
+            'status': 'failed',
+            'error': str(e),
+            'model_results': {},
+            'training_times': {}
+        }
         # Test Voting Ensemble if enabled
         if voting_config.get('enabled', False):
             try:

@@ -153,6 +153,50 @@ class EnsembleStackingClassifier:
         
         return self.stacking_classifier
     
+    def get_params(self, deep=True):
+        """
+        Get parameters for this estimator (scikit-learn compatibility)
+        
+        Args:
+            deep: If True, return parameters for sub-objects
+            
+        Returns:
+            Dictionary of parameters
+        """
+        return {
+            'base_models': self.base_models,
+            'final_estimator': self.final_estimator,
+            'cv_folds': self.cv_folds,
+            'random_state': self.random_state
+        }
+    
+    def set_params(self, **params):
+        """
+        Set parameters for this estimator (scikit-learn compatibility)
+        
+        Args:
+            **params: Parameters to set
+            
+        Returns:
+            Self for method chaining
+        """
+        for key, value in params.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        return self
+    
+    def create_stacking_classifier(self, base_estimators: List[Tuple[str, Any]]):
+        """
+        Create the stacking classifier (alias for create_ensemble_classifier)
+        
+        Args:
+            base_estimators: List of (name, estimator) tuples
+            
+        Returns:
+            Configured ensemble classifier
+        """
+        return self.create_ensemble_classifier(base_estimators)
+    
     def fit(self, X: np.ndarray, y: np.ndarray) -> 'EnsembleStackingClassifier':
         """
         Fit the stacking classifier
@@ -165,7 +209,23 @@ class EnsembleStackingClassifier:
             Self for method chaining
         """
         if self.stacking_classifier is None:
-            raise ValueError("Stacking classifier not created. Call create_stacking_classifier first.")
+            # Auto-create stacking classifier if not exists (for cross_val_score compatibility)
+            print("⚠️ Auto-creating stacking classifier for cross-validation...")
+            
+            # Create base estimators if not exists
+            if not self.base_estimators:
+                from models import model_registry
+                self.base_estimators = []
+                for model_name_base in self.base_models:
+                    try:
+                        model_class_base = model_registry.get_model(model_name_base)
+                        if model_class_base:
+                            model_instance_base = model_class_base()
+                            self.base_estimators.append((model_name_base, model_instance_base))
+                    except Exception as e:
+                        print(f"⚠️ Error creating {model_name_base}: {e}")
+            
+            self.create_ensemble_classifier(self.base_estimators)
         
         print("🚀 Training stacking classifier...")
         
