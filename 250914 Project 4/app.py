@@ -1018,7 +1018,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
     return scaler_results
 
 
-def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None, remove_duplicates=False):
+def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None, remove_duplicates=False, data_split_config=None):
     """Train numeric data using Optuna optimization with cache and cross-validation (ENHANCED)"""
     import time
     from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
@@ -1071,10 +1071,23 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             st.info(f"📊 Features: {len(input_columns)}, Samples: {len(X)}, Classes: {len(set(y))}")
         
         # Split data into train/validation/test (3-way split to avoid data leakage)
-        # First split: 60% train, 40% temp
-        X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42, stratify=y)
-        # Second split: 20% validation, 20% test
-        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
+        if data_split_config:
+            train_ratio = data_split_config['train_ratio']
+            val_ratio = data_split_config['val_ratio']
+            test_ratio = data_split_config['test_ratio']
+        else:
+            # Default: 80% train, 10% val, 10% test
+            train_ratio = 0.8
+            val_ratio = 0.1
+            test_ratio = 0.1
+        
+        # First split: train vs (val + test)
+        val_test_ratio = val_ratio + test_ratio
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=val_test_ratio, random_state=42, stratify=y)
+        
+        # Second split: val vs test
+        val_ratio_in_temp = val_ratio / val_test_ratio
+        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=(1-val_ratio_in_temp), random_state=42, stratify=y_temp)
         
         with log_container:
             st.info(f"📊 Train: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
@@ -1419,6 +1432,31 @@ def render_step4_wireframe():
     df = step1_data['dataframe']
     st.info(f"📊 **Dataset**: {df.shape[0]:,} samples × {df.shape[1]} columns")
     
+    # Data Split Configuration
+    st.subheader("📊 Data Split Configuration")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        train_ratio = st.slider("🚂 Train (%)", 50, 90, 80, 5)
+    with col2:
+        val_ratio = st.slider("🔍 Val (%)", 5, 30, 10, 5)
+    with col3:
+        test_ratio = st.slider("🧪 Test (%)", 5, 30, 10, 5)
+    
+    # Validate and display
+    total = train_ratio + val_ratio + test_ratio
+    if total != 100:
+        st.warning(f"⚠️ Total: {total}% (should be 100%)")
+    else:
+        st.success(f"✅ Split: {train_ratio}%/{val_ratio}%/{test_ratio}%")
+    
+    # Store configuration
+    data_split_config = {
+        'train_ratio': train_ratio / 100,
+        'val_ratio': val_ratio / 100,
+        'test_ratio': test_ratio / 100
+    }
+    
     # Display configurations
     st.subheader("📋 Configuration Summary")
     
@@ -1591,7 +1629,7 @@ def render_step4_wireframe():
                     st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False))
+                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
                 else:
                     # For text data: use execute_streamlit_training
                     st.info("📝 Using execute_streamlit_training for text data...")
@@ -3303,6 +3341,31 @@ def render_step4_wireframe():
     df = step1_data['dataframe']
     st.info(f"📊 **Dataset**: {df.shape[0]:,} samples × {df.shape[1]} columns")
     
+    # Data Split Configuration
+    st.subheader("📊 Data Split Configuration")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        train_ratio = st.slider("🚂 Train (%)", 50, 90, 80, 5)
+    with col2:
+        val_ratio = st.slider("🔍 Val (%)", 5, 30, 10, 5)
+    with col3:
+        test_ratio = st.slider("🧪 Test (%)", 5, 30, 10, 5)
+    
+    # Validate and display
+    total = train_ratio + val_ratio + test_ratio
+    if total != 100:
+        st.warning(f"⚠️ Total: {total}% (should be 100%)")
+    else:
+        st.success(f"✅ Split: {train_ratio}%/{val_ratio}%/{test_ratio}%")
+    
+    # Store configuration
+    data_split_config = {
+        'train_ratio': train_ratio / 100,
+        'val_ratio': val_ratio / 100,
+        'test_ratio': test_ratio / 100
+    }
+    
     # Display configurations
     st.subheader("📋 Configuration Summary")
     
@@ -3475,7 +3538,7 @@ def render_step4_wireframe():
                     st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False))
+                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
                 else:
                     # For text data: use execute_streamlit_training
                     st.info("📝 Using execute_streamlit_training for text data...")
