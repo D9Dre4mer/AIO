@@ -1018,7 +1018,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
     return scaler_results
 
 
-def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None):
+def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None, remove_duplicates=False):
     """Train numeric data using Optuna optimization with cache and cross-validation (ENHANCED)"""
     import time
     from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
@@ -1034,18 +1034,26 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         numeric_scalers = ['StandardScaler']
     
     try:
-        # Remove duplicates (as in debug_streamlit_pipeline.py)
+        # Handle duplicates based on user setting
         original_size = len(df)
-        df_clean = df.drop_duplicates()
-        clean_size = len(df_clean)
+        if remove_duplicates:
+            df_clean = df.drop_duplicates()
+            clean_size = len(df_clean)
+        else:
+            df_clean = df
+            clean_size = original_size
         
         # Create logging container
         log_container = st.expander("📋 Training Log", expanded=False)
         
         with log_container:
-            if original_size != clean_size:
+            if remove_duplicates and original_size != clean_size:
                 st.info(f"🧹 Removed {original_size - clean_size} duplicate rows ({original_size - clean_size}/{original_size} = {(original_size - clean_size)/original_size*100:.1f}%)")
                 st.info(f"📊 Training on {clean_size} unique samples (from {original_size} total)")
+            elif remove_duplicates:
+                st.info(f"📊 No duplicates found - training on all {clean_size} samples")
+            else:
+                st.info(f"📊 Keeping all {clean_size} samples (including duplicates)")
             
             st.info(f"📋 Using label column: '{label_column}'")
             st.info(f"📋 Using input columns: {input_columns}")
@@ -1583,7 +1591,7 @@ def render_step4_wireframe():
                     st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers)
+                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False))
                 else:
                     # For text data: use execute_streamlit_training
                     st.info("📝 Using execute_streamlit_training for text data...")
@@ -2548,6 +2556,29 @@ def render_multi_input_section():
                     key="multi_input_text_encoding",
                     help="Choose encoding method for text features"
                 )
+            
+            with col2:
+                remove_duplicates = st.checkbox(
+                    "🗑️ Remove Duplicates",
+                    value=False,  # Default to False (keep duplicates like auto_train files)
+                    key="multi_input_remove_duplicates",
+                    help="Remove duplicate rows from dataset. Warning: This may significantly reduce dataset size and affect model performance."
+                )
+                
+                if remove_duplicates:
+                    # Show duplicate analysis
+                    duplicates = df.duplicated()
+                    duplicate_count = duplicates.sum()
+                    duplicate_percentage = duplicate_count / len(df) * 100
+                    
+                    st.info(f"📊 Found {duplicate_count} duplicate rows ({duplicate_percentage:.1f}% of dataset)")
+                    
+                    if duplicate_percentage > 50:
+                        st.warning("⚠️ High duplicate percentage detected! Removing duplicates may significantly reduce dataset size.")
+                    elif duplicate_percentage > 20:
+                        st.info("ℹ️ Moderate duplicate percentage detected.")
+                    else:
+                        st.success("✅ Low duplicate percentage - safe to remove.")
                 
                 outlier_detection = st.checkbox(
                     "🔍 Outlier Detection",
@@ -2575,6 +2606,7 @@ def render_multi_input_section():
                     'text_encoding': text_encoding,
                     'missing_strategy': missing_strategy,
                     'outlier_detection': outlier_detection,
+                    'remove_duplicates': remove_duplicates,
                     'processed': True
                 }
                 
@@ -3443,7 +3475,7 @@ def render_step4_wireframe():
                     st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers)
+                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False))
                 else:
                     # For text data: use execute_streamlit_training
                     st.info("📝 Using execute_streamlit_training for text data...")
