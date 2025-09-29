@@ -33,7 +33,8 @@ class CatBoostModel(BaseModel):
             'border_count': 128,
             'random_seed': 42,
             'train_dir': None,  # Disable training directory logging
-            'logging_level': 'Silent'  # Disable verbose logging (removed verbose=False)
+            'logging_level': 'Silent',  # Disable verbose logging
+            'allow_writing_files': False  # Completely disable file writing (prevents catboost_info/)
         }
         
         # Configure GPU/CPU based on device policy

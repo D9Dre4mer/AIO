@@ -795,16 +795,243 @@ def show_file_preview(df, file_extension):
         </div>
         """, unsafe_allow_html=True)
 
-def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text):
+def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, selected_models, optuna_config, scaler_name, log_container):
+    """Train models with specific scaling method using proper train/val/test split and cache system"""
+    from sklearn.model_selection import cross_val_score, StratifiedKFold
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from models import model_factory, model_registry
+    from optuna_optimizer import OptunaOptimizer
+    from cache_manager import CacheManager
+    import time
+    import os
+    
+    model_name_mapping = {
+        'random_forest': 'random_forest',
+        'xgboost': 'xgboost', 
+        'lightgbm': 'lightgbm',
+        'catboost': 'catboost',
+        'decision_tree': 'decision_tree',
+        'knn': 'knn',
+        'naive_bayes': 'naive_bayes',
+        'svm': 'svm',
+        'logistic_regression': 'logistic_regression',
+        'adaboost': 'adaboost',
+        'gradient_boosting': 'gradient_boosting'
+    }
+    
+    scaler_results = {}
+    optuna_enabled = optuna_config.get('enabled', False)
+    
+    # Initialize cache manager
+    cache_manager = CacheManager()
+    
+    with log_container:
+        st.info(f"🤖 Training {len(selected_models)} models with {scaler_name} scaling")
+    
+    for model_name in selected_models:
+        try:
+            with log_container:
+                st.info(f"🔄 Training {model_name} with {scaler_name}...")
+            
+            # Map model name
+            mapped_name = model_name_mapping.get(model_name, model_name)
+            
+            # Generate cache identifiers
+            model_key = mapped_name
+            dataset_id = f"numeric_dataset_{scaler_name}"
+            config_hash = cache_manager.generate_config_hash({
+                'model': mapped_name,
+                'preprocessing': scaler_name,
+                'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
+                'random_state': 42
+            })
+            dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+                dataset_path="numeric_data_in_memory",
+                dataset_size=len(X_train_scaled),
+                num_rows=len(X_train_scaled)
+            )
+            
+            # Check cache first
+            cache_exists, cached_data = cache_manager.check_cache_exists(
+                model_key, dataset_id, config_hash, dataset_fingerprint
+            )
+            
+            if cache_exists:
+                # Load from cache
+                try:
+                    full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                    cached_metrics = full_cache_data.get('metrics', {})
+                    
+                    with log_container:
+                        st.success(f"💾 Cache hit! Loading {model_name} ({scaler_name}) from cache")
+                    
+                    scaler_results[model_name] = {
+                        'model': full_cache_data.get('model'),
+                        'accuracy': cached_metrics.get('accuracy', 0.0),
+                        'validation_accuracy': cached_metrics.get('validation_accuracy', 0.0),
+                        'f1_score': cached_metrics.get('f1_score', 0.0),
+                        'precision': cached_metrics.get('precision', 0.0),
+                        'recall': cached_metrics.get('recall', 0.0),
+                        'cv_mean': cached_metrics.get('cv_mean', 0.0),
+                        'cv_std': cached_metrics.get('cv_std', 0.0),
+                        'training_time': 0.0,  # Cached, no training time
+                        'params': full_cache_data.get('params', {}),
+                        'status': 'success',
+                        'cached': True
+                    }
+                    continue
+                except Exception as cache_error:
+                    with log_container:
+                        st.warning(f"⚠️ Cache load failed for {model_name}: {cache_error}")
+                    # Continue to training
+            
+            # Cache miss - train new model
+            with log_container:
+                st.info(f"🔄 Cache miss! Training {model_name} ({scaler_name})...")
+            
+            # Create model using factory
+            model = model_factory.create_model(mapped_name)
+            if model is None:
+                with log_container:
+                    st.error(f"❌ Failed to create model: {mapped_name}")
+                continue
+            
+            start_time = time.time()
+            
+            if optuna_enabled:
+                # Use Optuna optimization
+                optimizer = OptunaOptimizer(optuna_config)
+                optimization_result = optimizer.optimize_model(
+                    model_name=mapped_name,
+                    model_class=model.__class__,
+                    X_train=X_train_scaled,
+                    y_train=y_train,
+                    X_val=X_val_scaled,  # Use validation set for Optuna
+                    y_val=y_val
+                )
+                
+                best_params = optimization_result['best_params']
+                best_score = optimization_result['best_score']
+                
+                # Train final model with best params
+                final_model = model_factory.create_model(mapped_name)
+                final_model.set_params(**best_params)
+                final_model.fit(X_train_scaled, y_train)
+                
+            else:
+                # Train without optimization
+                model.fit(X_train_scaled, y_train)
+                final_model = model
+                best_params = {}
+                best_score = model.score(X_val_scaled, y_val)  # Use validation set for scoring
+            
+            end_time = time.time()
+            training_time = end_time - start_time
+            
+            # Skip cross-validation to avoid double validation
+            # Optuna already provides validation, CV would be redundant
+            cv_mean = best_score  # Use validation score as CV estimate
+            cv_std = 0.0  # No CV std available
+            
+            # Final evaluation on test set (unseen data)
+            y_pred = final_model.predict(X_test_scaled)
+            test_accuracy = accuracy_score(y_test, y_pred)
+            f1 = f1_score(y_test, y_pred, average='weighted')
+            precision = precision_score(y_test, y_pred, average='weighted')
+            recall = recall_score(y_test, y_pred, average='weighted')
+            
+            scaler_results[model_name] = {
+                'model': final_model,
+                'accuracy': test_accuracy,  # Use test accuracy as final metric
+                'validation_accuracy': best_score,  # Keep validation accuracy for reference
+                'f1_score': f1,
+                'precision': precision,
+                'recall': recall,
+                'cv_mean': cv_mean,  # Validation score (no double validation)
+                'cv_std': cv_std,    # No CV std (avoid double validation)
+                'training_time': training_time,
+                'params': best_params,
+                'status': 'success',
+                'cached': False
+            }
+            
+            # Save to cache
+            try:
+                metrics = {
+                    'accuracy': test_accuracy,
+                    'validation_accuracy': best_score,
+                    'f1_score': f1,
+                    'precision': precision,
+                    'recall': recall,
+                    'cv_mean': cv_mean,
+                    'cv_std': cv_std
+                }
+                
+                cache_config = {
+                    'model': mapped_name,
+                    'preprocessing': scaler_name,
+                    'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
+                    'random_state': 42,
+                    'test_size': 0.2
+                }
+                
+                cache_path = cache_manager.save_model_cache(
+                    model_key=model_key,
+                    dataset_id=dataset_id,
+                    config_hash=config_hash,
+                    dataset_fingerprint=dataset_fingerprint,
+                    model=final_model,
+                    params=best_params,
+                    metrics=metrics,
+                    config=cache_config,
+                    feature_names=[f"feature_{i}" for i in range(X_train_scaled.shape[1])],
+                    label_mapping={i: f"class_{i}" for i in range(len(set(y_train)))}
+                )
+                
+                with log_container:
+                    st.success(f"💾 Cache saved for {model_name} ({scaler_name})")
+                    
+            except Exception as cache_error:
+                with log_container:
+                    st.warning(f"⚠️ Cache save failed for {model_name}: {cache_error}")
+            
+            with log_container:
+                st.success(f"✅ {model_name} ({scaler_name}): Val={best_score:.4f}, Test={test_accuracy:.4f} ({training_time:.2f}s)")
+            
+        except Exception as e:
+            with log_container:
+                st.error(f"❌ {model_name} ({scaler_name}) failed: {str(e)}")
+            scaler_results[model_name] = {
+                'model': None,
+                'accuracy': 0.0,
+                'f1_score': 0.0,
+                'precision': 0.0,
+                'recall': 0.0,
+                'cv_mean': 0.0,
+                'cv_std': 0.0,
+                'training_time': 0.0,
+                'params': {},
+                'status': 'failed',
+                'error': str(e)
+            }
+    
+    return scaler_results
+
+
+def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None):
     """Train numeric data using Optuna optimization with cache and cross-validation (ENHANCED)"""
     import time
     from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
     from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
     from models import model_factory, model_registry
     from optuna_optimizer import OptunaOptimizer
     from cache_manager import CacheManager
     import os
+    
+    # Default scaling methods if not provided
+    if numeric_scalers is None:
+        numeric_scalers = ['StandardScaler']
     
     try:
         # Remove duplicates (as in debug_streamlit_pipeline.py)
@@ -835,385 +1062,63 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         with log_container:
             st.info(f"📊 Features: {len(input_columns)}, Samples: {len(X)}, Classes: {len(set(y))}")
         
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        # Scale features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
+        # Split data into train/validation/test (3-way split to avoid data leakage)
+        # First split: 60% train, 40% temp
+        X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=0.4, random_state=42, stratify=y)
+        # Second split: 20% validation, 20% test
+        X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp)
         
         with log_container:
-            st.info(f"📊 Train: {len(X_train)}, Test: {len(X_test)}")
+            st.info(f"📊 Train: {len(X_train)}, Validation: {len(X_val)}, Test: {len(X_test)}")
+            st.info(f"🔧 Scaling methods: {', '.join(numeric_scalers)}")
+            st.info(f"✅ Using 3-way split to prevent data leakage")
         
-        # Use project's ModelFactory to create models
-        model_name_mapping = {
-            'random_forest': 'random_forest',
-            'xgboost': 'xgboost', 
-            'lightgbm': 'lightgbm',
-            'catboost': 'catboost',
-            'decision_tree': 'decision_tree',
-            'knn': 'knn',
-            'naive_bayes': 'naive_bayes',
-            'svm': 'svm',
-            'logistic_regression': 'logistic_regression',
-            'adaboost': 'adaboost',
-            'gradient_boosting': 'gradient_boosting'
-        }
-        
+        # Train models with multiple scaling methods (like auto_train_heart_dataset.py)
         model_results = {}
         training_times = {}
         
-        # Initialize cache manager
-        cache_manager = CacheManager()
-        
-        # Check if Optuna is enabled
-        optuna_enabled = optuna_config.get('enabled', False)
-        
-        with log_container:
-            if optuna_enabled:
-                st.info(f"🎯 Optuna optimization ENABLED for {len(selected_models)} models...")
-                st.info(f"📊 Trials: {optuna_config.get('n_trials', 50)}, Timeout: {optuna_config.get('timeout', 1800)}s")
-                st.info(f"🔄 Cross-validation: 5-fold stratified CV")
-                st.info(f"💾 Cache system: ENABLED")
+        # Process each scaling method
+        for scaler_name in numeric_scalers:
+            with log_container:
+                st.info(f"🔧 Processing scaling method: {scaler_name}")
+            
+            # Apply scaling
+            if scaler_name == 'StandardScaler':
+                scaler = StandardScaler()
+            elif scaler_name == 'MinMaxScaler':
+                scaler = MinMaxScaler()
+            elif scaler_name == 'RobustScaler':
+                scaler = RobustScaler()
+            elif scaler_name == 'None':
+                scaler = None
             else:
-                st.info(f"🤖 Training {len(selected_models)} models with default parameters...")
-                st.info(f"🔄 Cross-validation: 5-fold stratified CV")
-                st.info(f"💾 Cache system: ENABLED")
-        
-        # Train selected models with Optuna optimization, cache, and cross-validation
-        for model_name in selected_models:
-            mapped_name = model_name_mapping.get(model_name.lower(), model_name)
+                with log_container:
+                    st.warning(f"⚠️ Unknown scaler: {scaler_name}, using StandardScaler")
+                scaler = StandardScaler()
             
-            try:
-                with log_container:
-                    if optuna_enabled:
-                        st.info(f"🎯 Optimizing {model_name} with Optuna + Cache + CV...")
-                    else:
-                        st.info(f"🔄 Training {model_name} with default params + Cache + CV...")
-                
-                start_time = time.time()
-                
-                # Generate cache identifiers
-                model_key = mapped_name
-                dataset_id = f"numeric_dataset_{len(input_columns)}_features"
-                config_hash = cache_manager.generate_config_hash({
-                    'model': mapped_name,
-                    'preprocessing': 'StandardScaler',
-                    'optuna_enabled': optuna_enabled,
-                    'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
-                    'cv_folds': 5,
-                    'random_state': 42
-                })
-                dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
-                    dataset_path="numeric_data_in_memory",
-                    dataset_size=len(df_clean),
-                    num_rows=len(X_train_scaled)
-                )
-                
-                # Check cache first
-                cache_exists, cached_data = cache_manager.check_cache_exists(
-                    model_key, dataset_id, config_hash, dataset_fingerprint
-                )
-                
-                if cache_exists:
-                    with log_container:
-                        st.info(f"💾 Cache HIT for {model_name}! Loading cached results...")
-                    
-                    # Load full cache data including metrics
-                    try:
-                        full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
-                        cached_model = full_cache_data.get('model')
-                        cached_metrics = full_cache_data.get('metrics', {})
-                        cached_params = full_cache_data.get('params', {})
-                        
-                        # Recreate model for prediction
-                        if cached_model:
-                            model_class = model_registry.get_model(mapped_name)
-                            if model_class:
-                                final_model = model_class(**cached_params)
-                                final_model.fit(X_train_scaled, y_train)
-                                sklearn_model = final_model.model if hasattr(final_model, 'model') else final_model
-                                
-                                # Predict for current test set
-                                y_pred = sklearn_model.predict(X_test_scaled)
-                                accuracy = accuracy_score(y_test, y_pred)
-                                
-                                model_results[model_name] = {
-                                    'model': sklearn_model,
-                                    'accuracy': accuracy,
-                                    'predictions': y_pred,
-                                    'true_labels': y_test,
-                                    'training_time': 0.0,  # Cached, no training time
-                                    'status': 'success',
-                                    'optuna_used': full_cache_data.get('optuna_used', False),
-                                    'best_params': cached_params,
-                                    'cv_scores': cached_metrics.get('cv_scores', []),
-                                    'cached': True
-                                }
-                                
-                                with log_container:
-                                    st.success(f"✅ {model_name}: {accuracy:.4f} (Cached, CV avg: {cached_metrics.get('cv_mean', 0):.4f})")
-                            else:
-                                raise ValueError(f"Cannot recreate model {mapped_name} from cache")
-                        else:
-                            raise ValueError("Cached model is None")
-                            
-                    except Exception as e:
-                        with log_container:
-                            st.warning(f"⚠️ Error loading cache data: {e}")
-                        # Continue to training
-                        cache_exists = False
-                
-                else:
-                    with log_container:
-                        st.info(f"🔄 Cache MISS for {model_name}! Training with Optuna + CV...")
-                    
-                    # Cache MISS - Train new model
-                    if optuna_enabled:
-                        # Use Optuna optimization with cross-validation
-                        try:
-                            # Get model class from registry
-                            model_class = model_registry.get_model(mapped_name)
-                            if not model_class:
-                                raise ValueError(f"Model {mapped_name} not found in registry")
-                            
-                            # Create Optuna optimizer
-                            optuna_config_standard = {
-                                'trials': optuna_config.get('n_trials', 50),
-                                'timeout': optuna_config.get('timeout', 1800),
-                                'direction': optuna_config.get('direction', 'maximize'),
-                                'metric': optuna_config.get('metric', 'accuracy')
-                            }
-                            
-                            optimizer = OptunaOptimizer(optuna_config_standard)
-                            
-                            # Optimize model
-                            optimization_result = optimizer.optimize_model(
-                                model_name=mapped_name,
-                                model_class=model_class,
-                                X_train=X_train_scaled,
-                                y_train=y_train,
-                                X_val=X_test_scaled,  # Use test set as validation
-                                y_val=y_test
-                            )
-                            
-                            best_score = optimization_result['best_score']
-                            best_params = optimization_result['best_params']
-                            
-                            # Train final model with best parameters
-                            final_model = model_class(**best_params)
-                            final_model.fit(X_train_scaled, y_train)
-                            
-                            # Get sklearn model from wrapper (for ensemble compatibility)
-                            sklearn_model = final_model.model if hasattr(final_model, 'model') else final_model
-                            
-                        except Exception as optuna_error:
-                            with log_container:
-                                st.warning(f"⚠️ Optuna optimization failed for {model_name}: {str(optuna_error)}")
-                                st.info(f"🔄 Falling back to default parameters...")
-                            
-                            # Fallback to default parameters
-                            model = model_factory.create_model(mapped_name)
-                            sklearn_model = model.model if hasattr(model, 'model') else model
-                            best_params = {}
-                            best_score = 0.0
-                    
-                    else:
-                        # Use default parameters
-                        model = model_factory.create_model(mapped_name)
-                        sklearn_model = model.model if hasattr(model, 'model') else model
-                        best_params = {}
-                        best_score = 0.0
-                    
-                    # Perform cross-validation
-                    with log_container:
-                        st.info(f"🔄 Performing 5-fold cross-validation...")
-                    
-                    cv_scores = cross_val_score(
-                        sklearn_model, X_train_scaled, y_train, 
-                        cv=StratifiedKFold(n_splits=5, shuffle=True, random_state=42),
-                        scoring='accuracy'
-                    )
-                    
-                    cv_mean = cv_scores.mean()
-                    cv_std = cv_scores.std()
-                    
-                    # Train final model on full training set
-                    sklearn_model.fit(X_train_scaled, y_train)
-                    
-                    # Predict on test set
-                    y_pred = sklearn_model.predict(X_test_scaled)
-                    accuracy = accuracy_score(y_test, y_pred)
-                    
-                    # Calculate additional metrics
-                    f1 = f1_score(y_test, y_pred, average='weighted')
-                    precision = precision_score(y_test, y_pred, average='weighted')
-                    recall = recall_score(y_test, y_pred, average='weighted')
-                    
-                    training_time = time.time() - start_time
-                    
-                    # Prepare metrics for caching
-                    metrics = {
-                        'accuracy': accuracy,
-                        'f1_score': f1,
-                        'precision': precision,
-                        'recall': recall,
-                        'cv_mean': cv_mean,
-                        'cv_std': cv_std,
-                        'cv_scores': cv_scores.tolist()
-                    }
-                    
-                    # Save to cache
-                    try:
-                        cache_path = cache_manager.save_model_cache(
-                            model_key=model_key,
-                            dataset_id=dataset_id,
-                            config_hash=config_hash,
-                            dataset_fingerprint=dataset_fingerprint,
-                            model=sklearn_model,
-                            params=best_params,
-                            metrics=metrics,
-                            config={
-                                'model': mapped_name,
-                                'preprocessing': 'StandardScaler',
-                                'optuna_enabled': optuna_enabled,
-                                'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
-                                'cv_folds': 5,
-                                'random_state': 42
-                            },
-                            feature_names=input_columns,
-                            label_mapping={i: f'class_{i}' for i in sorted(set(y))}
-                        )
-                        
-                        with log_container:
-                            st.info(f"💾 Cache saved for {model_name} at {cache_path}")
-                    
-                    except Exception as cache_error:
-                        with log_container:
-                            st.warning(f"⚠️ Cache save failed for {model_name}: {cache_error}")
-                    
-                    # Store results
-                    model_results[model_name] = {
-                        'model': sklearn_model,
-                        'accuracy': accuracy,
-                        'predictions': y_pred,
-                        'true_labels': y_test,
-                        'training_time': training_time,
-                        'status': 'success',
-                        'optuna_used': optuna_enabled,
-                        'best_params': best_params,
-                        'best_score': best_score,
-                        'cv_scores': cv_scores.tolist(),
-                        'cv_mean': cv_mean,
-                        'cv_std': cv_std,
-                        'f1_score': f1,
-                        'precision': precision,
-                        'recall': recall,
-                        'cached': False
-                    }
-                    
-                    with log_container:
-                        st.success(f"✅ {model_name}: {accuracy:.4f} (CV: {cv_mean:.4f}±{cv_std:.4f}, {training_time:.2f}s)")
-                        if optuna_enabled and best_params:
-                            st.info(f"📊 Best params: {best_params}")
-                
-                training_times[model_name] = training_time
-                
-            except Exception as e:
-                with log_container:
-                    st.warning(f"⚠️ {model_name} failed: {str(e)}")
-                continue
-        
-        # Test Voting Ensemble if enabled
-        if voting_config.get('enabled', False):
-            try:
-                with log_container:
-                    st.info("🗳️ Testing Voting Ensemble...")
-                
-                voting_models = []
-                for model_name in voting_config.get('models', []):
-                    if model_name in model_results:
-                        voting_models.append((model_name.lower(), model_results[model_name]['model']))
-                
-                if voting_models:
-                    from sklearn.ensemble import VotingClassifier
-                    voting_classifier = VotingClassifier(
-                        estimators=voting_models,
-                        voting=voting_config.get('voting_method', 'hard')
-                    )
-                    
-                    voting_classifier.fit(X_train_scaled, y_train)
-                    y_pred_voting = voting_classifier.predict(X_test_scaled)
-                    accuracy_voting = accuracy_score(y_test, y_pred_voting)
-                    
-                    model_results['voting_ensemble'] = {
-                        'model': voting_classifier,
-                        'accuracy': accuracy_voting,
-                        'predictions': y_pred_voting,
-                        'true_labels': y_test,
-                        'training_time': 0.0,
-                        'status': 'success',
-                        'optuna_used': False,
-                        'ensemble_type': 'voting'
-                    }
-                    
-                    with log_container:
-                        st.success(f"✅ Voting Ensemble: {accuracy_voting:.4f}")
-                else:
-                    with log_container:
-                        st.warning("⚠️ No models available for voting ensemble")
+            if scaler is not None:
+                X_train_scaled = scaler.fit_transform(X_train)
+                X_val_scaled = scaler.transform(X_val)
+                X_test_scaled = scaler.transform(X_test)
+            else:
+                X_train_scaled = X_train
+                X_val_scaled = X_val
+                X_test_scaled = X_test
             
-            except Exception as e:
-                with log_container:
-                    st.warning(f"⚠️ Voting ensemble failed: {str(e)}")
-        
-        # Test Stacking Ensemble if enabled
-        if stacking_config.get('enabled', False):
-            try:
-                with log_container:
-                    st.info("🏗️ Testing Stacking Ensemble...")
-                
-                stacking_models = []
-                for model_name in stacking_config.get('base_models', []):
-                    if model_name in model_results:
-                        stacking_models.append((model_name.lower(), model_results[model_name]['model']))
-                
-                if stacking_models:
-                    from sklearn.ensemble import StackingClassifier
-                    from sklearn.linear_model import LogisticRegression
-                    
-                    meta_learner = LogisticRegression()
-                    stacking_classifier = StackingClassifier(
-                        estimators=stacking_models,
-                        final_estimator=meta_learner,
-                        cv=stacking_config.get('cv_folds', 5)
-                    )
-                    
-                    stacking_classifier.fit(X_train_scaled, y_train)
-                    y_pred_stacking = stacking_classifier.predict(X_test_scaled)
-                    accuracy_stacking = accuracy_score(y_test, y_pred_stacking)
-                    
-                    model_results['stacking_ensemble'] = {
-                        'model': stacking_classifier,
-                        'accuracy': accuracy_stacking,
-                        'predictions': y_pred_stacking,
-                        'true_labels': y_test,
-                        'training_time': 0.0,
-                        'status': 'success',
-                        'optuna_used': False,
-                        'ensemble_type': 'stacking'
-                    }
-                    
-                    with log_container:
-                        st.success(f"✅ Stacking Ensemble: {accuracy_stacking:.4f}")
-                else:
-                    with log_container:
-                        st.warning("⚠️ No models available for stacking ensemble")
+            with log_container:
+                st.info(f"✅ Applied {scaler_name} scaling")
             
-            except Exception as e:
-                with log_container:
-                    st.warning(f"⚠️ Stacking ensemble failed: {str(e)}")
+            # Train models with this scaling method (using validation set for Optuna)
+            scaler_results = train_models_with_scaling(
+                X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, 
+                selected_models, optuna_config, scaler_name, log_container
+            )
+            
+            # Merge results with scaling method prefix
+            for model_name, result in scaler_results.items():
+                prefixed_name = f"{model_name}_{scaler_name}"
+                model_results[prefixed_name] = result
+                training_times[prefixed_name] = result.get('training_time', 0)
         
         # Return results in the same format as original function
         return {
@@ -1223,14 +1128,11 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             'data_info': {
                 'original_size': original_size,
                 'clean_size': clean_size,
-                'features': len(input_columns),
-                'classes': len(set(y)),
-                'train_size': len(X_train),
-                'test_size': len(X_test)
+                'input_columns': input_columns,
+                'label_column': label_column,
+                'scaling_methods': numeric_scalers
             },
-            'cache_enabled': True,
-            'cv_enabled': True,
-            'optuna_enabled': optuna_enabled
+            'optuna_enabled': optuna_config.get('enabled', False)
         }
         
     except Exception as e:
@@ -1241,128 +1143,570 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             'model_results': {},
             'training_times': {}
         }
-        # Test Voting Ensemble if enabled
-        if voting_config.get('enabled', False):
-            try:
-                with log_container:
-                    st.info("🗳️ Testing Voting Ensemble...")
-                
-                voting_models = []
-                for model_name in voting_config.get('models', []):
-                    if model_name in model_results:
-                        voting_models.append((model_name.lower(), model_results[model_name]['model']))
-                
-                if voting_models:
-                    voting_method = voting_config.get('voting_method', 'hard')
-                    from sklearn.ensemble import VotingClassifier
-                    voting_clf = VotingClassifier(estimators=voting_models, voting=voting_method)
-                    
-                    start_time = time.time()
-                    voting_clf.fit(X_train_scaled, y_train)
-                    voting_time = time.time() - start_time
-                    
-                    y_pred_voting = voting_clf.predict(X_test_scaled)
-                    voting_accuracy = accuracy_score(y_test, y_pred_voting)
-                    
-                    model_results[f'Voting_{voting_method.title()}'] = {
-                        'model': voting_clf,
-                        'accuracy': voting_accuracy,
-                        'predictions': y_pred_voting,
-                        'true_labels': y_test,
-                        'training_time': voting_time,
-                        'status': 'success'  # Add status field
-                    }
-                    
-                    with log_container:
-                        st.success(f"✅ Voting {voting_method.title()}: {voting_accuracy:.4f} ({voting_time:.2f}s)")
-                    
-            except Exception as e:
-                st.warning(f"⚠️ Voting Ensemble failed: {str(e)}")
-        
-        # Test Stacking Ensemble if enabled
-        if stacking_config.get('enabled', False):
-            try:
-                with log_container:
-                    st.info("🏗️ Testing Stacking Ensemble...")
-                
-                base_models = []
-                for model_name in stacking_config.get('base_models', []):
-                    if model_name in model_results:
-                        base_models.append((model_name.lower(), model_results[model_name]['model']))
-                
-                if base_models:
-                    meta_learner = stacking_config.get('meta_learner', 'logistic_regression')
-                    cv_folds = stacking_config.get('cv_folds', 5)
-                    
-                    if meta_learner == 'logistic_regression':
-                        from sklearn.linear_model import LogisticRegression
-                        final_estimator = LogisticRegression(random_state=42, max_iter=1000)
-                    else:
-                        from sklearn.ensemble import RandomForestClassifier
-                        final_estimator = RandomForestClassifier(n_estimators=50, random_state=42)
-                    
-                    from sklearn.ensemble import StackingClassifier
-                    stacking_clf = StackingClassifier(
-                        estimators=base_models,
-                        final_estimator=final_estimator,
-                        cv=cv_folds
-                    )
-                    
-                    start_time = time.time()
-                    stacking_clf.fit(X_train_scaled, y_train)
-                    stacking_time = time.time() - start_time
-                    
-                    y_pred_stacking = stacking_clf.predict(X_test_scaled)
-                    stacking_accuracy = accuracy_score(y_test, y_pred_stacking)
-                    
-                    model_results[f'Stacking_{meta_learner.title()}'] = {
-                        'model': stacking_clf,
-                        'accuracy': stacking_accuracy,
-                        'predictions': y_pred_stacking,
-                        'true_labels': y_test,
-                        'training_time': stacking_time,
-                        'status': 'success'  # Add status field
-                    }
-                    
-                    with log_container:
-                        st.success(f"✅ Stacking {meta_learner.title()}: {stacking_accuracy:.4f} ({stacking_time:.2f}s)")
-                    
-            except Exception as e:
-                st.warning(f"⚠️ Stacking Ensemble failed: {str(e)}")
-        
-        # Create results summary
-        if model_results:
-            best_model = max(model_results.keys(), key=lambda x: model_results[x]['accuracy'])
-            best_accuracy = model_results[best_model]['accuracy']
-            
-            results = {
-                'status': 'success',
-                'best_model': best_model,
-                'best_accuracy': best_accuracy,
-                'models': model_results,
-                'model_results': model_results,  # For compatibility
-                'training_summary': {
-                    'total_models': len(model_results),
-                    'total_time': sum(training_times.values()),
-                    'avg_time': sum(training_times.values()) / len(training_times) if training_times else 0,
-                    'clean_samples': clean_size,
-                    'original_samples': original_size
-                }
-            }
-            
-            return results
-        else:
-            return {
-                'status': 'failed',
-                'error': 'No models were successfully trained'
-            }
-            
-    except Exception as e:
-        return {
-            'status': 'failed',
-            'error': f'Training failed: {str(e)}'
-        }
 
+
+def render_step3_wireframe():
+    """Render Step 3 - Optuna Optimization & Ensemble Configuration"""
+    
+    # Step title
+    st.markdown("""
+    <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
+        📍 STEP 3/5: Optuna Optimization & Ensemble Configuration
+    </h2>
+    """, unsafe_allow_html=True)
+    
+    # Get data from previous steps
+    step1_data = session_manager.get_step_data(1)
+    step2_data = session_manager.get_step_data(2)
+    
+    if not step1_data or 'dataframe' not in step1_data:
+        st.error("❌ No dataset found. Please complete Step 1 first.")
+        return
+    
+    if not step2_data or not step2_data.get('completed', False):
+        st.error("❌ Column selection not completed. Please complete Step 2 first.")
+        return
+    
+    # Check if we have text data to determine if vectorization tab should be shown
+    has_text_data = _check_for_text_data()
+    
+    # Create tabs based on data type
+    if has_text_data:
+        tab1, tab2, tab3 = st.tabs([
+            "🎯 Optuna Optimization", 
+            "📊 Vectorization Methods", 
+            "🤝 Ensemble Learning"
+        ])
+    else:
+        tab1, tab2 = st.tabs([
+            "🎯 Optuna Optimization", 
+            "🤝 Ensemble Learning"
+        ])
+    
+    # Tab 1: Optuna Optimization
+    with tab1:
+        st.markdown("**🎯 Optuna Hyperparameter Optimization**")
+        
+        # Optuna configuration
+        optuna_enabled = st.checkbox(
+            "Enable Optuna Optimization", 
+            value=True,
+            help="Use Optuna for automatic hyperparameter tuning"
+        )
+        
+        if optuna_enabled:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                n_trials = st.number_input(
+                    "Number of Trials", 
+                    min_value=10, 
+                    max_value=200, 
+                    value=50,
+                    help="Number of optimization trials"
+                )
+            
+            with col2:
+                timeout = st.number_input(
+                    "Timeout (seconds)", 
+                    min_value=60, 
+                    max_value=3600, 
+                    value=1800,
+                    help="Maximum time for optimization"
+                )
+        
+        # Model selection
+        st.markdown("**🤖 Select Models to Optimize**")
+        
+        # Get available models
+        from models import model_registry
+        available_models = model_registry.list_models()
+        classification_models = [m for m in available_models if m != 'kmeans']
+        
+        # Create checkboxes for each model
+        selected_models = []
+        cols = st.columns(3)
+        
+        for i, model_name in enumerate(classification_models):
+            with cols[i % 3]:
+                if st.checkbox(model_name.replace('_', ' ').title(), value=True, key=f"model_{model_name}"):
+                    selected_models.append(model_name)
+        
+        # If no models selected, default to all models
+        if not selected_models:
+            selected_models = classification_models.copy()
+            st.info("ℹ️ All models selected by default")
+        
+        # Save Optuna configuration
+        optuna_config = {
+            'enabled': optuna_enabled,
+            'n_trials': n_trials if optuna_enabled else 0,
+            'timeout': timeout if optuna_enabled else 0,
+            'models': selected_models
+        }
+    
+    # Tab 2: Vectorization Methods (only for text data)
+    if has_text_data:
+        with tab2:
+            st.markdown("**📊 Text Vectorization Methods**")
+            
+            # Vectorization configuration
+            vectorization_methods = st.multiselect(
+                "Select Vectorization Methods",
+                ["BoW", "TF-IDF", "Word Embeddings"],
+                default=["BoW", "TF-IDF"],
+                help="Choose text vectorization methods"
+            )
+            
+            # Save vectorization configuration
+            vectorization_config = {
+                'selected_methods': vectorization_methods
+            }
+    else:
+        vectorization_config = {'selected_methods': []}
+    
+    # Tab 3/2: Ensemble Learning
+    ensemble_tab = tab3 if has_text_data else tab2
+    
+    with ensemble_tab:
+        st.markdown("**🤝 Ensemble Learning**")
+        
+        # Voting Ensemble
+        st.markdown("**🗳️ Voting Ensemble**")
+        voting_enabled = st.checkbox("Enable Voting Ensemble", value=False)
+        
+        if voting_enabled:
+            voting_method = st.selectbox(
+                "Voting Method",
+                ["hard", "soft"],
+                help="Hard voting uses majority class, soft voting uses predicted probabilities"
+            )
+            
+            # Select base models for voting
+            st.markdown("**Select Base Models for Voting:**")
+            voting_models = st.multiselect(
+                "Voting Base Models",
+                selected_models,
+                default=selected_models,  # Select all models by default
+                help="Select models to include in voting ensemble"
+            )
+        
+        # Stacking Ensemble
+        st.markdown("**📚 Stacking Ensemble**")
+        stacking_enabled = st.checkbox("Enable Stacking Ensemble", value=False)
+        
+        if stacking_enabled:
+            meta_learner = st.selectbox(
+                "Meta-Learner",
+                ["logistic_regression", "random_forest", "xgboost"],
+                help="Final estimator for stacking"
+            )
+            
+            # Select base models for stacking
+            st.markdown("**Select Base Models for Stacking:**")
+            stacking_models = st.multiselect(
+                "Stacking Base Models",
+                selected_models,
+                default=selected_models,  # Select all models by default
+                help="Select models to include in stacking ensemble"
+            )
+        
+        # Save ensemble configurations
+        voting_config = {
+            'enabled': voting_enabled,
+            'voting_method': voting_method if voting_enabled else 'hard',
+            'models': voting_models if voting_enabled else []
+        }
+        
+        stacking_config = {
+            'enabled': stacking_enabled,
+            'meta_learner': meta_learner if stacking_enabled else 'logistic_regression',
+            'base_models': stacking_models if stacking_enabled else []
+        }
+    
+    # Complete Step 3 button
+    st.markdown("---")
+    
+    if st.button("✅ Complete Step 3", type="primary"):
+        # Save all configurations
+        step3_data = {
+            'optuna_config': optuna_config,
+            'vectorization_config': vectorization_config,
+            'voting_config': voting_config,
+            'stacking_config': stacking_config,
+            'completed': True
+        }
+        
+        session_manager.set_step_data(3, step3_data)
+        
+        st.success("✅ Step 3 configuration saved!")
+        st.info("💡 Click 'Next ▶' button to proceed to Step 4.")
+    
+    # Navigation buttons
+    render_navigation_buttons()
+
+
+def _check_for_text_data():
+    """Check if the current dataset contains text data that needs vectorization"""
+    try:
+        # Get data from Step 1
+        step1_data = session_manager.get_step_data(1)
+        if not step1_data or 'dataframe' not in step1_data:
+            return False
+        
+        df = step1_data['dataframe']
+        
+        # Check if any columns are text type
+        text_columns = []
+        for col in df.columns:
+            if df[col].dtype in ['object', 'string', 'category']:
+                # Check if it can be converted to numeric
+                try:
+                    pd.to_numeric(df[col], errors='raise')
+                    # If it can be converted to numeric, it's not text
+                    continue
+                except:
+                    # If it can't be converted to numeric, it's text
+                    text_columns.append(col)
+        
+        # Check if we have text columns in multi-input mode
+        if text_columns:
+            return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking for text data: {e}")
+        return False
+
+
+def render_step4_wireframe():
+    """Render Step 4 - Training Execution and Monitoring"""
+    
+    # Step title
+    st.markdown("""
+    <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
+        📍 STEP 4/5: Training Execution and Monitoring
+    </h2>
+    """, unsafe_allow_html=True)
+    
+    # Get data from previous steps
+    step1_data = session_manager.get_step_data(1)
+    step2_data = session_manager.get_step_data(2)
+    step3_data = session_manager.get_step_data(3)
+    
+    if not step1_data or 'dataframe' not in step1_data:
+        st.error("❌ No dataset found. Please complete Step 1 first.")
+        return
+    
+    if not step2_data or not step2_data.get('completed', False):
+        st.error("❌ Column selection not completed. Please complete Step 2 first.")
+        return
+    
+    if not step3_data or not step3_data.get('completed', False):
+        st.error("❌ Model configuration not completed. Please complete Step 3 first.")
+        return
+    
+    # Display dataset info
+    df = step1_data['dataframe']
+    st.info(f"📊 **Dataset**: {df.shape[0]:,} samples × {df.shape[1]} columns")
+    
+    # Display configurations
+    st.subheader("📋 Configuration Summary")
+    
+    # Optuna configuration
+    optuna_config = step3_data.get('optuna_config', {})
+    if optuna_config.get('enabled', False):
+        st.success(f"✅ Optuna: {optuna_config.get('n_trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+    else:
+        st.info("ℹ️ Optuna: Disabled")
+    
+    # Voting configuration
+    voting_config = step3_data.get('voting_config', {})
+    if voting_config.get('enabled', False):
+        st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
+    else:
+        st.info("ℹ️ Voting: Disabled")
+    
+    # Stacking configuration
+    stacking_config = step3_data.get('stacking_config', {})
+    if stacking_config.get('enabled', False):
+        st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
+    else:
+        st.info("ℹ️ Stacking: Disabled")
+    
+    # Training execution
+    st.subheader("🚀 Training Execution")
+    
+    if st.button("🚀 Start Training", type="primary"):
+        with st.spinner("🔄 Starting training pipeline..."):
+            try:
+                # Import training pipeline
+                from comprehensive_evaluation import ComprehensiveEvaluator
+                
+                # Get dataset
+                df = step1_data['dataframe']
+                
+                # Get column configuration from Step 2
+                # Check both step2_data and step2_config
+                text_column = None
+                label_column = None
+                
+                # Try to get from step2_data first (Multi Input)
+                column_config = step2_data.get('column_config', {})
+                # Create debug logging container for Step 4
+                debug_container = st.expander("🔍 Debug Log", expanded=False)
+                with debug_container:
+                    st.info(f"🔍 Debug Step 4: step2_data keys = {list(step2_data.keys())}")
+                    st.info(f"🔍 Debug Step 4: column_config = {column_config}")
+                    st.info(f"🔍 Debug Step 4: step2_data completed = {step2_data.get('completed', False)}")
+                if column_config.get('text_column') or column_config.get('label_column'):
+                    text_column = column_config.get('text_column')
+                    label_column = column_config.get('label_column')
+                
+                # Try to get from step2_config (Single Input)
+                if not text_column and not label_column:
+                    step2_config = session_manager.get_step_config('step2')
+                    text_column = step2_config.get('text_column')
+                    label_column = step2_config.get('label_column')
+                
+                # Check if we have valid configuration from Step 2
+                if not label_column:
+                    st.error("❌ No label column configuration found from Step 2.")
+                    st.info("💡 Please complete Step 2 to configure the label column.")
+                    return
+                
+                # Check if columns exist in dataset
+                data_type = column_config.get('data_type', 'single_input')
+                with debug_container:
+                    st.info(f"🔍 Debug: data_type = '{data_type}', column_config keys = {list(column_config.keys())}")
+                
+                if data_type == 'single_input':
+                    # Single-input: require text_column
+                    if text_column not in df.columns:
+                        st.error(f"❌ Text column '{text_column}' not found in dataset. Available columns: {list(df.columns)}")
+                        return
+                
+                if label_column not in df.columns:
+                    st.error(f"❌ Label column '{label_column}' not found in dataset. Available columns: {list(df.columns)}")
+                    st.info("💡 Please complete Step 2 to configure the correct label column.")
+                    return
+                
+                # Show detected columns
+                st.info(f"📋 Using label column: '{label_column}'")
+                if data_type == 'single_input':
+                    st.info(f"📋 Using text column: '{text_column}'")
+                else:
+                    input_columns = column_config.get('input_columns', [])
+                    st.info(f"📋 Using input columns: {input_columns}")
+                
+                # Prepare data based on data type
+                
+                if data_type == 'multi_input':
+                    # Multi-input data: use input_columns as features
+                    input_columns = column_config.get('input_columns', [])
+                    if not input_columns:
+                        st.error("❌ No input columns configured for multi-input data")
+                        return
+                    
+                    # Check if all input columns exist
+                    missing_cols = [col for col in input_columns if col not in df.columns]
+                    if missing_cols:
+                        st.error(f"❌ Input columns not found: {missing_cols}")
+                        return
+                    
+                    # Get multi_input_config for scaling methods
+                    multi_input_config = step2_data.get('multi_input_config', {})
+                    numeric_scalers = multi_input_config.get('numeric_scaler', ['StandardScaler'])
+                    
+                    # Handle single scaler (convert to list)
+                    if isinstance(numeric_scalers, str):
+                        numeric_scalers = [numeric_scalers]
+                    
+                    with debug_container:
+                        st.info(f"🔍 Debug: numeric_scalers = {numeric_scalers}")
+                    
+                    X = df[input_columns].values
+                    y = df[label_column].values
+                    
+                    st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
+                    st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
+                    
+                else:
+                    # Single-input data: use text column
+                    X = df[text_column].values
+                    y = df[label_column].values
+                    
+                    st.info(f"📊 Single-input data: {len(X):,} samples")
+                
+                # Get selected models from Step 3
+                selected_models = optuna_config.get('models', [])
+                if not selected_models:
+                    st.error("❌ No models selected in Step 3")
+                    return
+                
+                st.info(f"🤖 Selected models: {', '.join(selected_models)}")
+                
+                # Create progress bar
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Enhanced configurations for training
+                enhanced_step1_config = {
+                    'dataframe': df,
+                    'text_column': text_column,
+                    'label_column': label_column,
+                    'input_columns': input_columns if data_type == 'multi_input' else None,
+                    'data_type': data_type
+                }
+                
+                enhanced_step2_config = {
+                    'preprocessing_config': step2_data.get('preprocessing_config', {}),
+                    'multi_input_config': step2_data.get('multi_input_config', {})
+                }
+                
+                enhanced_step3_config = {
+                    'optuna_config': optuna_config,
+                    'voting_config': voting_config,
+                    'stacking_config': stacking_config,
+                    'selected_models': selected_models,
+                    'preprocessing_config': {
+                        'selected_methods': ['StandardScaler', 'MinMaxScaler', 'NoScaling']
+                    }
+                }
+                
+                # Use different approaches based on data type
+                with debug_container:
+                    st.info(f"🔍 Debug: About to check data_type = '{data_type}' for training approach")
+                if data_type == 'multi_input':
+                    # For numeric data: use direct sklearn training (like debug_streamlit_pipeline.py)
+                    st.info("🔢 Using direct sklearn for numeric data...")
+                    with debug_container:
+                        st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
+                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers)
+                else:
+                    # For text data: use execute_streamlit_training
+                    st.info("📝 Using execute_streamlit_training for text data...")
+                    with debug_container:
+                        st.info(f"🔍 Debug: Calling execute_streamlit_training with enhanced configs")
+                    from training_pipeline import execute_streamlit_training
+                    results = execute_streamlit_training(df, enhanced_step1_config, enhanced_step2_config, enhanced_step3_config)
+                    
+                # Process results (same format as auto_train.py)
+                results_debug_container = st.expander("🔍 Results Debug Log", expanded=False)
+                with results_debug_container:
+                    st.info(f"🔍 Debug: results type = {type(results)}, keys = {list(results.keys()) if results else 'None'}")
+                    if results:
+                        st.info(f"🔍 Debug: results['status'] = {results.get('status', 'NOT_FOUND')}")
+                if results and results.get('status') == 'success':
+                    st.success("✅ Training completed successfully!")
+                    
+                    # Display results (same format as auto_train.py)
+                    st.subheader("📊 Training Results")
+                    
+                    # Summary statistics - handle different result formats
+                    with results_debug_container:
+                        st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
+
+                    if 'comprehensive_results' in results:
+                        # Format from execute_streamlit_training (text data)
+                        with results_debug_container:
+                            st.info("🔍 Debug: Using comprehensive_results format (text data)")
+                        comprehensive_results = results.get('comprehensive_results', [])
+                        successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: Found {len(successful_results)} successful results in comprehensive_results")
+                    elif 'model_results' in results:
+                        # Format from train_numeric_data_directly (numeric data)
+                        with results_debug_container:
+                            st.info("🔍 Debug: Using model_results format (numeric data)")
+                        model_results = results.get('model_results', {})
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
+                        successful_results = []
+                        for model_name, model_data in model_results.items():
+                            with results_debug_container:
+                                st.info(f"🔍 Debug: Processing {model_name}, status = {model_data.get('status', 'NO_STATUS')}")
+                            if model_data.get('status') == 'success':
+                                successful_results.append({
+                                    'model_name': model_name,
+                                    'f1_score': model_data.get('f1_score', 0),
+                                    'test_accuracy': model_data.get('accuracy', 0),
+                                    'training_time': model_data.get('training_time', 0),
+                                    'embedding_name': 'numeric_features'
+                                })
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: Found {len(successful_results)} successful results in model_results")
+                    else:
+                        # Fallback: try to use 'models' key if available
+                        with results_debug_container:
+                            st.info("🔍 Debug: Using fallback 'models' key")
+                        models_data = results.get('models', {})
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: models keys = {list(models_data.keys())}")
+                        successful_results = []
+                        for model_name, model_data in models_data.items():
+                            if isinstance(model_data, dict) and model_data.get('status') == 'success':
+                                successful_results.append({
+                                    'model_name': model_name,
+                                    'f1_score': model_data.get('f1_score', model_data.get('accuracy', 0)),
+                                    'test_accuracy': model_data.get('accuracy', 0),
+                                    'training_time': model_data.get('training_time', 0),
+                                    'embedding_name': 'numeric_features'
+                                })
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: Found {len(successful_results)} successful results in models fallback")
+
+                    # Debug logging
+                    with results_debug_container:
+                        st.info(f"🔍 Debug: successful_results count = {len(successful_results)}")
+                        if successful_results:
+                            st.info(f"🔍 Debug: successful_results sample = {successful_results[0] if successful_results else 'None'}")
+                    
+                    if successful_results:
+                        # Create results DataFrame
+                        results_df = pd.DataFrame(successful_results)
+                        
+                        # Display summary
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("✅ Successful Models", len(successful_results))
+                        with col2:
+                            best_accuracy = results_df['test_accuracy'].max()
+                            st.metric("🏆 Best Accuracy", f"{best_accuracy:.4f}")
+                        with col3:
+                            avg_time = results_df['training_time'].mean()
+                            st.metric("⏱️ Avg Training Time", f"{avg_time:.2f}s")
+                        
+                        # Display detailed results
+                        st.subheader("📋 Detailed Results")
+                        st.dataframe(results_df, use_container_width=True)
+                        
+                        # Save training results
+                        step4_data = {
+                            'training_results': results,
+                            'completed': True
+                        }
+                        session_manager.set_step_data(4, step4_data)
+                        
+                        st.success("✅ Training results saved!")
+                        st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
+                    else:
+                        st.error("❌ No successful training results found")
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: successful_results is empty")
+                            if 'model_results' in results:
+                                st.info(f"🔍 Debug: model_results = {results['model_results']}")
+                else:
+                    st.error(f"❌ Training failed: {results.get('error', 'Unknown error') if results else 'No results returned'}")
+                
+            except Exception as e:
+                st.error(f"❌ Training failed: {str(e)}")
+                import traceback
+                st.error(f"Traceback: {traceback.format_exc()}")
+    
+    # Navigation buttons
+    render_navigation_buttons()
 def render_navigation_buttons():
     """Render navigation buttons as per wireframe"""
      
@@ -2079,6 +2423,13 @@ def render_multi_input_section():
         st.metric("🔄 Mixed Columns", len(mixed_cols))
     
     if len(df.columns) > 0:
+        # Initialize default values for session state if not set
+        if 'multi_input_label_col' not in st.session_state:
+            st.session_state.multi_input_label_col = df.columns.tolist()[-1] if len(df.columns) > 0 else ''
+        
+        if 'multi_input_input_cols' not in st.session_state:
+            st.session_state.multi_input_input_cols = df.columns.tolist()[:-1] if len(df.columns) > 1 else []
+        
         # Column selection
         st.markdown("**📝 Column Selection:**")
         
@@ -2095,11 +2446,14 @@ def render_multi_input_section():
             current_input_cols = st.session_state.get('multi_input_input_cols', [])
             filtered_input_cols = [col for col in current_input_cols if col != current_label_col]
             
+            # Default: All columns except the last one (which will be label)
+            default_input_cols = df.columns.tolist()[:-1] if len(df.columns) > 1 else []
+            
             # Select input columns (multiple)
             input_cols = st.multiselect(
                 "📄 Select input columns:",
                 options=available_input_cols,
-                default=filtered_input_cols if filtered_input_cols else (numeric_cols[:3] if numeric_cols else available_input_cols[:3]),
+                default=filtered_input_cols if filtered_input_cols else default_input_cols,
                 key="multi_input_input_cols",
                 help="Select multiple columns for input features"
             )
@@ -2116,11 +2470,22 @@ def render_multi_input_section():
             if current_label_col in current_input_cols:
                 current_label_col = ''
             
+            # Default: Last column in the dataset
+            default_label_col = df.columns.tolist()[-1] if len(df.columns) > 0 else ''
+            
+            # Calculate default index
+            if current_label_col == '':
+                # Use default (last column) if no current selection
+                default_index = available_label_cols.index(default_label_col) + 1 if default_label_col in available_label_cols else 0
+            else:
+                # Use current selection if it exists
+                default_index = available_label_cols.index(current_label_col) + 1 if current_label_col in available_label_cols else 0
+            
             # Select label column (single)
             label_col = st.selectbox(
                 "🏷️ Select label column:",
                 options=[''] + available_label_cols,
-                index=0 if current_label_col == '' else (available_label_cols.index(current_label_col) + 1 if current_label_col in available_label_cols else 0),
+                index=default_index,
                 key="multi_input_label_col",
                 help="Select the target column for classification"
             )
@@ -2168,12 +2533,12 @@ def render_multi_input_section():
             col1, col2 = st.columns(2)
             
             with col1:
-                numeric_scaler = st.selectbox(
+                numeric_scaler = st.multiselect(
                     "📊 Numeric Scaling:",
                     ["StandardScaler", "MinMaxScaler", "RobustScaler", "None"],
-                    index=0,  # Default to first option
+                    default=["StandardScaler"],  # Default to first option
                     key="multi_input_numeric_scaler",
-                    help="Choose scaling method for numeric features"
+                    help="Choose one or more scaling methods for numeric features. Multiple methods will train mixed models."
                 )
                 
                 text_encoding = st.selectbox(
@@ -2245,7 +2610,7 @@ def render_multi_input_section():
                 
                 with col2:
                     st.markdown("**⚙️ Processing Configuration:**")
-                    st.write(f"- Numeric Scaler: {numeric_scaler}")
+                    st.write(f"- Numeric Scaler: {', '.join(numeric_scaler) if numeric_scaler else 'None'}")
                     st.write(f"- Text Encoding: {text_encoding}")
                     st.write(f"- Missing Strategy: {missing_strategy}")
                     st.write(f"- Outlier Detection: {'Yes' if outlier_detection else 'No'}")
@@ -2876,12 +3241,12 @@ def render_review_validation():
 
 
 def render_step4_wireframe():
-    """Render Step 4 - Training Execution & Monitoring"""
+    """Render Step 4 - Training Execution and Monitoring"""
     
     # Step title
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 4/5: Training Execution & Monitoring
+        📍 STEP 4/5: Training Execution and Monitoring
     </h2>
     """, unsafe_allow_html=True)
     
@@ -2896,6 +3261,10 @@ def render_step4_wireframe():
     
     if not step2_data or not step2_data.get('completed', False):
         st.error("❌ Column selection not completed. Please complete Step 2 first.")
+        return
+    
+    if not step3_data or not step3_data.get('completed', False):
+        st.error("❌ Model configuration not completed. Please complete Step 3 first.")
         return
     
     # Display dataset info
@@ -2937,14 +3306,6 @@ def render_step4_wireframe():
                 
                 # Get dataset
                 df = step1_data['dataframe']
-                
-                # Remove duplicates to prevent overfitting
-                original_size = len(df)
-                df = df.drop_duplicates()
-                clean_size = len(df)
-                if original_size != clean_size:
-                    st.info(f"🧹 Removed {original_size - clean_size} duplicate rows ({original_size - clean_size}/{original_size} = {(original_size - clean_size)/original_size*100:.1f}%)")
-                    st.info(f"📊 Training on {clean_size} unique samples (from {original_size} total)")
                 
                 # Get column configuration from Step 2
                 # Check both step2_data and step2_config
@@ -3014,10 +3375,22 @@ def render_step4_wireframe():
                         st.error(f"❌ Input columns not found: {missing_cols}")
                         return
                     
+                    # Get multi_input_config for scaling methods
+                    multi_input_config = step2_data.get('multi_input_config', {})
+                    numeric_scalers = multi_input_config.get('numeric_scaler', ['StandardScaler'])
+                    
+                    # Handle single scaler (convert to list)
+                    if isinstance(numeric_scalers, str):
+                        numeric_scalers = [numeric_scalers]
+                    
+                    with debug_container:
+                        st.info(f"🔍 Debug: numeric_scalers = {numeric_scalers}")
+                    
                     X = df[input_columns].values
                     y = df[label_column].values
                     
                     st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
+                    st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
                     
                 else:
                     # Single-input data: use text column
@@ -3025,126 +3398,42 @@ def render_step4_wireframe():
                     y = df[label_column].values
                     
                     st.info(f"📊 Single-input data: {len(X):,} samples")
-                    
-                st.info(f"📊 Training on {len(X):,} samples with {len(set(y))} classes")
                 
-                # Initialize evaluator
-                evaluator = ComprehensiveEvaluator()
-                
-                # Get model configurations
-                selected_models = []
-                if optuna_config.get('enabled', False):
-                    selected_models.extend(optuna_config.get('models', []))
-                if voting_config.get('enabled', False):
-                    selected_models.extend(voting_config.get('models', []))
-                if stacking_config.get('enabled', False):
-                    selected_models.extend(stacking_config.get('base_models', []))
-                
-                # Remove duplicates
-                selected_models = list(set(selected_models))
-                
+                # Get selected models from Step 3
+                selected_models = optuna_config.get('models', [])
                 if not selected_models:
-                    st.warning("⚠️ No models selected for training. Please configure models in Step 3.")
+                    st.error("❌ No models selected in Step 3")
                     return
                 
-                st.info(f"🤖 Training {len(selected_models)} models: {', '.join(selected_models)}")
+                st.info(f"🤖 Selected models: {', '.join(selected_models)}")
                 
-                # Execute training
+                # Create progress bar
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                # Execute actual training
-                status_text.text("🔄 Executing training pipeline...")
-                
-                # Prepare training parameters
-                training_params = {
-                    'selected_models': selected_models,
+                # Enhanced configurations for training
+                enhanced_step1_config = {
+                    'dataframe': df,
                     'text_column': text_column,
                     'label_column': label_column,
-                    'optuna_config': optuna_config,
-                    'voting_config': voting_config,
-                    'stacking_config': stacking_config
+                    'input_columns': input_columns if data_type == 'multi_input' else None,
+                    'data_type': data_type
                 }
                 
-                # Process data based on detected data type
-                if data_type == 'multi_input':
-                    # Multi-input (numeric) data: use StreamlitTrainingPipeline with numeric config
-                    st.info("🔢 Processing numeric data with StreamlitTrainingPipeline...")
-                    
-                    # Create dummy text column for numeric data (StreamlitTrainingPipeline requires text)
-                    df_with_dummy_text = df.copy()
-                    df_with_dummy_text['dummy_text'] = 'numeric_data_sample'
-                    
-                    # Prepare configs for numeric data (like auto_train.py)
-                    enhanced_step1_config = {
-                        'dataframe': df_with_dummy_text,
-                        'text_column': 'dummy_text',  # Dummy text column for numeric data
-                        'label_column': label_column,
-                        'input_columns': input_columns,
-                        'is_multi_input': True,
-                        'sampling_config': step1_data.get('sampling_config', {}),
-                        'dataset_source': step1_data.get('dataset_source', ''),
-                        'dataset_name': step1_data.get('dataset_name', ''),
-                        'dataset_size': len(df_with_dummy_text)
+                enhanced_step2_config = {
+                    'preprocessing_config': step2_data.get('preprocessing_config', {}),
+                    'multi_input_config': step2_data.get('multi_input_config', {})
+                }
+                
+                enhanced_step3_config = {
+                    'optuna_config': optuna_config,
+                    'voting_config': voting_config,
+                    'stacking_config': stacking_config,
+                    'selected_models': selected_models,
+                    'preprocessing_config': {
+                        'selected_methods': ['StandardScaler', 'MinMaxScaler', 'NoScaling']
                     }
-                    
-                    enhanced_step2_config = {
-                        'text_column': 'dummy_text',  # Use dummy text column
-                        'label_column': label_column,
-                        'input_columns': input_columns,
-                        'preprocessing_config': step2_data.get('preprocessing_config', {}),
-                        'column_config': step2_data.get('column_config', {})
-                    }
-                    
-                    enhanced_step3_config = {
-                        'optuna_config': step3_data.get('optuna_config', {}),
-                        'voting_config': step3_data.get('voting_config', {}),
-                        'stacking_config': step3_data.get('stacking_config', {}),
-                        'selected_models': selected_models,
-                        'selected_vectorization': step3_data.get('vectorization_config', {}).get('selected_methods', ['TF-IDF']),
-                        'ensemble_learning': {
-                            'enabled': True,
-                            'final_estimator': 'logistic_regression',
-                            'base_models': selected_models,
-                            'cv_folds': 5
-                        }
-                    }
-                    
-                else:
-                    # Single-input (text) data: use StreamlitTrainingPipeline with text config
-                    st.info("📝 Processing text data with StreamlitTrainingPipeline...")
-                    
-                    # Prepare configs for text data (like auto_train.py)
-                    enhanced_step1_config = {
-                        'dataframe': df,
-                        'text_column': text_column,
-                        'label_column': label_column,
-                        'sampling_config': step1_data.get('sampling_config', {}),
-                        'dataset_source': step1_data.get('dataset_source', ''),
-                        'dataset_name': step1_data.get('dataset_name', ''),
-                        'dataset_size': len(df)
-                    }
-                    
-                    enhanced_step2_config = {
-                        'text_column': text_column,
-                        'label_column': label_column,
-                        'preprocessing_config': step2_data.get('preprocessing_config', {}),
-                        'column_config': step2_data.get('column_config', {})
-                    }
-                    
-                    enhanced_step3_config = {
-                        'optuna_config': step3_data.get('optuna_config', {}),
-                        'voting_config': step3_data.get('voting_config', {}),
-                        'stacking_config': step3_data.get('stacking_config', {}),
-                        'selected_models': selected_models,
-                        'selected_vectorization': step3_data.get('vectorization_config', {}).get('selected_methods', ['BoW', 'TF-IDF', 'Word Embeddings']),
-                        'ensemble_learning': {
-                            'enabled': True,
-                            'final_estimator': 'logistic_regression',
-                            'base_models': selected_models,
-                            'cv_folds': 5
-                        }
-                    }
+                }
                 
                 # Use different approaches based on data type
                 with debug_container:
@@ -3154,7 +3443,7 @@ def render_step4_wireframe():
                     st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text)
+                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers)
                 else:
                     # For text data: use execute_streamlit_training
                     st.info("📝 Using execute_streamlit_training for text data...")
@@ -3175,23 +3464,10 @@ def render_step4_wireframe():
                     # Display results (same format as auto_train.py)
                     st.subheader("📊 Training Results")
                     
-                    # Best model
-                    best_combinations = results.get('best_combinations', {})
-                    best_overall = best_combinations.get('best_overall', {})
-                    
-                    if best_overall:
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("🥇 Best F1 Score", f"{best_overall.get('f1_score', 0):.3f}")
-                        with col2:
-                            st.metric("🎯 Best Accuracy", f"{best_overall.get('test_accuracy', 0):.3f}")
-                        with col3:
-                            st.metric("⏱️ Training Time", f"{best_overall.get('training_time', 0):.1f}s")
-                    
                     # Summary statistics - handle different result formats
                     with results_debug_container:
                         st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
-                    
+
                     if 'comprehensive_results' in results:
                         # Format from execute_streamlit_training (text data)
                         with results_debug_container:
@@ -3240,7 +3516,7 @@ def render_step4_wireframe():
                                 })
                         with results_debug_container:
                             st.info(f"🔍 Debug: Found {len(successful_results)} successful results in models fallback")
-                    
+
                     # Debug logging
                     with results_debug_container:
                         st.info(f"🔍 Debug: successful_results count = {len(successful_results)}")
@@ -3248,105 +3524,49 @@ def render_step4_wireframe():
                             st.info(f"🔍 Debug: successful_results sample = {successful_results[0] if successful_results else 'None'}")
                     
                     if successful_results:
-                        st.subheader("📈 Summary Statistics")
+                        # Create results DataFrame
+                        results_df = pd.DataFrame(successful_results)
+                        
+                        # Display summary
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("✅ Successful Models", len(successful_results))
                         with col2:
-                            avg_f1 = np.mean([r.get('f1_score', 0) for r in successful_results])
-                            st.metric("📊 Average F1 Score", f"{avg_f1:.3f}")
+                            best_accuracy = results_df['test_accuracy'].max()
+                            st.metric("🏆 Best Accuracy", f"{best_accuracy:.4f}")
                         with col3:
-                            avg_acc = np.mean([r.get('test_accuracy', 0) for r in successful_results])
-                            st.metric("🎯 Average Accuracy", f"{avg_acc:.3f}")
+                            avg_time = results_df['training_time'].mean()
+                            st.metric("⏱️ Avg Training Time", f"{avg_time:.2f}s")
                         
-                        # Top models table
-                        st.subheader("🏆 Top Models Performance")
-                        top_models = sorted(successful_results, key=lambda x: x.get('f1_score', 0), reverse=True)[:10]
+                        # Display detailed results
+                        st.subheader("📋 Detailed Results")
+                        st.dataframe(results_df, use_container_width=True)
                         
-                        model_data = []
-                        for i, model in enumerate(top_models, 1):
-                            model_data.append({
-                                'Rank': i,
-                                'Model': f"{model.get('model_name', 'Unknown')} + {model.get('embedding_name', 'Unknown')}",
-                                'F1 Score': f"{model.get('f1_score', 0):.3f}",
-                                'Accuracy': f"{model.get('test_accuracy', 0):.3f}",
-                                'Training Time (s)': f"{model.get('training_time', 0):.1f}"
-                            })
+                        # Save training results
+                        step4_data = {
+                            'training_results': results,
+                            'completed': True
+                        }
+                        session_manager.set_step_data(4, step4_data)
                         
-                        if model_data:
-                            st.dataframe(pd.DataFrame(model_data), use_container_width=True)
+                        st.success("✅ Training results saved!")
+                        st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
                     else:
-                        st.error(f"❌ No successful models found!")
-                        st.info("Please check your model configurations and try again.")
-                
-                    # Update progress and status
-                    progress_bar.progress(1.0)
-                    status_text.text("✅ Training completed!")
-                    
-                    # Save results to session
-                    session_manager.set_step_data(4, {
-                        'status': 'success',
-                        'results': results,
-                        'timestamp': time.time(),
-                        'data_type': data_type,
-                        'models_trained': selected_models,
-                        'samples_trained': len(df),
-                        'classes': len(df[label_column].unique()),
-                        'completed': True  # Mark step as completed for navigation
-                    })
-                    
-                    st.info("💡 Training results have been saved to session.")
-                    
-                    # Navigation buttons
-                    render_navigation_buttons()
-                
-                elif results and results.get('status') == 'failed':
-                    st.error(f"❌ Training failed: {results.get('error', 'Unknown error')}")
-                    
-                    # Save failure to session
-                    session_manager.set_step_data(4, {
-                        'status': 'failed',
-                        'error': results.get('error', 'Unknown error'),
-                        'timestamp': time.time()
-                    })
-                    
-                    # Navigation buttons
-                    render_navigation_buttons()
-                
+                        st.error("❌ No successful training results found")
+                        with results_debug_container:
+                            st.info(f"🔍 Debug: successful_results is empty")
+                            if 'model_results' in results:
+                                st.info(f"🔍 Debug: model_results = {results['model_results']}")
                 else:
-                    st.error("❌ Training failed: No results returned")
-                    
-                    # Save failure to session
-                    session_manager.set_step_data(4, {
-                        'status': 'failed',
-                        'error': 'No results returned',
-                        'timestamp': time.time()
-                    })
-                    
-                    # Navigation buttons
-                    render_navigation_buttons()
-                    
+                    st.error(f"❌ Training failed: {results.get('error', 'Unknown error') if results else 'No results returned'}")
+                
             except Exception as e:
                 st.error(f"❌ Training failed: {str(e)}")
-                st.exception(e)
-                
-                # Save failure to session
-                session_manager.set_step_data(4, {
-                    'status': 'failed',
-                    'error': str(e),
-                    'timestamp': time.time()
-                })
-                
-                # Navigation buttons
-                render_navigation_buttons()
+                import traceback
+                st.error(f"Traceback: {traceback.format_exc()}")
     
-    else:
-        st.info("💡 Click 'Start Training' to begin the training process.")
-        
-        # Navigation buttons
-        render_navigation_buttons()
-
-
+    # Navigation buttons
+    render_navigation_buttons()
 def render_step5_wireframe():
     """Render Step 5 - SHAP Visualization & Confusion Matrix"""
     

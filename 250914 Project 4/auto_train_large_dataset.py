@@ -23,12 +23,9 @@ sys.path.insert(0, project_root)
 # Import project modules
 try:
     from optuna_optimizer import OptunaOptimizer, OPTUNA_AVAILABLE
-    from models import model_factory, model_registry
-    from models.ensemble import ensemble_manager
-    from models.ensemble.stacking_classifier import StackingClassifier
+    from models import model_registry
     from sklearn.model_selection import train_test_split
-    from sklearn.preprocessing import StandardScaler, LabelEncoder
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from sklearn.preprocessing import LabelEncoder
     from text_encoders import TextVectorizer, EmbeddingVectorizer
     print("All imports successful")
 except ImportError as e:
@@ -184,16 +181,18 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
         print(f"🧪 Testing: {model_name} + {vectorization_info['method']}")
         print(f"{'='*60}")
         
-        # Split data
-        X_train, X_val, y_train, y_val = train_test_split(
+        # Split data: 80% train, 10% val, 10% test
+        X_train, X_temp, y_train, y_temp = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
-        print(f"📊 Data split: Train {X_train.shape}, Val {X_val.shape}")
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
+        )
+        print(f"📊 Data split: Train {X_train.shape}, Val {X_val.shape}, Test {X_test.shape}")
         
-        # Import cache manager and CV
+        # Import cache manager
         from cache_manager import CacheManager
-        from sklearn.model_selection import cross_val_score, StratifiedKFold
-        from sklearn.metrics import f1_score, precision_score, recall_score
+        from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
         import os
         
         # Create cache manager
@@ -205,8 +204,7 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
         config_hash = cache_manager.generate_config_hash({
             'model': model_name,
             'vectorization': vectorization_info['method'],
-            'trials': config.get('trials', 2),
-            'cv_folds': 5,
+            'trials': config.get('trials', 10),
             'random_state': 42
         })
         dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
@@ -221,38 +219,24 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
         )
         
         if cache_exists:
-            # Load full cache data including metrics
-            try:
-                full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
-                cached_metrics = full_cache_data.get('metrics', {})
-                has_enhanced_metrics = 'cv_mean' in cached_metrics and 'cv_std' in cached_metrics
-                
-                if has_enhanced_metrics:
-                    print(f"💾 Cache hit! Loading cached results for {model_name}")
-                    return {
-                        'model': model_name,
-                        'vectorization': vectorization_info['method'],
-                        'score': cached_metrics.get('accuracy', 0.0),
-                        'params': full_cache_data.get('params', {}),
-                        'time': 0.0,  # Cached, no training time
-                        'features': vectorization_info['features'],
-                        'status': 'SUCCESS',
-                        'cached': True,
-                        'cv_mean': cached_metrics.get('cv_mean', 0.0),
-                        'cv_std': cached_metrics.get('cv_std', 0.0),
-                        'f1_score': cached_metrics.get('f1_score', 0.0),
-                        'precision': cached_metrics.get('precision', 0.0),
-                        'recall': cached_metrics.get('recall', 0.0)
-                    }
-                else:
-                    print(f"🔄 Cache cũ detected! Retraining {model_name} with enhanced features...")
-                    # Continue to training with enhanced features
-            except Exception as e:
-                print(f"⚠️ Error loading cache data: {e}")
-                print(f"🔄 Cache miss! Training {model_name} with Optuna...")
-                # Continue to training
+            # Load cached results
+            cached_metrics = cached_data.get('metrics', {})
+            print(f"💾 Cache hit! Loading cached results for {model_name}")
+            return {
+                'model': model_name,
+                'vectorization': vectorization_info['method'],
+                'score': cached_metrics.get('accuracy', 0.0),
+                'params': cached_data.get('params', {}),
+                'time': 0.0,  # Cached, no training time
+                'features': vectorization_info['features'],
+                'status': 'SUCCESS',
+                'cached': True,
+                'f1_score': cached_metrics.get('f1_score', 0.0),
+                'precision': cached_metrics.get('precision', 0.0),
+                'recall': cached_metrics.get('recall', 0.0)
+            }
         
-        print(f"🔄 Cache miss! Training {model_name} with Optuna + CV...")
+        print(f"🔄 Cache miss! Training {model_name} with Optuna...")
         
         # Create Optuna optimizer
         optimizer = OptunaOptimizer(config)
@@ -305,45 +289,36 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
         
         final_model.fit(X_train, y_train)
         
-        # Cross-validation
-        print("🔄 Running 5-fold cross-validation...")
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        cv_scores = cross_val_score(final_model, X_train, y_train, cv=cv, scoring='accuracy')
-        cv_mean = cv_scores.mean()
-        cv_std = cv_scores.std()
+        # Final evaluation on test set
+        print("🔄 Calculating final metrics on test set...")
+        y_pred_test = final_model.predict(X_test)
+        test_accuracy = accuracy_score(y_test, y_pred_test)
+        f1 = f1_score(y_test, y_pred_test, average='weighted')
+        precision = precision_score(y_test, y_pred_test, average='weighted')
+        recall = recall_score(y_test, y_pred_test, average='weighted')
         
-        # Comprehensive metrics
-        print("🔄 Calculating comprehensive metrics...")
-        y_pred = final_model.predict(X_val)
-        f1 = f1_score(y_val, y_pred, average='weighted')
-        precision = precision_score(y_val, y_pred, average='weighted')
-        recall = recall_score(y_val, y_pred, average='weighted')
-        
-        print(f"📊 CV Scores: {cv_scores}")
-        print(f"📊 CV Mean: {cv_mean:.4f} ± {cv_std:.4f}")
-        print(f"📊 F1-Score: {f1:.4f}")
-        print(f"📊 Precision: {precision:.4f}")
-        print(f"📊 Recall: {recall:.4f}")
+        print(f"📊 Test Accuracy: {test_accuracy:.4f}")
+        print(f"📊 Test F1-Score: {f1:.4f}")
+        print(f"📊 Test Precision: {precision:.4f}")
+        print(f"📊 Test Recall: {recall:.4f}")
         
         # Save to cache
         if final_model is not None:
             try:
                 metrics = {
-                    'accuracy': best_score,
+                    'accuracy': test_accuracy,  # Use test accuracy as final metric
+                    'validation_accuracy': best_score,  # Keep validation accuracy for reference
                     'f1_score': f1,
                     'precision': precision,
-                    'recall': recall,
-                    'cv_mean': cv_mean,
-                    'cv_std': cv_std
+                    'recall': recall
                 }
                 
                 cache_config = {
                     'model': model_name,
                     'vectorization': vectorization_info['method'],
-                    'trials': config.get('trials', 2),
-                    'cv_folds': 5,
+                    'trials': config.get('trials', 10),
                     'random_state': 42,
-                    'test_size': 0.2
+                    'test_size': 0.1
                 }
                 
                 cache_path = cache_manager.save_model_cache(
@@ -367,14 +342,13 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
         return {
             'model': model_name,
             'vectorization': vectorization_info['method'],
-            'score': best_score,
+            'score': test_accuracy,  # Use test accuracy as final score
+            'validation_score': best_score,  # Keep validation score for reference
             'params': best_params,
             'time': end_time - start_time,
             'features': vectorization_info['features'],
             'status': 'SUCCESS',
             'cached': False,
-            'cv_mean': cv_mean,
-            'cv_std': cv_std,
             'f1_score': f1,
             'precision': precision,
             'recall': recall
@@ -488,8 +462,8 @@ def test_all_combinations(df: pd.DataFrame, text_column: str, label_column: str)
         
         # Optuna config
         config = {
-            'trials': 2,  # Reduced for comprehensive testing
-            'timeout': 30,
+            'trials': 10,  # Increased to 10 trials
+            'timeout': 60,
             'direction': 'maximize',
             'study_name': 'large_dataset_test'
         }
@@ -697,8 +671,8 @@ def main():
                 'source_file': 'cache/20250822-004129_sample-300_000Samples.csv'
             },
             'test_config': {
-                'trials': 2,
-                'timeout': 30,
+                'trials': 10,
+                'timeout': 60,
                 'direction': 'maximize'
             },
             'app_pipeline_results': app_pipeline_results,
@@ -734,10 +708,13 @@ def main():
         # Make results serializable
         serializable_results = make_serializable(results_data)
         
-        with open('comprehensive_vectorization_large_dataset_results.json', 'w', encoding='utf-8') as f:
+        # Ensure training_results directory exists
+        os.makedirs('cache/training_results', exist_ok=True)
+        
+        with open('cache/training_results/comprehensive_vectorization_large_dataset_results.json', 'w', encoding='utf-8') as f:
             json.dump(serializable_results, f, indent=2, ensure_ascii=False)
         
-        print(f"\n💾 Results saved to: comprehensive_vectorization_large_dataset_results.json")
+        print(f"\n💾 Results saved to: cache/training_results/comprehensive_vectorization_large_dataset_results.json")
         
         # 6. Final summary
         print(f"\n{'='*80}")
@@ -764,42 +741,22 @@ def main():
         # Debug: Show detailed results and errors
         print(f"\n🔍 DETAILED DEBUG INFORMATION:")
         
-        # Get results from analysis - fix the issue
-        if analysis and analysis.get('overall_stats'):
-            stats = analysis['overall_stats']
-            all_results = []
-            successful_results = []
-            failed_results = []
+        # Use actual results from the test run
+        all_results = results['all_results']
+        successful_results = [r for r in all_results if r['status'] == 'SUCCESS']
+        failed_results = [r for r in all_results if r['status'] == 'FAILED']
+        
+        # Show successful results
+        if successful_results:
+            print(f"\n✅ SUCCESSFUL COMBINATIONS ({len(successful_results)}):")
+            for i, result in enumerate(successful_results[:10], 1):  # Show first 10
+                print(f"  {i}. {result['model']} + {result['vectorization']}: {result['score']:.4f}")
+                print(f"     CV: {result.get('cv_mean', 'N/A')} ± {result.get('cv_std', 'N/A')}")
+                print(f"     F1: {result.get('f1_score', 'N/A')}, Precision: {result.get('precision', 'N/A')}, Recall: {result.get('recall', 'N/A')}")
+                print(f"     Time: {result.get('time', 0):.2f}s, Cached: {result.get('cached', False)}")
             
-            # Reconstruct results from analysis
-            if analysis.get('best_combinations'):
-                for combo in analysis['best_combinations']:
-                    all_results.append({
-                        'model': combo['model'],
-                        'vectorization': combo['vectorization'],
-                        'score': combo['score'],
-                        'status': 'SUCCESS',
-                        'cached': False,
-                        'cv_mean': 0.0,
-                        'cv_std': 0.0,
-                        'f1_score': 0.0,
-                        'precision': 0.0,
-                        'recall': 0.0,
-                        'time': 0.0
-                    })
-                    successful_results.append(all_results[-1])
-            
-            # Show successful results
-            if successful_results:
-                print(f"\n✅ SUCCESSFUL COMBINATIONS ({len(successful_results)}):")
-                for i, result in enumerate(successful_results[:10], 1):  # Show first 10
-                    print(f"  {i}. {result['model']} + {result['vectorization']}: {result['score']:.4f}")
-                    print(f"     CV: {result.get('cv_mean', 0):.4f} ± {result.get('cv_std', 0):.4f}")
-                    print(f"     F1: {result.get('f1_score', 0):.4f}, Precision: {result.get('precision', 0):.4f}, Recall: {result.get('recall', 0):.4f}")
-                    print(f"     Time: {result.get('time', 0):.2f}s, Cached: {result.get('cached', False)}")
-                
-                if len(successful_results) > 10:
-                    print(f"     ... and {len(successful_results) - 10} more successful combinations")
+            if len(successful_results) > 10:
+                print(f"     ... and {len(successful_results) - 10} more successful combinations")
             
             # Show failed results with error analysis
             if failed_results:
@@ -843,8 +800,8 @@ def main():
                 sorted_results = sorted(successful_results, key=lambda x: x['score'], reverse=True)
                 for i, result in enumerate(sorted_results[:5], 1):
                     print(f"  {i}. {result['model']} + {result['vectorization']}: {result['score']:.4f}")
-                    print(f"     CV: {result.get('cv_mean', 0):.4f} ± {result.get('cv_std', 0):.4f}")
-                    print(f"     F1: {result.get('f1_score', 0):.4f}, Precision: {result.get('precision', 0):.4f}, Recall: {result.get('recall', 0):.4f}")
+                    print(f"     CV: {result.get('cv_mean', 'N/A')} ± {result.get('cv_std', 'N/A')}")
+                    print(f"     F1: {result.get('f1_score', 'N/A')}, Precision: {result.get('precision', 'N/A')}, Recall: {result.get('recall', 'N/A')}")
             
             # Debug: Show vectorization method performance
             if successful_results:
