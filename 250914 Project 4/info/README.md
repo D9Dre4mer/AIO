@@ -1,103 +1,108 @@
-# 📁 Info Directory - Ensemble & Stacking Fix Reports
+# 📚 Documentation Directory
 
-## 📋 Overview
+Thư mục này chứa tất cả tài liệu hướng dẫn và documentation cho Machine Learning Pipeline.
 
-This directory contains comprehensive reports documenting the successful fix of 30 ensemble combinations that were failing in the comprehensive test.
+## 📋 Danh sách tài liệu
 
-## 📊 Final Results
+### 🎯 Hướng dẫn chính
+- **[COMPLETE_GUIDE.md](./COMPLETE_GUIDE.md)** - Hướng dẫn tổng quan toàn bộ hệ thống
+- **[STEP5_GUIDE.md](./STEP5_GUIDE.md)** - Hướng dẫn chi tiết Step 5 (SHAP, Confusion Matrix, Model Comparison)
+- **[CACHE_SYSTEM_GUIDE.md](./CACHE_SYSTEM_GUIDE.md)** - Hướng dẫn chi tiết Cache System
 
-- **Total combinations tested**: 66
-- **Success rate**: 100.0%
-- **Ensemble models**: Now working perfectly (0.9183 avg score)
-- **Base models**: Maintained performance (0.9043 avg score)
+### 📊 Tài liệu kỹ thuật
+- **[DUPLICATE_REMOVAL_TOGGLE_IMPLEMENTATION.md](./DUPLICATE_REMOVAL_TOGGLE_IMPLEMENTATION.md)** - Báo cáo implementation duplicate removal toggle
+- **[RECENT_CHANGES_SUMMARY.md](./RECENT_CHANGES_SUMMARY.md)** - Tóm tắt các thay đổi gần đây
 
-## 📄 Reports Available
+### 🏗️ Kiến trúc hệ thống
+- **[CACHE_SYSTEM_SUMMARY.md](./CACHE_SYSTEM_SUMMARY.md)** - Tóm tắt Cache System (nếu có)
 
-### 1. **ENSEMBLE_STACKING_FIX_COMPLETE_REPORT.md**
-- **Purpose**: Complete project report with all details
-- **Content**: 
-  - Project overview and requirements
-  - Detailed results analysis
-  - Root cause analysis
-  - Step-by-step fix process
-  - Performance comparisons
-  - Technical insights
+## 🚀 Quick Start
 
-### 2. **QUICK_SUMMARY.md**
-- **Purpose**: Quick reference summary
-- **Content**:
-  - Key results
-  - Top 5 performing combinations
-  - List of fixes applied
-  - Files modified
+### 1. Đọc hướng dẫn tổng quan
+Bắt đầu với **[COMPLETE_GUIDE.md](./COMPLETE_GUIDE.md)** để hiểu toàn bộ hệ thống.
 
-### 3. **TECHNICAL_IMPLEMENTATION_DETAILS.md**
-- **Purpose**: Technical deep dive
-- **Content**:
-  - Detailed code changes
-  - Implementation specifics
-  - Debugging process
-  - Performance optimizations
-  - Future improvements
+### 2. Tìm hiểu Step 5
+Nếu bạn quan tâm đến analysis và visualization, đọc **[STEP5_GUIDE.md](./STEP5_GUIDE.md)**.
 
-## 🎯 Key Achievements
+### 3. Hiểu Cache System
+Để tối ưu hóa performance, đọc **[CACHE_SYSTEM_GUIDE.md](./CACHE_SYSTEM_GUIDE.md)**.
 
-### ✅ **Problems Solved**
-1. **ModelFactory not defined** → Fixed import issues
-2. **Ensemble classifier not created** → Added proper initialization
-3. **KNNModel missing classes_** → Added sklearn compatibility
-4. **DecisionTreeModel missing classes_** → Added sklearn compatibility
-5. **NaiveBayesModel missing classes_** → Added sklearn compatibility
+## 📖 Nội dung chi tiết
 
-### 🏆 **Performance Results**
-- **Best single model**: XGBoost + Word Embeddings (0.9600)
-- **Best ensemble**: Voting/Stacking + Word Embeddings (0.9450)
-- **Best vectorization**: Word Embeddings (0.9327 avg)
-- **Ensemble vs Base**: Ensemble models outperform base models
+### COMPLETE_GUIDE.md
+- **Tổng quan hệ thống**: Kiến trúc và components
+- **Quick Start**: Hướng dẫn khởi động nhanh
+- **Step-by-step**: Hướng dẫn từng bước
+- **Best Practices**: Thực hành tốt nhất
+- **Troubleshooting**: Xử lý lỗi thường gặp
 
-## 🔧 Technical Summary
+### STEP5_GUIDE.md
+- **SHAP Analysis**: Giải thích model predictions
+- **Confusion Matrix**: Đánh giá classification performance
+- **Model Comparison**: So sánh hiệu suất models
+- **UI Components**: Hướng dẫn sử dụng interface
+- **Error Handling**: Xử lý lỗi Step 5
 
-### **Root Cause**
-The primary issue was missing sklearn compatibility attributes (`classes_`, `n_features_in_`) in custom model classes, which prevented ensemble models from working properly.
+### CACHE_SYSTEM_GUIDE.md
+- **Kiến trúc Cache**: Cấu trúc và organization
+- **Cache Manager**: API và functions
+- **Integration**: Tích hợp với training và analysis
+- **Management**: Quản lý và maintenance
+- **Performance**: Tối ưu hóa hiệu suất
 
-### **Solution Approach**
-1. **Systematic debugging**: Fixed errors one by one as they appeared
-2. **Sklearn compatibility**: Added required attributes to all custom models
-3. **Ensemble initialization**: Proper base estimator creation and initialization
-4. **Import fixes**: Corrected module imports and usage
+## 🎯 Đối tượng người dùng
 
-### **Files Modified**
-- `comprehensive_vectorization_test.py`
-- `optuna_optimizer.py`
-- `models/register_models.py`
-- `models/classification/knn_model.py`
-- `models/classification/decision_tree_model.py`
-- `models/classification/naive_bayes_model.py`
+### 👨‍💻 Developers
+- **COMPLETE_GUIDE.md**: Hiểu kiến trúc hệ thống
+- **CACHE_SYSTEM_GUIDE.md**: Implement và customize cache
 
-## 📈 Impact
+### 👩‍🔬 Data Scientists
+- **STEP5_GUIDE.md**: Sử dụng analysis tools
+- **COMPLETE_GUIDE.md**: Workflow và best practices
 
-### **Before Fix**
-- Success rate: 54.5% (36/66)
-- Ensemble models: 0.0000 (all failed)
-- Base models: 0.9043 (working)
+### 👨‍💼 Users
+- **COMPLETE_GUIDE.md**: Hướng dẫn sử dụng cơ bản
+- **STEP5_GUIDE.md**: Phân tích và visualization
 
-### **After Fix**
-- Success rate: 100.0% (66/66)
-- Ensemble models: 0.9183 (working perfectly)
-- Base models: 0.9043 (maintained)
+## 🔧 Maintenance
 
-## 🎉 Conclusion
+### Cập nhật tài liệu
+- **Khi có thay đổi**: Cập nhật tài liệu tương ứng
+- **Version control**: Track changes trong Git
+- **Review**: Regular review và update
 
-**MISSION ACCOMPLISHED!** 
+### Thêm tài liệu mới
+- **Format**: Sử dụng Markdown format
+- **Structure**: Follow existing structure
+- **Naming**: Use descriptive names
+- **Index**: Update README này
 
-All 30 ensemble combinations that were failing have been successfully fixed. The comprehensive test now runs with 100% success rate, and ensemble models are performing excellently with scores around 0.9450.
+## 📞 Support
 
-The fix demonstrates the importance of sklearn compatibility when working with ensemble models and provides a solid foundation for future ensemble model development.
+### Khi cần hỗ trợ
+1. **Đọc tài liệu**: Check relevant guides
+2. **Troubleshooting**: Xem phần troubleshooting
+3. **GitHub Issues**: Tạo issue nếu cần
+4. **Documentation**: Cập nhật nếu thiếu
 
----
+### Contributing
+- **Documentation**: Improve existing docs
+- **New Guides**: Add new guides
+- **Examples**: Add practical examples
+- **Translations**: Translate to other languages
 
-**Created**: 25/09/2025  
-**Status**: ✅ Complete  
-**Success Rate**: 100%  
-**Total Reports**: 3  
-**Total Combinations Fixed**: 30  
+## 🎉 Kết luận
+
+Thư mục này cung cấp:
+- **Complete Documentation**: Tài liệu đầy đủ
+- **Step-by-step Guides**: Hướng dẫn chi tiết
+- **Technical References**: Tham khảo kỹ thuật
+- **Best Practices**: Thực hành tốt nhất
+
+Sử dụng tài liệu này để:
+- **Hiểu hệ thống**: Learn the system
+- **Sử dụng hiệu quả**: Use effectively
+- **Troubleshoot**: Solve problems
+- **Contribute**: Improve the system
+
+**Happy Learning! 🚀**
