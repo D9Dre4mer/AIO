@@ -1464,31 +1464,39 @@ def render_step4_wireframe():
     # Display configurations
     st.subheader("📋 Configuration Summary")
     
-    # Optuna configuration
-    optuna_config = step3_data.get('optuna_config', {})
-    if optuna_config.get('enabled', False):
-        st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
-    else:
-        st.info("ℹ️ Optuna: Disabled")
+    # Initialize training state
+    if 'training_started' not in st.session_state:
+        st.session_state.training_started = False
     
-    # Voting configuration
-    voting_config = step3_data.get('voting_config', {})
-    if voting_config.get('enabled', False):
-        st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
-    else:
-        st.info("ℹ️ Voting: Disabled")
-    
-    # Stacking configuration
-    stacking_config = step3_data.get('stacking_config', {})
-    if stacking_config.get('enabled', False):
-        st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
-    else:
-        st.info("ℹ️ Stacking: Disabled")
+    # Only show configuration summary if training hasn't started
+    if not st.session_state.training_started:
+        # Optuna configuration
+        optuna_config = step3_data.get('optuna_config', {})
+        if optuna_config.get('enabled', False):
+            st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+        else:
+            st.info("ℹ️ Optuna: Disabled")
+        
+        # Voting configuration
+        voting_config = step3_data.get('voting_config', {})
+        if voting_config.get('enabled', False):
+            st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
+        else:
+            st.info("ℹ️ Voting: Disabled")
+        
+        # Stacking configuration
+        stacking_config = step3_data.get('stacking_config', {})
+        if stacking_config.get('enabled', False):
+            st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
+        else:
+            st.info("ℹ️ Stacking: Disabled")
     
     # Training execution
     st.subheader("🚀 Training Execution")
     
     if st.button("🚀 Start Training", type="primary"):
+        # Set training started state to hide configuration summary
+        st.session_state.training_started = True
         with st.spinner("🔄 Starting training pipeline..."):
             try:
                 # Import training pipeline
@@ -1743,6 +1751,9 @@ def render_step4_wireframe():
                         
                         st.success("✅ Training results saved!")
                         st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
+                        
+                        # Reset training started state to show configuration summary again
+                        st.session_state.training_started = False
                     else:
                         st.error("❌ No successful training results found")
                         with results_debug_container:
@@ -1751,9 +1762,13 @@ def render_step4_wireframe():
                                 st.info(f"🔍 Debug: model_results = {results['model_results']}")
                 else:
                     st.error(f"❌ Training failed: {results.get('error', 'Unknown error') if results else 'No results returned'}")
+                    # Reset training started state to show configuration summary again
+                    st.session_state.training_started = False
                 
             except Exception as e:
                 st.error(f"❌ Training failed: {str(e)}")
+                # Reset training started state to show configuration summary again
+                st.session_state.training_started = False
                 import traceback
                 st.error(f"Traceback: {traceback.format_exc()}")
     
@@ -3363,7 +3378,7 @@ def render_step4_wireframe():
     if total != 100:
         st.warning(f"⚠️ Total: {total}% (should be 100%)")
     else:
-        st.success(f"✅ Split: {train_ratio}%/{val_ratio}%/{test_ratio}%")
+        st.toast(f"✅ Split: {train_ratio}%/{val_ratio}%/{test_ratio}%")
     
     # Store configuration
     data_split_config = {
@@ -3375,31 +3390,39 @@ def render_step4_wireframe():
     # Display configurations
     st.subheader("📋 Configuration Summary")
     
-    # Optuna configuration
-    optuna_config = step3_data.get('optuna_config', {})
-    if optuna_config.get('enabled', False):
-        st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
-    else:
-        st.info("ℹ️ Optuna: Disabled")
+    # Initialize training state
+    if 'training_started' not in st.session_state:
+        st.session_state.training_started = False
     
-    # Voting configuration
-    voting_config = step3_data.get('voting_config', {})
-    if voting_config.get('enabled', False):
-        st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
-    else:
-        st.info("ℹ️ Voting: Disabled")
-    
-    # Stacking configuration
-    stacking_config = step3_data.get('stacking_config', {})
-    if stacking_config.get('enabled', False):
-        st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
-    else:
-        st.info("ℹ️ Stacking: Disabled")
+    # Only show configuration summary if training hasn't started
+    if not st.session_state.training_started:
+        # Optuna configuration
+        optuna_config = step3_data.get('optuna_config', {})
+        if optuna_config.get('enabled', False):
+            st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+        else:
+            st.info("ℹ️ Optuna: Disabled")
+        
+        # Voting configuration
+        voting_config = step3_data.get('voting_config', {})
+        if voting_config.get('enabled', False):
+            st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
+        else:
+            st.info("ℹ️ Voting: Disabled")
+        
+        # Stacking configuration
+        stacking_config = step3_data.get('stacking_config', {})
+        if stacking_config.get('enabled', False):
+            st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
+        else:
+            st.info("ℹ️ Stacking: Disabled")
     
     # Training execution
     st.subheader("🚀 Training Execution")
     
     if st.button("🚀 Start Training", type="primary"):
+        # Set training started state to hide configuration summary
+        st.session_state.training_started = True
         with st.spinner("🔄 Starting training pipeline..."):
             try:
                 # Import training pipeline
@@ -3654,6 +3677,9 @@ def render_step4_wireframe():
                         
                         st.success("✅ Training results saved!")
                         st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
+                        
+                        # Reset training started state to show configuration summary again
+                        st.session_state.training_started = False
                     else:
                         st.error("❌ No successful training results found")
                         with results_debug_container:
@@ -3662,9 +3688,13 @@ def render_step4_wireframe():
                                 st.info(f"🔍 Debug: model_results = {results['model_results']}")
                 else:
                     st.error(f"❌ Training failed: {results.get('error', 'Unknown error') if results else 'No results returned'}")
+                    # Reset training started state to show configuration summary again
+                    st.session_state.training_started = False
                 
             except Exception as e:
                 st.error(f"❌ Training failed: {str(e)}")
+                # Reset training started state to show configuration summary again
+                st.session_state.training_started = False
                 import traceback
                 st.error(f"Traceback: {traceback.format_exc()}")
     
