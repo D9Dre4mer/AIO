@@ -1427,415 +1427,6 @@ def _check_for_text_data():
         return False
 
 
-def render_step4_wireframe():
-    """Render Step 4 - Training Execution and Monitoring"""
-    
-    # Step title
-    st.markdown("""
-    <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 4/5: Training Execution and Monitoring
-    </h2>
-    """, unsafe_allow_html=True)
-    
-    # Get data from previous steps
-    step1_data = session_manager.get_step_data(1)
-    step2_data = session_manager.get_step_data(2)
-    step3_data = session_manager.get_step_data(3)
-    
-    if not step1_data or 'dataframe' not in step1_data:
-        st.error("❌ No dataset found. Please complete Step 1 first.")
-        return
-    
-    if not step2_data or not step2_data.get('completed', False):
-        st.error("❌ Column selection not completed. Please complete Step 2 first.")
-        return
-    
-    if not step3_data or not step3_data.get('completed', False):
-        st.error("❌ Model configuration not completed. Please complete Step 3 first.")
-        return
-    
-    # Display dataset info
-    df = step1_data['dataframe']
-    st.info(f"📊 **Dataset**: {df.shape[0]:,} samples × {df.shape[1]} columns")
-    
-    # Data Split Configuration
-    st.subheader("📊 Data Split Configuration")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        train_ratio = st.slider("🚂 Train (%)", 50, 90, 80, 5)
-    with col2:
-        val_ratio = st.slider("🔍 Val (%)", 5, 30, 10, 5)
-    with col3:
-        test_ratio = st.slider("🧪 Test (%)", 5, 30, 10, 5)
-    
-    # Validate and display
-    total = train_ratio + val_ratio + test_ratio
-    if total != 100:
-        st.warning(f"⚠️ Total: {total}% (should be 100%)")
-    else:
-        st.success(f"✅ Split: {train_ratio}%/{val_ratio}%/{test_ratio}%")
-    
-    # Store configuration
-    data_split_config = {
-        'train_ratio': train_ratio / 100,
-        'val_ratio': val_ratio / 100,
-        'test_ratio': test_ratio / 100
-    }
-    
-    # Display configurations
-    st.subheader("📋 Configuration Summary")
-    
-    # Initialize training state
-    if 'training_started' not in st.session_state:
-        st.session_state.training_started = False
-    
-    # Create debug container for configuration details
-    config_debug_container = st.expander("🔍 Configuration Debug", expanded=False)
-    
-    # Only show configuration summary if training hasn't started
-    if not st.session_state.training_started:
-        # Optuna configuration
-        optuna_config = step3_data.get('optuna_config', {})
-        if optuna_config.get('enabled', False):
-            with config_debug_container:
-                st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
-        else:
-            with config_debug_container:
-                st.info("ℹ️ Optuna: Disabled")
-        
-        # Voting configuration
-        voting_config = step3_data.get('voting_config', {})
-        if voting_config.get('enabled', False):
-            with config_debug_container:
-                st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
-        else:
-            with config_debug_container:
-                st.info("ℹ️ Voting: Disabled")
-        
-        # Stacking configuration
-        stacking_config = step3_data.get('stacking_config', {})
-        if stacking_config.get('enabled', False):
-            with config_debug_container:
-                st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
-        else:
-            with config_debug_container:
-                st.info("ℹ️ Stacking: Disabled")
-    
-    # Training execution
-    st.subheader("🚀 Training Execution")
-    
-    if st.button("🚀 Start Training", type="primary"):
-        # Set training started state to hide configuration summary
-        st.session_state.training_started = True
-        with st.spinner("🔄 Starting training pipeline..."):
-            try:
-                # Import training pipeline
-                from comprehensive_evaluation import ComprehensiveEvaluator
-                
-                # Get dataset
-                df = step1_data['dataframe']
-                
-                # Get column configuration from Step 2
-                # Check both step2_data and step2_config
-                text_column = None
-                label_column = None
-                
-                # Try to get from step2_data first (Multi Input)
-                column_config = step2_data.get('column_config', {})
-                # Create debug logging container for Step 4
-                debug_container = st.expander("🔍 Debug Log", expanded=False)
-                with debug_container:
-                    st.info(f"🔍 Debug Step 4: step2_data keys = {list(step2_data.keys())}")
-                    st.info(f"🔍 Debug Step 4: column_config = {column_config}")
-                    st.info(f"🔍 Debug Step 4: step2_data completed = {step2_data.get('completed', False)}")
-                if column_config.get('text_column') or column_config.get('label_column'):
-                    text_column = column_config.get('text_column')
-                    label_column = column_config.get('label_column')
-                
-                # Try to get from step2_config (Single Input)
-                if not text_column and not label_column:
-                    step2_config = session_manager.get_step_config('step2')
-                    text_column = step2_config.get('text_column')
-                    label_column = step2_config.get('label_column')
-                
-                # Check if we have valid configuration from Step 2
-                if not label_column:
-                    st.error("❌ No label column configuration found from Step 2.")
-                    st.info("💡 Please complete Step 2 to configure the label column.")
-                    return
-                
-                # Check if columns exist in dataset
-                data_type = column_config.get('data_type', 'single_input')
-                with debug_container:
-                    st.info(f"🔍 Debug: data_type = '{data_type}', column_config keys = {list(column_config.keys())}")
-                
-                if data_type == 'single_input':
-                    # Single-input: require text_column
-                    if text_column not in df.columns:
-                        st.error(f"❌ Text column '{text_column}' not found in dataset. Available columns: {list(df.columns)}")
-                        return
-                
-                if label_column not in df.columns:
-                    st.error(f"❌ Label column '{label_column}' not found in dataset. Available columns: {list(df.columns)}")
-                    st.info("💡 Please complete Step 2 to configure the correct label column.")
-                    return
-                
-                # Show detected columns
-                with debug_container:
-                    st.info(f"📋 Using label column: '{label_column}'")
-                    if data_type == 'single_input':
-                        st.info(f"📋 Using text column: '{text_column}'")
-                    else:
-                        input_columns = column_config.get('input_columns', [])
-                        st.info(f"📋 Using input columns: {input_columns}")
-                
-                # Prepare data based on data type
-                
-                if data_type == 'multi_input':
-                    # Multi-input data: use input_columns as features
-                    input_columns = column_config.get('input_columns', [])
-                    if not input_columns:
-                        st.error("❌ No input columns configured for multi-input data")
-                        return
-                    
-                    # Check if all input columns exist
-                    missing_cols = [col for col in input_columns if col not in df.columns]
-                    if missing_cols:
-                        st.error(f"❌ Input columns not found: {missing_cols}")
-                        return
-                    
-                    # Get multi_input_config for scaling methods
-                    multi_input_config = step2_data.get('multi_input_config', {})
-                    numeric_scalers = multi_input_config.get('numeric_scaler', ['StandardScaler'])
-                    
-                    # Handle single scaler (convert to list)
-                    if isinstance(numeric_scalers, str):
-                        numeric_scalers = [numeric_scalers]
-                    
-                    with debug_container:
-                        st.info(f"🔍 Debug: numeric_scalers = {numeric_scalers}")
-                    
-                    X = df[input_columns].values
-                    y = df[label_column].values
-                    
-                    with debug_container:
-                        st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
-                        st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
-                    
-                else:
-                    # Single-input data: use text column
-                    X = df[text_column].values
-                    y = df[label_column].values
-                    
-                    st.info(f"📊 Single-input data: {len(X):,} samples")
-                
-                # Get selected models from Step 3
-                selected_models = optuna_config.get('models', [])
-                if not selected_models:
-                    st.error("❌ No models selected in Step 3")
-                    return
-                
-                with debug_container:
-                    st.info(f"🤖 Selected models: {', '.join(selected_models)}")
-                
-                # Create progress bar
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                
-                # Enhanced configurations for training
-                enhanced_step1_config = {
-                    'dataframe': df,
-                    'text_column': text_column,
-                    'label_column': label_column,
-                    'input_columns': input_columns if data_type == 'multi_input' else None,
-                    'data_type': data_type
-                }
-                
-                enhanced_step2_config = {
-                    'preprocessing_config': step2_data.get('preprocessing_config', {}),
-                    'multi_input_config': step2_data.get('multi_input_config', {})
-                }
-                
-                enhanced_step3_config = {
-                    'optuna_config': optuna_config,
-                    'voting_config': voting_config,
-                    'stacking_config': stacking_config,
-                    'selected_models': selected_models,
-                    'preprocessing_config': {
-                        'selected_methods': ['StandardScaler', 'MinMaxScaler', 'NoScaling']
-                    }
-                }
-                
-                # Use different approaches based on data type
-                with debug_container:
-                    st.info(f"🔍 Debug: About to check data_type = '{data_type}' for training approach")
-                if data_type == 'multi_input':
-                    # For numeric data: use direct sklearn training (like debug_streamlit_pipeline.py)
-                    with debug_container:
-                        st.info("🔢 Using direct sklearn for numeric data...")
-                    with debug_container:
-                        st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
-                else:
-                    # For text data: use execute_streamlit_training
-                    st.info("📝 Using execute_streamlit_training for text data...")
-                    with debug_container:
-                        st.info(f"🔍 Debug: Calling execute_streamlit_training with enhanced configs")
-                    from training_pipeline import execute_streamlit_training
-                    results = execute_streamlit_training(df, enhanced_step1_config, enhanced_step2_config, enhanced_step3_config)
-                    
-                # Process results (same format as auto_train.py)
-                results_debug_container = st.expander("🔍 Results Debug Log", expanded=False)
-                with results_debug_container:
-                    st.info(f"🔍 Debug: results type = {type(results)}")
-                    if isinstance(results, dict):
-                        st.info(f"🔍 Debug: results keys = {list(results.keys())}")
-                        st.info(f"🔍 Debug: results['status'] = {results.get('status', 'NOT_FOUND')}")
-                    else:
-                        st.info(f"🔍 Debug: results is not a dict: {results}")
-                if results and isinstance(results, dict) and results.get('status') == 'success':
-                    st.toast("✅ Training completed successfully!")
-                    
-                    # Display results (same format as auto_train.py)
-                    st.subheader("📊 Training Results")
-                    
-                    # Summary statistics - handle different result formats
-                    with results_debug_container:
-                        if isinstance(results, dict):
-                            st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
-                        else:
-                            st.info(f"🔍 Debug: results is not a dict, cannot process keys")
-
-                    if 'comprehensive_results' in results:
-                        # Format from execute_streamlit_training (text data)
-                        with results_debug_container:
-                            st.info("🔍 Debug: Using comprehensive_results format (text data)")
-                        comprehensive_results = results.get('comprehensive_results', [])
-                        if isinstance(comprehensive_results, list):
-                            successful_results = [r for r in comprehensive_results if isinstance(r, dict) and r.get('status') == 'success']
-                        else:
-                            successful_results = []
-                        with results_debug_container:
-                            st.info(f"🔍 Debug: Found {len(successful_results)} successful results in comprehensive_results")
-                    elif 'model_results' in results:
-                        # Format from train_numeric_data_directly (numeric data)
-                        with results_debug_container:
-                            st.info("🔍 Debug: Using model_results format (numeric data)")
-                        model_results = results.get('model_results', {})
-                        with results_debug_container:
-                            if isinstance(model_results, dict):
-                                st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
-                            else:
-                                st.info(f"🔍 Debug: model_results is not dict: {type(model_results)}")
-                        successful_results = []
-                        for model_name, model_data in model_results.items():
-                            with results_debug_container:
-                                if isinstance(model_data, dict):
-                                    st.info(f"🔍 Debug: Processing {model_name}, status = {model_data.get('status', 'NO_STATUS')}")
-                                else:
-                                    st.info(f"🔍 Debug: Processing {model_name}, model_data is not dict: {type(model_data)}")
-                            if isinstance(model_data, dict) and model_data.get('status') == 'success':
-                                successful_results.append({
-                                    'model_name': model_name,
-                                    'validation_accuracy': model_data.get('validation_accuracy', 0),
-                                    'test_accuracy': model_data.get('accuracy', 0),
-                                    'f1_score': model_data.get('f1_score', 0),
-                                    'precision': model_data.get('precision', 0),
-                                    'recall': model_data.get('recall', 0),
-                                    'support': model_data.get('support', 0),
-                                    'training_time': model_data.get('training_time', 0)
-                                })
-                        with results_debug_container:
-                            st.info(f"🔍 Debug: Found {len(successful_results)} successful results in model_results")
-                    else:
-                        # Fallback: try to use 'models' key if available
-                        with results_debug_container:
-                            st.info("🔍 Debug: Using fallback 'models' key")
-                        models_data = results.get('models', {})
-                        with results_debug_container:
-                            if isinstance(models_data, dict):
-                                st.info(f"🔍 Debug: models keys = {list(models_data.keys())}")
-                            else:
-                                st.info(f"🔍 Debug: models_data is not dict: {type(models_data)}")
-                        successful_results = []
-                        for model_name, model_data in models_data.items():
-                            if isinstance(model_data, dict) and model_data.get('status') == 'success':
-                                successful_results.append({
-                                    'model_name': model_name,
-                                    'f1_score': model_data.get('f1_score', model_data.get('accuracy', 0)),
-                                    'test_accuracy': model_data.get('accuracy', 0),
-                                    'validation_accuracy': model_data.get('validation_accuracy', 0),
-                                    'training_time': model_data.get('training_time', 0),
-                                    'embedding_name': 'numeric_features'
-                                })
-                        with results_debug_container:
-                            st.info(f"🔍 Debug: Found {len(successful_results)} successful results in models fallback")
-
-                    # Debug logging
-                    with results_debug_container:
-                        st.info(f"🔍 Debug: successful_results count = {len(successful_results)}")
-                        if successful_results:
-                            st.info(f"🔍 Debug: successful_results sample = {successful_results[0] if successful_results else 'None'}")
-                    
-                    if successful_results:
-                        # Create results DataFrame
-                        results_df = pd.DataFrame(successful_results)
-                        
-                        # Display summary
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("✅ Successful Models", len(successful_results))
-                        with col2:
-                            best_accuracy = results_df['test_accuracy'].max()
-                            st.metric("🏆 Best Accuracy", f"{best_accuracy:.4f}")
-                        with col3:
-                            avg_time = results_df['training_time'].mean()
-                            st.metric("⏱️ Avg Training Time", f"{avg_time:.2f}s")
-                        
-                        # Display detailed results
-                        st.subheader("📋 Detailed Results")
-                        st.dataframe(results_df, use_container_width=True)
-                        
-                        # Save training results
-                        step4_data = {
-                            'training_results': results,
-                            'completed': True
-                        }
-                        session_manager.set_step_data(4, step4_data)
-                        
-                        st.success("✅ Training results saved!")
-                        st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
-                        
-                        # Reset training started state to show configuration summary again
-                        st.session_state.training_started = False
-                    else:
-                        st.error("❌ No successful training results found")
-                        with results_debug_container:
-                            st.info(f"🔍 Debug: successful_results is empty")
-                            if isinstance(results, dict) and 'model_results' in results:
-                                st.info(f"🔍 Debug: model_results = {results['model_results']}")
-                else:
-                    error_msg = 'Unknown error'
-                    if isinstance(results, dict):
-                        error_msg = results.get('error', 'Unknown error')
-                    elif results:
-                        error_msg = str(results)
-                    else:
-                        error_msg = 'No results returned'
-                    st.error(f"❌ Training failed: {error_msg}")
-                    # Reset training started state to show configuration summary again
-                    st.session_state.training_started = False
-                
-            except Exception as e:
-                st.error(f"❌ Training failed: {str(e)}")
-                # Reset training started state to show configuration summary again
-                st.session_state.training_started = False
-                import traceback
-                st.error(f"Traceback: {traceback.format_exc()}")
-    
-    # Navigation buttons
-    render_navigation_buttons()
 def render_navigation_buttons():
     """Render navigation buttons as per wireframe"""
      
@@ -2550,21 +2141,21 @@ def render_multi_input_section():
         st.metric("📝 Text Columns", len(text_cols))
     with col3:
         st.metric("🔄 Mixed Columns", len(mixed_cols))
-    
+        
     if len(df.columns) > 0:
         # Initialize default values for session state if not set
         if 'multi_input_label_col' not in st.session_state:
             st.session_state.multi_input_label_col = df.columns.tolist()[-1] if len(df.columns) > 0 else ''
-        
+    
         if 'multi_input_input_cols' not in st.session_state:
             st.session_state.multi_input_input_cols = df.columns.tolist()[:-1] if len(df.columns) > 1 else []
-        
+    
         # Column selection
         st.markdown("**📝 Column Selection:**")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
             # Get current label column selection to exclude from input options
             current_label_col = st.session_state.get('multi_input_label_col', '')
             
@@ -2586,38 +2177,38 @@ def render_multi_input_section():
                 key="multi_input_input_cols",
                 help="Select multiple columns for input features"
             )
+    
+    with col2:
+        # Get current input columns selection to exclude from label options
+        current_input_cols = st.session_state.get('multi_input_input_cols', [])
         
-        with col2:
-            # Get current input columns selection to exclude from label options
-            current_input_cols = st.session_state.get('multi_input_input_cols', [])
-            
-            # Available columns for label (exclude input columns)
-            available_label_cols = [col for col in df.columns.tolist() if col not in current_input_cols]
-            
-            # Get current label selection and reset if it's in input columns
-            current_label_col = st.session_state.get('multi_input_label_col', '')
-            if current_label_col in current_input_cols:
-                current_label_col = ''
-            
-            # Default: Last column in the dataset
-            default_label_col = df.columns.tolist()[-1] if len(df.columns) > 0 else ''
-            
-            # Calculate default index
-            if current_label_col == '':
-                # Use default (last column) if no current selection
-                default_index = available_label_cols.index(default_label_col) + 1 if default_label_col in available_label_cols else 0
-            else:
-                # Use current selection if it exists
-                default_index = available_label_cols.index(current_label_col) + 1 if current_label_col in available_label_cols else 0
-            
-            # Select label column (single)
-            label_col = st.selectbox(
-                "🏷️ Select label column:",
-                options=[''] + available_label_cols,
-                index=default_index,
-                key="multi_input_label_col",
-                help="Select the target column for classification"
-            )
+        # Available columns for label (exclude input columns)
+        available_label_cols = [col for col in df.columns.tolist() if col not in current_input_cols]
+        
+        # Get current label selection and reset if it's in input columns
+        current_label_col = st.session_state.get('multi_input_label_col', '')
+        if current_label_col in current_input_cols:
+            current_label_col = ''
+        
+        # Default: Last column in the dataset
+        default_label_col = df.columns.tolist()[-1] if len(df.columns) > 0 else ''
+        
+        # Calculate default index
+        if current_label_col == '':
+            # Use default (last column) if no current selection
+            default_index = available_label_cols.index(default_label_col) + 1 if default_label_col in available_label_cols else 0
+        else:
+            # Use current selection if it exists
+            default_index = available_label_cols.index(current_label_col) + 1 if current_label_col in available_label_cols else 0
+        
+        # Select label column (single)
+        label_col = st.selectbox(
+            "🏷️ Select label column:",
+            options=[''] + available_label_cols,
+            index=default_index,
+            key="multi_input_label_col",
+            help="Select the target column for classification"
+        )
         
         # Note: Column configuration is saved when clicking "🚀 Process Multi-Input Data" button below
         
@@ -2706,16 +2297,16 @@ def render_multi_input_section():
                     value=False,  # Default to False
                     key="multi_input_outlier_detection",
                     help="Detect and handle outliers in numeric features"
-                )
-            
-            with col2:
-                missing_strategy = st.selectbox(
-                    "❌ Missing Values:",
-                    ["Drop rows", "Fill with mean/median", "Fill with mode", "Forward fill"],
-                    index=1,  # Default to "Fill with mean/median" (index 1)
-                    key="multi_input_missing_strategy",
-                    help="Strategy for handling missing values"
-                )
+                    )
+                    
+                with col2:
+                    missing_strategy = st.selectbox(
+                        "❌ Missing Values:",
+                        ["Drop rows", "Fill with mean/median", "Fill with mode", "Forward fill"],
+                        index=1,  # Default to "Fill with mean/median" (index 1)
+                        key="multi_input_missing_strategy",
+                        help="Strategy for handling missing values"
+                    )
             
             # Process button
             if st.button("🚀 Process Multi-Input Data", type="primary", key="multi_input_process_button"):
@@ -2760,7 +2351,7 @@ def render_multi_input_section():
                     st.write(f"- Input Columns: {', '.join(input_cols)}")
                     st.write(f"- Label Column: {label_col}")
                     st.write(f"- Data Type: Multi-Input")
-                
+                    
                 with col2:
                     st.markdown("**⚙️ Processing Configuration:**")
                     st.write(f"- Numeric Scaler: {', '.join(numeric_scaler) if numeric_scaler else 'None'}")
@@ -2772,10 +2363,10 @@ def render_multi_input_section():
                 st.toast("Step 2 (Multi-Input) completed successfully!")
                 st.toast("Click 'Next ▶' button to proceed to Step 3.")
         
+            else:
+                st.warning("⚠️ Please select input columns and label column to continue.")
         else:
-            st.warning("⚠️ Please select input columns and label column to continue.")
-    else:
-        st.error("❌ No columns found in the dataset.")
+            st.error("❌ No columns found in the dataset.")
 
 
 def _check_for_text_data():
@@ -3003,8 +2594,8 @@ def render_voting_weight_ensemble():
                         step=0.1,
                         key=f"weight_{model}"
                     )
-            else:
-                weights = None
+                else:
+                    weights = None
             
             # Save voting configuration
             voting_config = {
@@ -3451,7 +3042,7 @@ def render_step4_wireframe():
     
     # Display configurations
     st.subheader("📋 Configuration Summary")
-    
+        
     # Initialize training state
     if 'training_started' not in st.session_state:
         st.session_state.training_started = False
@@ -4662,7 +4253,8 @@ def render_shap_analysis():
                 'decision_tree',
                 # Mô hình mới
                 'random_forest', 'xgboost', 'lightgbm', 'catboost',
-                'adaboost', 'gradient_boosting'
+                # 'adaboost',  # Removed: not supported by SHAP TreeExplainer
+                'gradient_boosting'
             ]
             
             selected_models = st.multiselect(
@@ -4757,7 +4349,9 @@ def render_shap_analysis():
                                     continue
                                 
                                 # Use eval_predictions as test data for SHAP
-                                test_data = eval_predictions.values
+                                # Extract only feature columns (exclude true_labels and predictions)
+                                feature_columns = [col for col in eval_predictions.columns if col not in ['true_labels', 'predictions']]
+                                test_data = eval_predictions[feature_columns].values
                                 
                                 # Sample data for SHAP analysis
                                 if len(test_data) > sample_size:
@@ -4768,22 +4362,30 @@ def render_shap_analysis():
                                     sample_data = test_data
                                 
                                 # Create SHAP explainer
+                                st.info(f"🔍 Debug: Model type = {type(model)}, Model class = {model.__class__.__name__}")
                                 explainer = create_shap_explainer(model, sample_data)
-                                shap_values = explainer(sample_data)
+                                if explainer is None:
+                                    st.error(f"❌ Failed to create SHAP explainer for {model_name}")
+                                    continue
+                                
+                                shap_values = explainer.shap_values(sample_data)
                                 
                                 # Generate plots based on selected types
                                 for plot_type in plot_types:
                                     if plot_type == "summary":
-                                        fig = generate_shap_summary_plot(shap_values, sample_data)
-                                        st.pyplot(fig)
+                                        fig = generate_shap_summary_plot(explainer, sample_data)
+                                        if fig:
+                                            st.pyplot(fig)
                                     
                                     elif plot_type == "bar":
-                                        fig = generate_shap_bar_plot(shap_values, sample_data)
-                                        st.pyplot(fig)
+                                        fig = generate_shap_bar_plot(explainer, sample_data)
+                                        if fig:
+                                            st.pyplot(fig)
                                     
                                     elif plot_type == "dependence":
-                                        fig = generate_shap_dependence_plot(shap_values, sample_data, sample_data)
-                                        st.pyplot(fig)
+                                        fig = generate_shap_dependence_plot(explainer, sample_data, sample_data)
+                                        if fig:
+                                            st.pyplot(fig)
                                 
                                 st.success(f"✅ SHAP plots generated for {model_name}")
                                 

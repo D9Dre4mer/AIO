@@ -47,9 +47,9 @@ class RandomForestModel(BaseModel):
         if n_jobs == -1:
             import os
             cpu_count = os.cpu_count()
-            print(f"🔄 CPU multithreading: Using all {cpu_count} available cores")
+            print(f"CPU multithreading: Using all {cpu_count} available cores")
         else:
-            print(f"🔄 CPU multithreading: Using {n_jobs} parallel jobs")
+            print(f"CPU multithreading: Using {n_jobs} parallel jobs")
         
         # Fit the model
         self.model.fit(X, y)

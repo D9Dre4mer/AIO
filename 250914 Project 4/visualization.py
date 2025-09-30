@@ -173,33 +173,94 @@ def create_shap_explainer(model, X_sample, model_type="auto"):
     try:
         import shap
         
+        print(f"Debug: Creating SHAP explainer for model type: {model_type}")
+        print(f"Debug: Model class: {model.__class__.__name__}")
+        print(f"Debug: Model attributes: {dir(model)}")
+        
+        # Extract the actual sklearn model from wrapper if needed
+        sklearn_model = model
+        if hasattr(model, 'model'):
+            # Custom wrapper (e.g., RandomForestModel, AdaBoostModel, GradientBoostingModel)
+            sklearn_model = model.model
+            print(f"Debug: Extracted sklearn model: {sklearn_model.__class__.__name__}")
+        elif hasattr(model, 'booster') and model.booster is not None:
+            # LightGBM cache wrapper - use booster directly
+            sklearn_model = model.booster
+            print(f"Debug: Using LightGBM booster directly: {type(sklearn_model)}")
+        elif hasattr(model, 'get_booster'):
+            # XGBoost model - get booster
+            try:
+                sklearn_model = model.get_booster()
+                print(f"Debug: Using XGBoost booster: {type(sklearn_model)}")
+            except Exception as e:
+                print(f"Debug: Failed to get XGBoost booster: {e}")
+                sklearn_model = model
+        elif hasattr(model, 'estimators_'):
+            # AdaBoost/GradientBoosting - use the underlying estimators
+            sklearn_model = model
+            print(f"Debug: Using AdaBoost/GradientBoosting directly: {type(sklearn_model)}")
+        
         # Auto-detect model type if not specified
         if model_type == "auto":
-            model_name = model.__class__.__name__.lower()
-            if any(tree_model in model_name for tree_model in ['randomforest', 'decisiontree', 'gradientboosting', 'xgboost', 'lightgbm', 'catboost']):
+            model_name = sklearn_model.__class__.__name__.lower()
+            print(f"Debug: Auto-detecting model type from: {model_name}")
+            if any(tree_model in model_name for tree_model in ['randomforest', 'decisiontree', 'gradientboosting', 'adaboost', 'xgboost', 'lightgbm', 'catboost', 'booster']):
                 model_type = "tree"
             elif any(linear_model in model_name for linear_model in ['logisticregression', 'linearsvc', 'svm']):
                 model_type = "linear"
             else:
                 model_type = "tree"  # Default to tree explainer
         
+        print(f"Debug: Using model_type: {model_type}")
+        
         # Create appropriate explainer
         if model_type == "tree":
-            explainer = shap.TreeExplainer(model)
+            print("Debug: Creating TreeExplainer...")
+            try:
+                explainer = shap.TreeExplainer(sklearn_model)
+            except Exception as e:
+                print(f"Debug: TreeExplainer failed, trying with original model: {e}")
+                # Fallback to original model if booster fails
+                try:
+                    explainer = shap.TreeExplainer(model)
+                except Exception as e2:
+                    print(f"Debug: Both TreeExplainer attempts failed: {e2}")
+                    # For AdaBoost, try using Explainer with a prediction function
+                    if 'adaboost' in sklearn_model.__class__.__name__.lower():
+                        print("Debug: AdaBoost not supported by TreeExplainer, skipping...")
+                        return None
+                    # For XGBoost with Unicode errors, try different approach
+                    elif ('xgboost' in sklearn_model.__class__.__name__.lower() or 
+                          'xgbclassifier' in str(type(sklearn_model)).lower() or
+                          'xgboost' in str(type(model)).lower() or
+                          'xgbclassifier' in str(type(model)).lower()):
+                        print("Debug: XGBoost Unicode error detected, trying Explainer with prediction function...")
+                        try:
+                            # Use Explainer with prediction function instead of TreeExplainer
+                            explainer = shap.Explainer(model, X_sample)
+                            print("Debug: Successfully created Explainer for XGBoost")
+                        except Exception as e3:
+                            print(f"Debug: Explainer also failed for XGBoost: {e3}")
+                            print("Debug: XGBoost SHAP not supported due to Unicode encoding issues, skipping...")
+                            return None
+                    else:
+                        raise e2
         elif model_type == "linear":
-            explainer = shap.LinearExplainer(model, X_sample)
+            print("Debug: Creating LinearExplainer...")
+            explainer = shap.LinearExplainer(sklearn_model, X_sample)
         else:
             # Fallback to TreeExplainer
-            explainer = shap.TreeExplainer(model)
+            print("Debug: Creating TreeExplainer (fallback)...")
+            explainer = shap.TreeExplainer(sklearn_model)
         
-        print(f"✅ SHAP {model_type.title()}Explainer created successfully")
+        print(f"SUCCESS: SHAP {model_type.title()}Explainer created successfully")
         return explainer
         
     except ImportError:
-        print("❌ SHAP not available. Please install with: pip install shap")
+        print("ERROR: SHAP not available. Please install with: pip install shap")
         return None
     except Exception as e:
-        print(f"❌ Error creating SHAP explainer: {e}")
+        print(f"ERROR: Error creating SHAP explainer: {e}")
         return None
 
 
@@ -228,19 +289,19 @@ def generate_shap_summary_plot(explainer, X_sample, feature_names=None, max_disp
             shap_values = shap_values[1]  # Use positive class for binary classification
         
         # Create summary plot
-        plt.figure(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(10, 8))
         shap.summary_plot(shap_values, X_sample, feature_names=feature_names, 
                          max_display=max_display, show=False)
         
-        plt.title("SHAP Summary Plot (Beeswarm)", fontsize=14, fontweight='bold')
+        ax.set_title("SHAP Summary Plot (Beeswarm)", fontsize=14, fontweight='bold')
         plt.tight_layout()
         
         # Save plot if path provided
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"✅ SHAP summary plot saved to: {save_path}")
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"SUCCESS: SHAP summary plot saved to: {save_path}")
         
-        return plt.gcf()
+        return fig
         
     except Exception as e:
         print(f"❌ Error generating SHAP summary plot: {e}")
@@ -272,19 +333,19 @@ def generate_shap_bar_plot(explainer, X_sample, feature_names=None, max_display=
             shap_values = shap_values[1]  # Use positive class for binary classification
         
         # Create bar plot
-        plt.figure(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(10, 8))
         shap.summary_plot(shap_values, X_sample, feature_names=feature_names, 
                          max_display=max_display, plot_type="bar", show=False)
         
-        plt.title("SHAP Bar Plot (Mean Absolute SHAP Values)", fontsize=14, fontweight='bold')
+        ax.set_title("SHAP Bar Plot (Mean Absolute SHAP Values)", fontsize=14, fontweight='bold')
         plt.tight_layout()
         
         # Save plot if path provided
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"✅ SHAP bar plot saved to: {save_path}")
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"SUCCESS: SHAP bar plot saved to: {save_path}")
         
-        return plt.gcf()
+        return fig
         
     except Exception as e:
         print(f"❌ Error generating SHAP bar plot: {e}")
@@ -318,7 +379,7 @@ def generate_shap_dependence_plot(explainer, X_sample, feature_names=None,
             shap_values = shap_values[1]  # Use positive class for binary classification
         
         # Create dependence plot
-        plt.figure(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=(10, 6))
         
         if interaction_index is not None:
             shap.dependence_plot(feature_index, shap_values, X_sample, 
@@ -329,15 +390,15 @@ def generate_shap_dependence_plot(explainer, X_sample, feature_names=None,
                                 feature_names=feature_names, show=False)
         
         feature_name = feature_names[feature_index] if feature_names else f"Feature {feature_index}"
-        plt.title(f"SHAP Dependence Plot: {feature_name}", fontsize=14, fontweight='bold')
+        ax.set_title(f"SHAP Dependence Plot: {feature_name}", fontsize=14, fontweight='bold')
         plt.tight_layout()
         
         # Save plot if path provided
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"✅ SHAP dependence plot saved to: {save_path}")
+            fig.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"SUCCESS: SHAP dependence plot saved to: {save_path}")
         
-        return plt.gcf()
+        return fig
         
     except Exception as e:
         print(f"❌ Error generating SHAP dependence plot: {e}")
