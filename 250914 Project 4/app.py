@@ -842,7 +842,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
             config_hash = cache_manager.generate_config_hash({
                 'model': mapped_name,
                 'preprocessing': scaler_name,
-                'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
+                'trials': optuna_config.get('trials', 50) if optuna_enabled else 0,
                 'random_state': 42
             })
             dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
@@ -970,7 +970,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 cache_config = {
                     'model': mapped_name,
                     'preprocessing': scaler_name,
-                    'trials': optuna_config.get('n_trials', 50) if optuna_enabled else 0,
+                    'trials': optuna_config.get('trials', 50) if optuna_enabled else 0,
                     'random_state': 42,
                     'test_size': 0.2
                 }
@@ -1215,6 +1215,10 @@ def render_step3_wireframe():
             help="Use Optuna for automatic hyperparameter tuning"
         )
         
+        # Initialize default values
+        n_trials = 50
+        timeout = 1800
+        
         if optuna_enabled:
             col1, col2 = st.columns(2)
             
@@ -1261,7 +1265,7 @@ def render_step3_wireframe():
         # Save Optuna configuration
         optuna_config = {
             'enabled': optuna_enabled,
-            'n_trials': n_trials if optuna_enabled else 0,
+            'trials': n_trials if optuna_enabled else 0,  # Changed from 'n_trials' to 'trials'
             'timeout': timeout if optuna_enabled else 0,
             'models': selected_models
         }
@@ -1463,7 +1467,7 @@ def render_step4_wireframe():
     # Optuna configuration
     optuna_config = step3_data.get('optuna_config', {})
     if optuna_config.get('enabled', False):
-        st.success(f"✅ Optuna: {optuna_config.get('n_trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+        st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
     else:
         st.info("ℹ️ Optuna: Disabled")
     
@@ -2844,7 +2848,7 @@ def render_optuna_configuration():
             # Save Optuna configuration
             optuna_config = {
                 'enabled': True,
-                'n_trials': n_trials,
+                'trials': n_trials,
                 'timeout': timeout * 60,  # Convert to seconds
                 'direction': direction,
                 'metric': metric,
@@ -3274,7 +3278,7 @@ def render_review_validation():
         st.subheader("🎯 Optuna Configuration")
     if optuna_config.get('enabled', False):
         st.success("✅ Optuna Optimization Enabled")
-        st.write(f"- Trials: {optuna_config.get('n_trials', 'N/A')}")
+        st.write(f"- Trials: {optuna_config.get('trials', 'N/A')}")
         st.write(f"- Timeout: {optuna_config.get('timeout', 'N/A')} seconds")
         st.write(f"- Direction: {optuna_config.get('direction', 'N/A')}")
         st.write(f"- Models: {', '.join(optuna_config.get('models', []))}")
@@ -3372,7 +3376,7 @@ def render_step4_wireframe():
     # Optuna configuration
     optuna_config = step3_data.get('optuna_config', {})
     if optuna_config.get('enabled', False):
-        st.success(f"✅ Optuna: {optuna_config.get('n_trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+        st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
     else:
         st.info("ℹ️ Optuna: Disabled")
     
