@@ -804,6 +804,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
     from cache_manager import CacheManager
     import time
     import os
+    import pandas as pd
     
     model_name_mapping = {
         'random_forest': 'random_forest',
@@ -982,6 +983,11 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                     'test_size': 0.2
                 }
                 
+                # Create eval_predictions DataFrame for SHAP analysis
+                eval_predictions = pd.DataFrame(X_test_scaled, columns=[f"feature_{i}" for i in range(X_train_scaled.shape[1])])
+                eval_predictions['true_labels'] = y_test
+                eval_predictions['predictions'] = y_pred
+                
                 cache_path = cache_manager.save_model_cache(
                     model_key=model_key,
                     dataset_id=dataset_id,
@@ -991,6 +997,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                     params=best_params,
                     metrics=metrics,
                     config=cache_config,
+                    eval_predictions=eval_predictions,
                     feature_names=[f"feature_{i}" for i in range(X_train_scaled.shape[1])],
                     label_mapping={i: f"class_{i}" for i in range(len(set(y_train)))}
                 )
@@ -4709,7 +4716,9 @@ def render_shap_analysis():
                         for model_name in selected_models:
                             # Look for cached models matching the selected model
                             for cache_info in available_caches:
-                                if model_name in cache_info.get('model_key', ''):
+                                model_key = cache_info.get('model_key', '')
+                                # Check if model_name matches the beginning of model_key (before any scaler suffix)
+                                if model_key.startswith(model_name + '_') or model_key == model_name:
                                     cached_models.append({
                                         'model_name': model_name,
                                         'cache_info': cache_info
