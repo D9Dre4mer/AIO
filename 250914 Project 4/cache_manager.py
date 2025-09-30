@@ -405,7 +405,7 @@ class CacheManager:
                 'vectorization_method': getattr(model, '_vectorization_method', 'unknown'),
                 'config_hash': getattr(model, '_config_hash', 'unknown'),
                 'n_features_in_': getattr(model, 'n_features_in_', 0),
-                'classes_': getattr(model, '_classes', []).tolist() if hasattr(getattr(model, '_classes', None), 'tolist') else getattr(model, '_classes', [])
+                'classes_': getattr(model, 'classes_', []).tolist() if hasattr(getattr(model, 'classes_', None), 'tolist') else getattr(model, 'classes_', [])
             }
             import json
             with open(metadata_file, 'w') as f:
@@ -443,67 +443,62 @@ class CacheManager:
             return model
         elif model_key in ['lightgbm']:
             import lightgbm as lgb
+            import numpy as np
             # Load the saved model directly
             booster = lgb.Booster(model_file=str(file_path))
-            # Create a wrapper classifier
-            classifier = lgb.LGBMClassifier()
-            classifier._Booster = booster
-            # Mark as fitted and set necessary attributes
-            classifier._fitted = True
-            classifier._n_features = booster.num_feature()
-            # Try to get num_classes, fallback to 2 if not available
-            try:
-                classifier._n_classes = booster.num_class()
-            except AttributeError:
-                classifier._n_classes = 2  # Default to binary classification
-            classifier._classes = list(range(classifier._n_classes))
-            classifier._estimator_type = 'classifier'
-            # Set additional required attributes
-            classifier._evals_result = {}
-            classifier._train_set = None
-            classifier._valid_sets = None
             
-            # CRITICAL: Set the fitted flag properly
-            classifier.fitted_ = True
-            classifier._is_fitted = True
+            # Create a simple wrapper that uses the booster directly
+            class LightGBMCacheWrapper:
+                def __init__(self, booster):
+                    self.booster = booster
+                    self._fitted = True
+                    self._is_fitted = True
+                    self._n_features = booster.num_feature()
+                    
+                    # Try to get num_classes from metadata, fallback to 2
+                    metadata_file = file_path.parent / f"{file_path.stem}_metadata.json"
+                    if metadata_file.exists():
+                        try:
+                            import json
+                            with open(metadata_file, 'r') as f:
+                                metadata = json.load(f)
+                            cached_classes = metadata.get('classes_', [])
+                            self._n_classes = len(cached_classes) if cached_classes else 2
+                        except Exception:
+                            self._n_classes = 2
+                    else:
+                        self._n_classes = 2  # Default to binary classification
+                    
+                    # Set classes based on booster
+                    if self._n_classes == 2:
+                        self.classes_ = np.array([0, 1])
+                    else:
+                        self.classes_ = np.array(list(range(self._n_classes)))
+                    
+                    # Set n_features_in_ as a property
+                    self.n_features_in_ = self._n_features
+                
+                def predict(self, X):
+                    """Predict using the booster directly"""
+                    predictions = self.booster.predict(X)
+                    if self._n_classes == 2:
+                        return (predictions > 0.5).astype(int)
+                    else:
+                        return np.argmax(predictions, axis=1)
+                
+                def predict_proba(self, X):
+                    """Predict probabilities using the booster directly"""
+                    predictions = self.booster.predict(X)
+                    if self._n_classes == 2:
+                        # Binary classification: return probabilities for both classes
+                        proba_1 = predictions
+                        proba_0 = 1 - predictions
+                        return np.column_stack([proba_0, proba_1])
+                    else:
+                        # Multi-class: predictions are already probabilities
+                        return predictions
             
-            # Set feature and class information
-            classifier.n_features_in_ = booster.num_feature()
-            # Don't set feature_name_ as it's a read-only property
-            
-            # Set classes properly - use _classes instead of classes_
-            import numpy as np
-            from sklearn.preprocessing import LabelEncoder
-            
-            if classifier._n_classes == 2:
-                classifier._classes = np.array([0, 1])
-            else:
-                classifier._classes = np.array(list(range(classifier._n_classes)))
-            
-            # Set LabelEncoder
-            classifier._le = LabelEncoder()
-            classifier._le.fit(classifier._classes)
-            
-            # Load metadata for compatibility checking
-            metadata_file = file_path.parent / f"{file_path.stem}_metadata.json"
-            if metadata_file.exists():
-                try:
-                    import json
-                    with open(metadata_file, 'r') as f:
-                        metadata = json.load(f)
-                    classifier._vectorization_method = metadata.get('vectorization_method', 'unknown')
-                    classifier._config_hash = metadata.get('config_hash', config_hash)
-                    classifier._cached_n_features = metadata.get('n_features_in_', 0)
-                    classifier._cached_classes = metadata.get('classes_', [])
-                except Exception as e:
-                    print(f"Warning: Could not load LightGBM metadata: {e}")
-                    classifier._vectorization_method = 'unknown'
-                    classifier._config_hash = config_hash
-            else:
-                classifier._vectorization_method = 'unknown'
-                classifier._config_hash = config_hash
-            
-            return classifier
+            return LightGBMCacheWrapper(booster)
         elif model_key in ['catboost']:
             import catboost as cb
             model = cb.CatBoostClassifier()
