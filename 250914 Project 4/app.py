@@ -1134,10 +1134,13 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                 st.info(f"✅ Applied {scaler_name} scaling")
             
             # Train models with this scaling method (using validation set for Optuna)
-            scaler_results = train_models_with_scaling(
+            scaling_result = train_models_with_scaling(
                 X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, 
                 selected_models, optuna_config, scaler_name, log_container
             )
+            
+            # Extract scaler_results from the returned structure
+            scaler_results = scaling_result.get('model_results', {})
             
             # Merge results with scaling method prefix
             for model_name, result in scaler_results.items():
@@ -1670,25 +1673,34 @@ def render_step4_wireframe():
                 # Process results (same format as auto_train.py)
                 results_debug_container = st.expander("🔍 Results Debug Log", expanded=False)
                 with results_debug_container:
-                    st.info(f"🔍 Debug: results type = {type(results)}, keys = {list(results.keys()) if results else 'None'}")
-                    if results:
+                    st.info(f"🔍 Debug: results type = {type(results)}")
+                    if isinstance(results, dict):
+                        st.info(f"🔍 Debug: results keys = {list(results.keys())}")
                         st.info(f"🔍 Debug: results['status'] = {results.get('status', 'NOT_FOUND')}")
-                if results and results.get('status') == 'success':
-                    st.success("✅ Training completed successfully!")
+                    else:
+                        st.info(f"🔍 Debug: results is not a dict: {results}")
+                if results and isinstance(results, dict) and results.get('status') == 'success':
+                    st.toast("✅ Training completed successfully!")
                     
                     # Display results (same format as auto_train.py)
                     st.subheader("📊 Training Results")
                     
                     # Summary statistics - handle different result formats
                     with results_debug_container:
-                        st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
+                        if isinstance(results, dict):
+                            st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
+                        else:
+                            st.info(f"🔍 Debug: results is not a dict, cannot process keys")
 
                     if 'comprehensive_results' in results:
                         # Format from execute_streamlit_training (text data)
                         with results_debug_container:
                             st.info("🔍 Debug: Using comprehensive_results format (text data)")
                         comprehensive_results = results.get('comprehensive_results', [])
-                        successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
+                        if isinstance(comprehensive_results, list):
+                            successful_results = [r for r in comprehensive_results if isinstance(r, dict) and r.get('status') == 'success']
+                        else:
+                            successful_results = []
                         with results_debug_container:
                             st.info(f"🔍 Debug: Found {len(successful_results)} successful results in comprehensive_results")
                     elif 'model_results' in results:
@@ -1697,19 +1709,24 @@ def render_step4_wireframe():
                             st.info("🔍 Debug: Using model_results format (numeric data)")
                         model_results = results.get('model_results', {})
                         with results_debug_container:
-                            st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
+                            if isinstance(model_results, dict):
+                                st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
+                            else:
+                                st.info(f"🔍 Debug: model_results is not dict: {type(model_results)}")
                         successful_results = []
                         for model_name, model_data in model_results.items():
                             with results_debug_container:
-                                st.info(f"🔍 Debug: Processing {model_name}, status = {model_data.get('status', 'NO_STATUS')}")
-                            if model_data.get('status') == 'success':
+                                if isinstance(model_data, dict):
+                                    st.info(f"🔍 Debug: Processing {model_name}, status = {model_data.get('status', 'NO_STATUS')}")
+                                else:
+                                    st.info(f"🔍 Debug: Processing {model_name}, model_data is not dict: {type(model_data)}")
+                            if isinstance(model_data, dict) and model_data.get('status') == 'success':
                                 successful_results.append({
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', 0),
                                     'test_accuracy': model_data.get('accuracy', 0),
                                     'validation_accuracy': model_data.get('validation_accuracy', 0),
-                                    'training_time': model_data.get('training_time', 0),
-                                    'embedding_name': 'numeric_features'
+                                    'training_time': model_data.get('training_time', 0)
                                 })
                         with results_debug_container:
                             st.info(f"🔍 Debug: Found {len(successful_results)} successful results in model_results")
@@ -1719,7 +1736,10 @@ def render_step4_wireframe():
                             st.info("🔍 Debug: Using fallback 'models' key")
                         models_data = results.get('models', {})
                         with results_debug_container:
-                            st.info(f"🔍 Debug: models keys = {list(models_data.keys())}")
+                            if isinstance(models_data, dict):
+                                st.info(f"🔍 Debug: models keys = {list(models_data.keys())}")
+                            else:
+                                st.info(f"🔍 Debug: models_data is not dict: {type(models_data)}")
                         successful_results = []
                         for model_name, model_data in models_data.items():
                             if isinstance(model_data, dict) and model_data.get('status') == 'success':
@@ -1775,10 +1795,17 @@ def render_step4_wireframe():
                         st.error("❌ No successful training results found")
                         with results_debug_container:
                             st.info(f"🔍 Debug: successful_results is empty")
-                            if 'model_results' in results:
+                            if isinstance(results, dict) and 'model_results' in results:
                                 st.info(f"🔍 Debug: model_results = {results['model_results']}")
                 else:
-                    st.error(f"❌ Training failed: {results.get('error', 'Unknown error') if results else 'No results returned'}")
+                    error_msg = 'Unknown error'
+                    if isinstance(results, dict):
+                        error_msg = results.get('error', 'Unknown error')
+                    elif results:
+                        error_msg = str(results)
+                    else:
+                        error_msg = 'No results returned'
+                    st.error(f"❌ Training failed: {error_msg}")
                     # Reset training started state to show configuration summary again
                     st.session_state.training_started = False
                 
@@ -3609,10 +3636,13 @@ def render_step4_wireframe():
                 # Process results (same format as auto_train.py)
                 results_debug_container = st.expander("🔍 Results Debug Log", expanded=False)
                 with results_debug_container:
-                    st.info(f"🔍 Debug: results type = {type(results)}, keys = {list(results.keys()) if results else 'None'}")
-                    if results:
+                    st.info(f"🔍 Debug: results type = {type(results)}")
+                    if isinstance(results, dict):
+                        st.info(f"🔍 Debug: results keys = {list(results.keys())}")
                         st.info(f"🔍 Debug: results['status'] = {results.get('status', 'NOT_FOUND')}")
-                if results and results.get('status') == 'success':
+                    else:
+                        st.info(f"🔍 Debug: results is not a dict: {results}")
+                if results and isinstance(results, dict) and results.get('status') == 'success':
                     st.success("✅ Training completed successfully!")
                     
                     # Display results (same format as auto_train.py)
@@ -3620,14 +3650,20 @@ def render_step4_wireframe():
                     
                     # Summary statistics - handle different result formats
                     with results_debug_container:
-                        st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
+                        if isinstance(results, dict):
+                            st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
+                        else:
+                            st.info(f"🔍 Debug: results is not a dict, cannot process keys")
 
                     if 'comprehensive_results' in results:
                         # Format from execute_streamlit_training (text data)
                         with results_debug_container:
                             st.info("🔍 Debug: Using comprehensive_results format (text data)")
                         comprehensive_results = results.get('comprehensive_results', [])
-                        successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
+                        if isinstance(comprehensive_results, list):
+                            successful_results = [r for r in comprehensive_results if isinstance(r, dict) and r.get('status') == 'success']
+                        else:
+                            successful_results = []
                         with results_debug_container:
                             st.info(f"🔍 Debug: Found {len(successful_results)} successful results in comprehensive_results")
                     elif 'model_results' in results:
@@ -3636,19 +3672,24 @@ def render_step4_wireframe():
                             st.info("🔍 Debug: Using model_results format (numeric data)")
                         model_results = results.get('model_results', {})
                         with results_debug_container:
-                            st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
+                            if isinstance(model_results, dict):
+                                st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
+                            else:
+                                st.info(f"🔍 Debug: model_results is not dict: {type(model_results)}")
                         successful_results = []
                         for model_name, model_data in model_results.items():
                             with results_debug_container:
-                                st.info(f"🔍 Debug: Processing {model_name}, status = {model_data.get('status', 'NO_STATUS')}")
-                            if model_data.get('status') == 'success':
+                                if isinstance(model_data, dict):
+                                    st.info(f"🔍 Debug: Processing {model_name}, status = {model_data.get('status', 'NO_STATUS')}")
+                                else:
+                                    st.info(f"🔍 Debug: Processing {model_name}, model_data is not dict: {type(model_data)}")
+                            if isinstance(model_data, dict) and model_data.get('status') == 'success':
                                 successful_results.append({
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', 0),
                                     'test_accuracy': model_data.get('accuracy', 0),
                                     'validation_accuracy': model_data.get('validation_accuracy', 0),
-                                    'training_time': model_data.get('training_time', 0),
-                                    'embedding_name': 'numeric_features'
+                                    'training_time': model_data.get('training_time', 0)
                                 })
                         with results_debug_container:
                             st.info(f"🔍 Debug: Found {len(successful_results)} successful results in model_results")
@@ -3658,7 +3699,10 @@ def render_step4_wireframe():
                             st.info("🔍 Debug: Using fallback 'models' key")
                         models_data = results.get('models', {})
                         with results_debug_container:
-                            st.info(f"🔍 Debug: models keys = {list(models_data.keys())}")
+                            if isinstance(models_data, dict):
+                                st.info(f"🔍 Debug: models keys = {list(models_data.keys())}")
+                            else:
+                                st.info(f"🔍 Debug: models_data is not dict: {type(models_data)}")
                         successful_results = []
                         for model_name, model_data in models_data.items():
                             if isinstance(model_data, dict) and model_data.get('status') == 'success':
@@ -3714,10 +3758,17 @@ def render_step4_wireframe():
                         st.error("❌ No successful training results found")
                         with results_debug_container:
                             st.info(f"🔍 Debug: successful_results is empty")
-                            if 'model_results' in results:
+                            if isinstance(results, dict) and 'model_results' in results:
                                 st.info(f"🔍 Debug: model_results = {results['model_results']}")
                 else:
-                    st.error(f"❌ Training failed: {results.get('error', 'Unknown error') if results else 'No results returned'}")
+                    error_msg = 'Unknown error'
+                    if isinstance(results, dict):
+                        error_msg = results.get('error', 'Unknown error')
+                    elif results:
+                        error_msg = str(results)
+                    else:
+                        error_msg = 'No results returned'
+                    st.error(f"❌ Training failed: {error_msg}")
                     # Reset training started state to show configuration summary again
                     st.session_state.training_started = False
                 
