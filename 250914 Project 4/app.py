@@ -798,7 +798,7 @@ def show_file_preview(df, file_extension):
 def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, selected_models, optuna_config, scaler_name, log_container):
     """Train models with specific scaling method using proper train/val/test split and cache system"""
     from sklearn.model_selection import cross_val_score, StratifiedKFold
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, classification_report
     from models import model_factory, model_registry
     from optuna_optimizer import OptunaOptimizer
     from cache_manager import CacheManager
@@ -872,6 +872,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         'f1_score': cached_metrics.get('f1_score', 0.0),
                         'precision': cached_metrics.get('precision', 0.0),
                         'recall': cached_metrics.get('recall', 0.0),
+                        'support': cached_metrics.get('support', 0),
                         'cv_mean': cached_metrics.get('cv_mean', 0.0),
                         'cv_std': cached_metrics.get('cv_std', 0.0),
                         'training_time': 0.0,  # Cached, no training time
@@ -940,6 +941,10 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
             precision = precision_score(y_test, y_pred, average='weighted')
             recall = recall_score(y_test, y_pred, average='weighted')
             
+            # Calculate support (number of samples for each class)
+            from collections import Counter
+            support = sum(Counter(y_test).values())  # Total support
+            
             scaler_results[model_name] = {
                 'model': final_model,
                 'accuracy': test_accuracy,  # Use test accuracy as final metric
@@ -947,6 +952,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 'f1_score': f1,
                 'precision': precision,
                 'recall': recall,
+                'support': support,
                 'cv_mean': cv_mean,  # Validation score (no double validation)
                 'cv_std': cv_std,    # No CV std (avoid double validation)
                 'training_time': training_time,
@@ -963,6 +969,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                     'f1_score': f1,
                     'precision': precision,
                     'recall': recall,
+                    'support': support,
                     'cv_mean': cv_mean,
                     'cv_std': cv_std
                 }
@@ -1007,6 +1014,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 'f1_score': 0.0,
                 'precision': 0.0,
                 'recall': 0.0,
+                'support': 0,
                 'cv_mean': 0.0,
                 'cv_std': 0.0,
                 'training_time': 0.0,
@@ -1026,7 +1034,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
     import time
     from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
     from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, classification_report
     from models import model_factory, model_registry
     from optuna_optimizer import OptunaOptimizer
     from cache_manager import CacheManager
@@ -1723,9 +1731,12 @@ def render_step4_wireframe():
                             if isinstance(model_data, dict) and model_data.get('status') == 'success':
                                 successful_results.append({
                                     'model_name': model_name,
-                                    'f1_score': model_data.get('f1_score', 0),
-                                    'test_accuracy': model_data.get('accuracy', 0),
                                     'validation_accuracy': model_data.get('validation_accuracy', 0),
+                                    'test_accuracy': model_data.get('accuracy', 0),
+                                    'f1_score': model_data.get('f1_score', 0),
+                                    'precision': model_data.get('precision', 0),
+                                    'recall': model_data.get('recall', 0),
+                                    'support': model_data.get('support', 0),
                                     'training_time': model_data.get('training_time', 0)
                                 })
                         with results_debug_container:
@@ -3686,9 +3697,12 @@ def render_step4_wireframe():
                             if isinstance(model_data, dict) and model_data.get('status') == 'success':
                                 successful_results.append({
                                     'model_name': model_name,
-                                    'f1_score': model_data.get('f1_score', 0),
-                                    'test_accuracy': model_data.get('accuracy', 0),
                                     'validation_accuracy': model_data.get('validation_accuracy', 0),
+                                    'test_accuracy': model_data.get('accuracy', 0),
+                                    'f1_score': model_data.get('f1_score', 0),
+                                    'precision': model_data.get('precision', 0),
+                                    'recall': model_data.get('recall', 0),
+                                    'support': model_data.get('support', 0),
                                     'training_time': model_data.get('training_time', 0)
                                 })
                         with results_debug_container:
