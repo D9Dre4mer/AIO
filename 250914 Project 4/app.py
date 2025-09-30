@@ -1682,6 +1682,7 @@ def render_step4_wireframe():
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', 0),
                                     'test_accuracy': model_data.get('accuracy', 0),
+                                    'validation_accuracy': model_data.get('validation_accuracy', 0),
                                     'training_time': model_data.get('training_time', 0),
                                     'embedding_name': 'numeric_features'
                                 })
@@ -1701,6 +1702,7 @@ def render_step4_wireframe():
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', model_data.get('accuracy', 0)),
                                     'test_accuracy': model_data.get('accuracy', 0),
+                                    'validation_accuracy': model_data.get('validation_accuracy', 0),
                                     'training_time': model_data.get('training_time', 0),
                                     'embedding_name': 'numeric_features'
                                 })
@@ -3591,6 +3593,7 @@ def render_step4_wireframe():
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', 0),
                                     'test_accuracy': model_data.get('accuracy', 0),
+                                    'validation_accuracy': model_data.get('validation_accuracy', 0),
                                     'training_time': model_data.get('training_time', 0),
                                     'embedding_name': 'numeric_features'
                                 })
@@ -3610,6 +3613,7 @@ def render_step4_wireframe():
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', model_data.get('accuracy', 0)),
                                     'test_accuracy': model_data.get('accuracy', 0),
+                                    'validation_accuracy': model_data.get('validation_accuracy', 0),
                                     'training_time': model_data.get('training_time', 0),
                                     'embedding_name': 'numeric_features'
                                 })
