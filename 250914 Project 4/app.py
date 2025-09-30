@@ -1015,7 +1015,10 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 'error': str(e)
             }
     
-    return scaler_results
+    return {
+        'model_results': scaler_results,
+        'status': 'success'
+    }
 
 
 def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None, remove_duplicates=False, data_split_config=None):
