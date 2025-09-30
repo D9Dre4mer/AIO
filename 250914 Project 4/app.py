@@ -1055,9 +1055,10 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             else:
                 st.info(f"📊 Keeping all {clean_size} samples (including duplicates)")
             
-            st.info(f"📋 Using label column: '{label_column}'")
-            st.info(f"📋 Using input columns: {input_columns}")
-            st.info(f"📊 Multi-input data: {len(input_columns)} features, {clean_size} samples")
+            with log_container:
+                st.info(f"📋 Using label column: '{label_column}'")
+                st.info(f"📋 Using input columns: {input_columns}")
+                st.info(f"📊 Multi-input data: {len(input_columns)} features, {clean_size} samples")
     
         # Prepare data
         X = df_clean[input_columns].values
@@ -1560,12 +1561,13 @@ def render_step4_wireframe():
                     return
                 
                 # Show detected columns
-                st.info(f"📋 Using label column: '{label_column}'")
-                if data_type == 'single_input':
-                    st.info(f"📋 Using text column: '{text_column}'")
-                else:
-                    input_columns = column_config.get('input_columns', [])
-                    st.info(f"📋 Using input columns: {input_columns}")
+                with debug_container:
+                    st.info(f"📋 Using label column: '{label_column}'")
+                    if data_type == 'single_input':
+                        st.info(f"📋 Using text column: '{text_column}'")
+                    else:
+                        input_columns = column_config.get('input_columns', [])
+                        st.info(f"📋 Using input columns: {input_columns}")
                 
                 # Prepare data based on data type
                 
@@ -1596,8 +1598,9 @@ def render_step4_wireframe():
                     X = df[input_columns].values
                     y = df[label_column].values
                     
-                    st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
-                    st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
+                    with debug_container:
+                        st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
+                        st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
                     
                 else:
                     # Single-input data: use text column
@@ -1612,7 +1615,8 @@ def render_step4_wireframe():
                     st.error("❌ No models selected in Step 3")
                     return
                 
-                st.info(f"🤖 Selected models: {', '.join(selected_models)}")
+                with debug_container:
+                    st.info(f"🤖 Selected models: {', '.join(selected_models)}")
                 
                 # Create progress bar
                 progress_bar = st.progress(0)
@@ -1647,7 +1651,8 @@ def render_step4_wireframe():
                     st.info(f"🔍 Debug: About to check data_type = '{data_type}' for training approach")
                 if data_type == 'multi_input':
                     # For numeric data: use direct sklearn training (like debug_streamlit_pipeline.py)
-                    st.info("🔢 Using direct sklearn for numeric data...")
+                    with debug_container:
+                        st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
                     results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
@@ -3495,12 +3500,13 @@ def render_step4_wireframe():
                     return
                 
                 # Show detected columns
-                st.info(f"📋 Using label column: '{label_column}'")
-                if data_type == 'single_input':
-                    st.info(f"📋 Using text column: '{text_column}'")
-                else:
-                    input_columns = column_config.get('input_columns', [])
-                    st.info(f"📋 Using input columns: {input_columns}")
+                with debug_container:
+                    st.info(f"📋 Using label column: '{label_column}'")
+                    if data_type == 'single_input':
+                        st.info(f"📋 Using text column: '{text_column}'")
+                    else:
+                        input_columns = column_config.get('input_columns', [])
+                        st.info(f"📋 Using input columns: {input_columns}")
                 
                 # Prepare data based on data type
                 
@@ -3531,8 +3537,9 @@ def render_step4_wireframe():
                     X = df[input_columns].values
                     y = df[label_column].values
                     
-                    st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
-                    st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
+                    with debug_container:
+                        st.info(f"📊 Multi-input data: {len(input_columns)} features, {len(X):,} samples")
+                        st.info(f"📊 Scaling methods: {', '.join(numeric_scalers)}")
                     
                 else:
                     # Single-input data: use text column
@@ -3547,7 +3554,8 @@ def render_step4_wireframe():
                     st.error("❌ No models selected in Step 3")
                     return
                 
-                st.info(f"🤖 Selected models: {', '.join(selected_models)}")
+                with debug_container:
+                    st.info(f"🤖 Selected models: {', '.join(selected_models)}")
                 
                 # Create progress bar
                 progress_bar = st.progress(0)
@@ -3582,7 +3590,8 @@ def render_step4_wireframe():
                     st.info(f"🔍 Debug: About to check data_type = '{data_type}' for training approach")
                 if data_type == 'multi_input':
                     # For numeric data: use direct sklearn training (like debug_streamlit_pipeline.py)
-                    st.info("🔢 Using direct sklearn for numeric data...")
+                    with debug_container:
+                        st.info("🔢 Using direct sklearn for numeric data...")
                     with debug_container:
                         st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
                     results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
