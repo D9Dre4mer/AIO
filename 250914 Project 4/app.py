@@ -1468,28 +1468,37 @@ def render_step4_wireframe():
     if 'training_started' not in st.session_state:
         st.session_state.training_started = False
     
+    # Create debug container for configuration details
+    config_debug_container = st.expander("🔍 Configuration Debug", expanded=False)
+    
     # Only show configuration summary if training hasn't started
     if not st.session_state.training_started:
         # Optuna configuration
         optuna_config = step3_data.get('optuna_config', {})
         if optuna_config.get('enabled', False):
-            st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+            with config_debug_container:
+                st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
         else:
-            st.info("ℹ️ Optuna: Disabled")
+            with config_debug_container:
+                st.info("ℹ️ Optuna: Disabled")
         
         # Voting configuration
         voting_config = step3_data.get('voting_config', {})
         if voting_config.get('enabled', False):
-            st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
+            with config_debug_container:
+                st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
         else:
-            st.info("ℹ️ Voting: Disabled")
+            with config_debug_container:
+                st.info("ℹ️ Voting: Disabled")
         
         # Stacking configuration
         stacking_config = step3_data.get('stacking_config', {})
         if stacking_config.get('enabled', False):
-            st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
+            with config_debug_container:
+                st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
         else:
-            st.info("ℹ️ Stacking: Disabled")
+            with config_debug_container:
+                st.info("ℹ️ Stacking: Disabled")
     
     # Training execution
     st.subheader("🚀 Training Execution")
@@ -3394,28 +3403,37 @@ def render_step4_wireframe():
     if 'training_started' not in st.session_state:
         st.session_state.training_started = False
     
+    # Create debug container for configuration details
+    config_debug_container = st.expander("🔍 Configuration Debug", expanded=False)
+    
     # Only show configuration summary if training hasn't started
     if not st.session_state.training_started:
         # Optuna configuration
         optuna_config = step3_data.get('optuna_config', {})
         if optuna_config.get('enabled', False):
-            st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
+            with config_debug_container:
+                st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
         else:
-            st.info("ℹ️ Optuna: Disabled")
+            with config_debug_container:
+                st.info("ℹ️ Optuna: Disabled")
         
         # Voting configuration
         voting_config = step3_data.get('voting_config', {})
         if voting_config.get('enabled', False):
-            st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
+            with config_debug_container:
+                st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
         else:
-            st.info("ℹ️ Voting: Disabled")
+            with config_debug_container:
+                st.info("ℹ️ Voting: Disabled")
         
         # Stacking configuration
         stacking_config = step3_data.get('stacking_config', {})
         if stacking_config.get('enabled', False):
-            st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
+            with config_debug_container:
+                st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
         else:
-            st.info("ℹ️ Stacking: Disabled")
+            with config_debug_container:
+                st.info("ℹ️ Stacking: Disabled")
     
     # Training execution
     st.subheader("🚀 Training Execution")
