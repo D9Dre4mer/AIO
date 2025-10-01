@@ -43,3 +43,5 @@ ENV/
 # Cursor config files
 .cursorrules
 .cursorignore
+*.csv
+*.zip

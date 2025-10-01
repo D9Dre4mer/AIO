@@ -1752,9 +1752,9 @@ class ComprehensiveEvaluator:
                 time_module.sleep(0.5)
                 dots += 1
         
-        # Start overall testing progress indicator
-        testing_progress_thread = threading.Thread(target=show_testing_progress, daemon=True)
-        testing_progress_thread.start()
+        # Skip threading for progress indicator to avoid ScriptRunContext issues
+        # testing_progress_thread = threading.Thread(target=show_testing_progress, daemon=True)
+        # testing_progress_thread.start()
         
         try:
             for model_name in models_to_evaluate:
@@ -1871,9 +1871,9 @@ class ComprehensiveEvaluator:
                     time.sleep(0.5)
                     dots += 1
             
-            # Start ensemble progress indicator
-            ensemble_progress_thread = threading.Thread(target=show_ensemble_progress, daemon=True)
-            ensemble_progress_thread.start()
+            # Skip threading for ensemble progress indicator to avoid ScriptRunContext issues
+            # ensemble_progress_thread = threading.Thread(target=show_ensemble_progress, daemon=True)
+            # ensemble_progress_thread.start()
             
             try:
                 # Train ensemble with each selected embedding

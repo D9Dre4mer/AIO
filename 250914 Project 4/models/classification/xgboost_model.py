@@ -54,7 +54,7 @@ class XGBoostModel(BaseModel):
             
             if device_config["use_gpu"]:
                 params.update(device_config["device_params"])
-                print(f"🚀 XGBoost configured for GPU: {device_config['gpu_info']}")
+                print(f"XGBoost configured for GPU: {device_config['gpu_info']}")
             else:
                 params.update({
                     "tree_method": "hist",

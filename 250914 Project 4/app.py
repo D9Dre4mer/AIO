@@ -391,7 +391,7 @@ def render_step1_wireframe():
     dataset_source = st.selectbox(
         "Select your dataset source:",
         [
-            "Use Sample Dataset (Cache Folder)",
+            "Use Sample Dataset (Data Folder)",
             "File Path (File Path)",
             "Upload Custom File (CSV/JSON/Excel)"
         ],
@@ -475,32 +475,32 @@ def render_step1_wireframe():
     elif "Sample Dataset" in dataset_source:
         import glob
 
-        # Định nghĩa thư mục cache (giả sử là ./cache hoặc bạn có thể sửa lại đường dẫn)
-        cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+        # Định nghĩa thư mục data (thay đổi từ cache sang data)
+        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
         allowed_exts = ['.csv', '.xlsx', '.xls', '.json', '.txt']
 
-        # Lấy danh sách file hợp lệ trong thư mục cache
-        if os.path.exists(cache_dir):
+        # Lấy danh sách file hợp lệ trong thư mục data
+        if os.path.exists(data_dir):
             files = []
             for ext in allowed_exts:
-                files.extend(glob.glob(os.path.join(cache_dir, f"*{ext}")))
+                files.extend(glob.glob(os.path.join(data_dir, f"*{ext}")))
             files = sorted(files)
         else:
             files = []
 
         if not files:
-            st.warning("⚠️ Không tìm thấy sample dataset trong thư mục cache.")
+            st.warning("⚠️ Không tìm thấy sample dataset trong thư mục data.")
         else:
             # Hiển thị danh sách file sample
             file_names = [os.path.basename(f) for f in files]
             selected_file = st.selectbox(
-                "Chọn sample dataset từ cache:",
+                "Chọn sample dataset từ data:",
                 file_names,
-                help="Chọn một file mẫu từ thư mục cache của dự án"
+                help="Chọn một file mẫu từ thư mục data của dự án"
             )
 
             if selected_file:
-                file_path = os.path.join(cache_dir, selected_file)
+                file_path = os.path.join(data_dir, selected_file)
                 file_extension = selected_file.split('.')[-1].lower()
                 try:
                     # Add loading indicator for sample dataset
@@ -519,7 +519,7 @@ def render_step1_wireframe():
                             st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
                             return
 
-                    st.toast(f"✅ Sample dataset '{selected_file}' loaded from cache.")
+                    st.toast(f"✅ Sample dataset '{selected_file}' loaded from data.")
 
                     # Store in session with loading indicator
                     with st.spinner("💾 Saving to session..."):
@@ -2256,7 +2256,7 @@ def render_multi_input_section():
             numeric_scaler = st.multiselect(
                 "📊 Numeric Scaling:",
                 ["StandardScaler", "MinMaxScaler", "RobustScaler", "None"],
-                default=["StandardScaler"],  # Default to first option
+                default=["StandardScaler", "MinMaxScaler", "RobustScaler"],  # Default to 3 options
                 key="multi_input_numeric_scaler",
                 help="Choose one or more scaling methods for numeric features. Multiple methods will train mixed models."
             )
@@ -3003,10 +3003,15 @@ def render_step4_wireframe():
     </h2>
     """, unsafe_allow_html=True)
     
-    # Get data from previous steps
-    step1_data = session_manager.get_step_data(1)
-    step2_data = session_manager.get_step_data(2)
-    step3_data = session_manager.get_step_data(3)
+    # Get data from previous steps with validation
+    try:
+        step1_data = session_manager.get_step_data(1)
+        step2_data = session_manager.get_step_data(2)
+        step3_data = session_manager.get_step_data(3)
+    except Exception as e:
+        st.error(f"❌ Error loading step data: {str(e)}")
+        st.info("💡 Please refresh the page and try again.")
+        return
     
     if not step1_data or 'dataframe' not in step1_data:
         st.error("❌ No dataset found. Please complete Step 1 first.")
@@ -3091,11 +3096,40 @@ def render_step4_wireframe():
     # Training execution
     st.subheader("🚀 Training Execution")
     
+    # Check if training is already completed
+    if hasattr(st.session_state, 'training_completed') and st.session_state.training_completed:
+        st.success("✅ Training completed! You can proceed to Step 5.")
+        if st.button("🔄 Restart Training"):
+            st.session_state.training_started = False
+            st.session_state.training_in_progress = False
+            st.session_state.training_completed = False
+            st.rerun()
+    
     if st.button("🚀 Start Training", type="primary"):
-        # Set training started state to hide configuration summary
+        # Prevent multiple clicks and rerun issues
+        if hasattr(st.session_state, 'training_in_progress') and st.session_state.training_in_progress:
+            st.warning("⚠️ Training is already in progress. Please wait...")
+            return
+        
+        # Prevent starting if already completed
+        if hasattr(st.session_state, 'training_completed') and st.session_state.training_completed:
+            st.warning("⚠️ Training already completed. Use 'Restart Training' to run again.")
+            return
+            
+        # Set training states
+        st.session_state.training_in_progress = True
         st.session_state.training_started = True
-        with st.spinner("🔄 Starting training pipeline..."):
-            try:
+        st.session_state.training_completed = False
+        
+        # Use try-finally to ensure cleanup
+        try:
+            # Create progress tracking
+            progress_container = st.container()
+            with progress_container:
+                st.info("🔄 Initializing training pipeline...")
+                
+            # Use spinner with timeout protection
+            with st.spinner("🔄 Starting training pipeline..."):
                 # Import training pipeline
                 from comprehensive_evaluation import ComprehensiveEvaluator
                 
@@ -3233,23 +3267,62 @@ def render_step4_wireframe():
                     }
                 }
                 
-                # Use different approaches based on data type
+                # Use different approaches based on data type with timeout protection
                 with debug_container:
                     st.info(f"🔍 Debug: About to check data_type = '{data_type}' for training approach")
-                if data_type == 'multi_input':
-                    # For numeric data: use direct sklearn training (like debug_streamlit_pipeline.py)
+                
+                # Initialize results variable to avoid UnboundLocalError
+                results = None
+                
+                # Run training directly (no threading to avoid ScriptRunContext issues)
+                try:
                     with debug_container:
-                        st.info("🔢 Using direct sklearn for numeric data...")
+                        st.info(f"🔍 Debug: Starting training with data_type = '{data_type}'")
+                    
+                    # Add progress indicator to prevent UI freezing
+                    progress_placeholder = st.empty()
+                    progress_placeholder.info("🔄 Training in progress... Please wait.")
+                    
+                    if data_type == 'multi_input':
+                        # For numeric data: use direct sklearn training
+                        with debug_container:
+                            st.info("🔢 Using direct sklearn for numeric data...")
+                            st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
+                            st.info(f"🔍 Debug: selected_models = {selected_models}")
+                            st.info(f"🔍 Debug: numeric_scalers = {numeric_scalers}")
+                        
+                        results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
+                        
+                        with debug_container:
+                            st.info(f"🔍 Debug: train_numeric_data_directly completed, result status = {results.get('status', 'NOT_FOUND')}")
+                    else:
+                        # For text data: use execute_streamlit_training
+                        st.info("📝 Using execute_streamlit_training for text data...")
+                        with debug_container:
+                            st.info(f"🔍 Debug: Calling execute_streamlit_training with enhanced configs")
+                        
+                        from training_pipeline import execute_streamlit_training
+                        results = execute_streamlit_training(df, enhanced_step1_config, enhanced_step2_config, enhanced_step3_config)
+                        
+                        with debug_container:
+                            st.info(f"🔍 Debug: execute_streamlit_training completed, result status = {results.get('status', 'NOT_FOUND')}")
+                    
+                    # Clear progress indicator
+                    progress_placeholder.empty()
+                    
+                except Exception as e:
+                    # Clear progress indicator on error
+                    try:
+                        progress_placeholder.empty()
+                    except:
+                        pass
+                    
                     with debug_container:
-                        st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
-                    results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
-                else:
-                    # For text data: use execute_streamlit_training
-                    st.info("📝 Using execute_streamlit_training for text data...")
-                    with debug_container:
-                        st.info(f"🔍 Debug: Calling execute_streamlit_training with enhanced configs")
-                    from training_pipeline import execute_streamlit_training
-                    results = execute_streamlit_training(df, enhanced_step1_config, enhanced_step2_config, enhanced_step3_config)
+                        st.error(f"🔍 Debug: Exception in training: {str(e)}")
+                        import traceback
+                        st.error(f"🔍 Debug: Traceback: {traceback.format_exc()}")
+                    
+                    results = {'status': 'failed', 'error': str(e)}
                     
                 # Process results (same format as auto_train.py)
                 results_debug_container = st.expander("🔍 Results Debug Log", expanded=False)
@@ -3260,11 +3333,23 @@ def render_step4_wireframe():
                         st.info(f"🔍 Debug: results['status'] = {results.get('status', 'NOT_FOUND')}")
                     else:
                         st.info(f"🔍 Debug: results is not a dict: {results}")
-                if results and isinstance(results, dict) and results.get('status') == 'success':
-                    st.success("✅ Training completed successfully!")
+                # Check if we have results and if any models were successful
+                if results and isinstance(results, dict):
+                    with results_debug_container:
+                        st.info(f"🔍 Debug: Processing results with keys = {list(results.keys())}")
+                        st.info(f"🔍 Debug: Overall status = {results.get('status', 'NO_STATUS')}")
                     
-                    # Display results (same format as auto_train.py)
-                    st.subheader("📊 Training Results")
+                    # Check if training failed immediately
+                    if results.get('status') == 'failed':
+                        error_msg = results.get('error', 'Unknown error')
+                        st.error(f"❌ Training failed: {error_msg}")
+                        with results_debug_container:
+                            st.error(f"🔍 Debug: Training failed with error: {error_msg}")
+                            st.error(f"🔍 Debug: Full results: {results}")
+                        return
+                    
+                    # Extract successful results based on format
+                    successful_results = []
                     
                     # Summary statistics - handle different result formats
                     with results_debug_container:
@@ -3345,6 +3430,8 @@ def render_step4_wireframe():
                             st.info(f"🔍 Debug: successful_results sample = {successful_results[0] if successful_results else 'None'}")
                     
                     if successful_results:
+                        st.success(f"✅ Training completed successfully! {len(successful_results)} model(s) trained successfully.")
+                        
                         # Create results DataFrame
                         results_df = pd.DataFrame(successful_results)
                         
@@ -3363,49 +3450,137 @@ def render_step4_wireframe():
                         st.subheader("📋 Detailed Results")
                         st.dataframe(results_df, width='stretch')
                         
-                        # Save training results
-                        step4_data = {
-                            'training_results': results,
-                            'completed': True
-                        }
-                        session_manager.set_step_data(4, step4_data)
+                        # Save training results to cache with robust error handling
+                        try:
+                            from cache_manager import training_results_cache
+                            
+                            # Generate session key from step data
+                            session_key = training_results_cache.generate_session_key(
+                                step1_data, step2_data, step3_data
+                            )
+                            
+                            # Debug: Show session key
+                            st.info(f"🔍 Debug: Generated session key: {session_key}")
+                            
+                            # Save comprehensive results to cache
+                            cache_path = training_results_cache.save_training_results(session_key, results)
+                            
+                            # Save only minimal data to session state
+                            step4_data = {
+                                'session_key': session_key,
+                                'cache_path': cache_path,
+                                'completed': True,
+                                'total_models': results.get('total_models', 0),
+                                'successful_combinations': results.get('successful_combinations', 0),
+                                'elapsed_time': results.get('elapsed_time', 0),
+                                'status': results.get('status', 'unknown')
+                            }
+                            session_manager.set_step_data(4, step4_data)
+                            st.success("💾 Training results saved to cache successfully!")
+                            
+                        except Exception as cache_error:
+                            st.warning(f"⚠️ Cache save failed: {str(cache_error)}")
+                            st.info("💡 Training completed but results may not be saved. Please check Step 5.")
+                            
+                            # Save minimal data to session state as fallback (with error handling)
+                            try:
+                                step4_data = {
+                                    'completed': True,
+                                    'total_models': results.get('total_models', 0),
+                                    'successful_combinations': results.get('successful_combinations', 0),
+                                    'elapsed_time': results.get('elapsed_time', 0),
+                                    'status': results.get('status', 'unknown'),
+                                    'cache_error': str(cache_error)
+                                }
+                                session_manager.set_step_data(4, step4_data)
+                                st.info("✅ Fallback data saved to session state.")
+                            except Exception as session_error:
+                                st.error(f"❌ Session state save also failed: {str(session_error)}")
+                                st.info("💡 Training completed but no data was saved.")
                         
-                        # Force garbage collection after training
+                    # Gentle memory cleanup after training (avoid aggressive cleanup that might cause crashes)
+                    try:
                         import gc
                         gc.collect()
+                    except Exception as gc_error:
+                        st.warning(f"⚠️ Memory cleanup warning: {gc_error}")
+                    
+                    # Don't aggressively delete objects that might be needed for UI updates
+                    # Let Python's garbage collector handle cleanup naturally
                         
-                        st.success("✅ Training results saved!")
-                        st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
-                        
-                        # Reset training started state to show configuration summary again
-                        st.session_state.training_started = False
-                    else:
+                    st.success("✅ Training results saved!")
+                    st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
+                    
+                    # Mark training as completed (will be set in finally block)
+                else:
                         st.error("❌ No successful training results found")
                         with results_debug_container:
-                            st.info(f"🔍 Debug: successful_results is empty")
-                            if isinstance(results, dict) and 'model_results' in results:
-                                st.info(f"🔍 Debug: model_results = {results['model_results']}")
-                else:
+                            st.error("🔍 Debug: No successful results found in any format")
+                            st.error(f"🔍 Debug: Overall status = {results.get('status', 'NO_STATUS')}")
+                            
+                            # Show overall error if available
+                            if results.get('status') == 'failed' and 'error' in results:
+                                st.error(f"🔍 Debug: Overall error = {results['error']}")
+                            
+                            if 'model_results' in results:
+                                model_results = results.get('model_results', {})
+                                for model_name, model_data in model_results.items():
+                                    if isinstance(model_data, dict):
+                                        st.error(f"🔍 Debug: {model_name} status = {model_data.get('status', 'NO_STATUS')}")
+                                        if model_data.get('status') == 'failed':
+                                            st.error(f"🔍 Debug: {model_name} error = {model_data.get('error', 'NO_ERROR')}")
+                            elif 'comprehensive_results' in results:
+                                comprehensive_results = results.get('comprehensive_results', [])
+                                for i, result in enumerate(comprehensive_results):
+                                    if isinstance(result, dict):
+                                        st.error(f"🔍 Debug: Result {i} status = {result.get('status', 'NO_STATUS')}")
+                                        if result.get('status') == 'failed':
+                                            st.error(f"🔍 Debug: Result {i} error = {result.get('error', 'NO_ERROR')}")
+                
+                # Handle case where results is not successful
+                if not (results and isinstance(results, dict) and results.get('status') == 'success'):
                     error_msg = 'Unknown error'
                     if isinstance(results, dict):
                         error_msg = results.get('error', 'Unknown error')
+                        # Show detailed debug info
+                        with results_debug_container:
+                            st.error(f"🔍 Debug: results status = {results.get('status', 'NOT_FOUND')}")
+                            st.error(f"🔍 Debug: results keys = {list(results.keys())}")
+                            if 'error' in results:
+                                st.error(f"🔍 Debug: error details = {results['error']}")
+                            if 'model_results' in results:
+                                st.error(f"🔍 Debug: model_results = {results['model_results']}")
                     elif results:
                         error_msg = str(results)
+                        with results_debug_container:
+                            st.error(f"🔍 Debug: results type = {type(results)}")
+                            st.error(f"🔍 Debug: results content = {results}")
                     else:
                         error_msg = 'No results returned'
+                        with results_debug_container:
+                            st.error(f"🔍 Debug: results is None or empty")
+                    
                     st.error(f"❌ Training failed: {error_msg}")
-                    # Reset training started state to show configuration summary again
-                    st.session_state.training_started = False
                 
-            except Exception as e:
-                st.error(f"❌ Training failed: {str(e)}")
-                # Reset training started state to show configuration summary again
+        except Exception as e:
+            st.error(f"❌ Training failed: {str(e)}")
+            import traceback
+            st.error(f"Traceback: {traceback.format_exc()}")
+        
+        finally:
+            # Always cleanup training states
+            st.session_state.training_in_progress = False
+            # Check if results exists and is successful before updating states
+            if results is None or not (isinstance(results, dict) and results.get('status') == 'success'):
                 st.session_state.training_started = False
-                import traceback
-                st.error(f"Traceback: {traceback.format_exc()}")
+                st.session_state.training_completed = False
+            else:
+                # Training was successful, keep completed state
+                st.session_state.training_completed = True
     
     # Navigation buttons
     render_navigation_buttons()
+
 def render_step5_wireframe():
     """Render Step 5 - SHAP Visualization & Confusion Matrix"""
     
@@ -3470,134 +3645,42 @@ def render_step5_wireframe():
             st.rerun()
         return
     
-    # Get training results from step 4
-    training_results = step4_data.get('training_results', {})
+    # Get training results from step 4 - now using cache
+    session_key = step4_data.get('session_key')
+    cache_path = step4_data.get('cache_path')
     
-    if not training_results or training_results.get('status') != 'success':
-        st.error("❌ No training results found. Please complete Step 4 first.")
+    if not session_key:
+        st.error("❌ No session key found. Please complete Step 4 first.")
         if st.button("← Go to Step 4"):
             session_manager.set_current_step(4)
             st.rerun()
         return
     
-    # Get comprehensive results for comparison - try multiple sources
+    # Load training results from cache
+    try:
+        from cache_manager import training_results_cache
+        training_results = training_results_cache.load_training_results(session_key)
+    except Exception as e:
+        st.error(f"❌ Failed to load training results from cache: {e}")
+        if st.button("← Go to Step 4"):
+            session_manager.set_current_step(4)
+            st.rerun()
+        return
+    
+    if not training_results or training_results.get('status') != 'success':
+        st.error("❌ No valid training results found. Please complete Step 4 first.")
+        if st.button("← Go to Step 4"):
+            session_manager.set_current_step(4)
+            st.rerun()
+        return
+    
+    # Get comprehensive results from cache
     comprehensive_results = training_results.get('comprehensive_results', [])
     
-    # If no results from step4_data, try session state
-    if not comprehensive_results and 'training_results' in st.session_state and st.session_state.training_results:
-        comprehensive_results = st.session_state.training_results.get('comprehensive_results', [])
     
-    # If still no results, try to load from any available cache
     if not comprehensive_results:
-        try:
-            from training_pipeline import StreamlitTrainingPipeline
-            pipeline = StreamlitTrainingPipeline()
-            cached_results_list = pipeline.list_cached_results()
-            
-            if cached_results_list:
-                # Use the most recent cache
-                most_recent_cache = max(cached_results_list, key=lambda x: x['timestamp'])
-                cache_key = most_recent_cache['cache_key']
-                
-                # Load the cached results
-                import pickle
-                import os
-                cache_file = os.path.join(pipeline.cache_dir, f"{cache_key}.pkl")
-                if os.path.exists(cache_file):
-                    with open(cache_file, 'rb') as f:
-                        cached_results = pickle.load(f)
-                    
-                    # Debug: Check cache structure and type
-                    if isinstance(cached_results, dict):
-                        st.toast(f"🔍 Cache structure: {list(cached_results.keys())}")
-                        
-                        # Try different possible keys for comprehensive results
-                        if 'all_results' in cached_results:
-                            comprehensive_results = cached_results['all_results']
-                            st.toast(f"📊 Found 'all_results': {len(comprehensive_results)} items")
-                        elif 'comprehensive_results' in cached_results:
-                            comprehensive_results = cached_results['comprehensive_results']
-                            st.toast(f"📊 Found 'comprehensive_results': {len(comprehensive_results)} items")
-                        elif 'results' in cached_results:
-                            # If results is a list, use it directly
-                            if isinstance(cached_results['results'], list):
-                                comprehensive_results = cached_results['results']
-                                st.toast(f"📊 Found 'results' (list): {len(comprehensive_results)} items")
-                            # If results is a dict, look for nested data
-                            elif isinstance(cached_results['results'], dict):
-                                if 'all_results' in cached_results['results']:
-                                    comprehensive_results = cached_results['results']['all_results']
-                                    st.toast(f"📊 Found 'results.all_results': {len(comprehensive_results)} items")
-                                elif 'comprehensive_results' in cached_results['results']:
-                                    comprehensive_results = cached_results['results']['comprehensive_results']
-                                    st.toast(f"📊 Found 'results.comprehensive_results': {len(comprehensive_results)} items")
-                    else:
-                        # Handle non-dict cached results
-                        st.toast(f"⚠️ Cache data is not a dictionary: {type(cached_results)}")
-                        if isinstance(cached_results, list):
-                            comprehensive_results = cached_results
-                            st.toast(f"📊 Using cached list directly: {len(comprehensive_results)} items")
-                        else:
-                            st.toast(f"❌ Unsupported cache data type: {type(cached_results)}")
-                            comprehensive_results = []
-                    
-                    # Also update training_results for best_combinations
-                    if comprehensive_results and 'best_combinations' not in training_results:
-                        if 'best_combinations' in cached_results:
-                            training_results['best_combinations'] = cached_results['best_combinations']
-                        elif 'results' in cached_results and 'best_combinations' in cached_results['results']:
-                            training_results['best_combinations'] = cached_results['results']['best_combinations']
-                    
-                    st.toast(f"✅ Loaded cached results: {most_recent_cache.get('cache_name', cache_key)}")
-                    st.toast(f"⏰ Cache age: {most_recent_cache['age_hours']:.1f} hours | Results: {most_recent_cache['results_summary'].get('successful_combinations', 0)} combinations")
-                    
-                    # Store cache data in session state for access by confusion matrix functions
-                    st.session_state.cache_data = cached_results
-                    st.toast(f"💾 Cache data stored in session state for label access")
-                    
-
-                    
-                    # Also store in training_results for fallback access
-                    if 'cache_data' not in training_results:
-                        training_results['cache_data'] = cached_results
-                    
-
-                    
-                    # Debug: Show what we found
-                    if comprehensive_results:
-                        st.toast(f"🎯 Successfully loaded {len(comprehensive_results)} comprehensive results!")
-                    else:
-                        st.toast("⚠️ Cache loaded but no comprehensive results found in expected format")
-                        st.toast("Cache keys available: " + ", ".join(cached_results.keys()))
-        except Exception as e:
-            st.error(f"❌ Error loading cache: {e}")
-            st.exception(e)
-    
-    # If still no results, show helpful message and redirect to Step 4
-    if not comprehensive_results:
-        st.warning("⚠️ No comprehensive results available for comparison.")
-        st.info("💡 This usually means Step 4 hasn't been completed yet or no models were trained successfully.")
-        
-        # Show helpful information
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("""
-            <div class="metric-box">
-                <h4>📋 What to do next:</h4>
-                <p>1. Go to Step 4 and train some models</p>
-                <p>2. Make sure training completes successfully</p>
-                <p>3. Check that models are properly evaluated</p>
-                <p>4. Wait for cache to be generated</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            if st.button("🚀 Go to Step 4", type="primary", width='stretch'):
-                session_manager.set_current_step(4)
-                st.rerun()
-        
-        # Don't show tabs if no data
+        st.error("❌ No comprehensive results found for analysis.")
+        st.info("💡 This might happen if Step 4 didn't complete successfully.")
         return
     
     # Tab System for Step 5

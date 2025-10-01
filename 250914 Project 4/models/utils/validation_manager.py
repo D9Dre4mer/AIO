@@ -400,9 +400,9 @@ class ValidationManager:
                 time.sleep(0.3)
                 dots += 1
         
-        # Start CV fold progress indicator
-        progress_thread = threading.Thread(target=show_cv_fold_progress, daemon=True)
-        progress_thread.start()
+        # Skip threading for CV fold progress indicator to avoid ScriptRunContext issues
+        # progress_thread = threading.Thread(target=show_cv_fold_progress, daemon=True)
+        # progress_thread.start()
         
         try:
             # Perform cross-validation

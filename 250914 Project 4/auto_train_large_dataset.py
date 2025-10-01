@@ -36,7 +36,7 @@ def load_large_dataset(sample_size: int = 1000) -> Tuple[pd.DataFrame, str, str]
     """Load large dataset (300K samples)"""
     try:
         print(f"📊 Loading large dataset with {sample_size} samples...")
-        df = pd.read_csv('cache/20250822-004129_sample-300_000Samples.csv')
+        df = pd.read_csv('data/20250822-004129_sample-300_000Samples.csv')
         
         # Sample the dataset
         if len(df) > sample_size:
@@ -208,8 +208,8 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
             'random_state': 42
         })
         dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
-            dataset_path="cache/20250822-004129_sample-300_000Samples.csv",
-            dataset_size=os.path.getsize("cache/20250822-004129_sample-300_000Samples.csv"),
+            dataset_path="data/20250822-004129_sample-300_000Samples.csv",
+            dataset_size=os.path.getsize("data/20250822-004129_sample-300_000Samples.csv"),
             num_rows=len(X_train)
         )
         
@@ -668,7 +668,7 @@ def main():
                 'samples': len(df),
                 'text_column': text_column,
                 'label_column': label_column,
-                'source_file': 'cache/20250822-004129_sample-300_000Samples.csv'
+                'source_file': 'data/20250822-004129_sample-300_000Samples.csv'
             },
             'test_config': {
                 'trials': 10,

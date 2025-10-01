@@ -1,10 +1,10 @@
 # Core Data Science & Machine Learning
-numpy>=2.2.6
-pandas>=2.3.2
-matplotlib>=3.10.1
-seaborn>=0.13.2
-scikit-learn>=1.7.1
-scipy>=1.16.1
+numpy>=1.26.4
+pandas>=2.3.3
+matplotlib>=3.7.2
+seaborn>=0.12.2
+scikit-learn>=1.7.2
+scipy>=1.16.2
 
 # Deep Learning & NLP (GPU-Enabled - CUDA 12.6)
 torch>=2.8.0+cu126
@@ -38,7 +38,7 @@ networkx>=3.5
 streamlit>=1.49.0
 
 # Data Visualization
-plotly>=6.3.0
+plotly>=5.15.0
 
 # Data Handling & Utilities
 pyarrow>=21.0.0
@@ -54,7 +54,7 @@ filelock>=3.19.1
 xgboost>=2.0.0
 lightgbm>=4.0.0
 catboost>=1.2.0
-optuna>=3.0.0
+optuna>=3.4.0
 shap>=0.42.0
 
 # Built-in modules (no version needed)

@@ -30,6 +30,18 @@ class BaseModel(ABC):
         """Make predictions on new data"""
         pass
     
+    def score(self, X: Union[np.ndarray, sparse.csr_matrix], y: np.ndarray) -> float:
+        """Score the model on test data (accuracy for classification)"""
+        if not self.is_fitted:
+            raise ValueError("Model must be fitted before scoring")
+        
+        # Make predictions
+        y_pred = self.predict(X)
+        
+        # Calculate accuracy
+        accuracy = np.mean(y_pred == y)
+        return accuracy
+    
     def validate(
         self, 
         X_val: Union[np.ndarray, sparse.csr_matrix], 

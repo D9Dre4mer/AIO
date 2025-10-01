@@ -11,7 +11,7 @@ import time
 import os
 import json
 import pickle
-import threading
+# import threading  # Removed to avoid ScriptRunContext issues
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 
@@ -109,8 +109,8 @@ class StreamlitTrainingPipeline:
         self.elapsed_time = 0
         
         # Initialize stop mechanism
-        self._stop_event = threading.Event()
-        self._training_lock = threading.Lock()
+        # self._stop_event = threading.Event()  # Removed to avoid ScriptRunContext issues
+        # self._training_lock = threading.Lock()  # Removed to avoid ScriptRunContext issues
         
         # Initialize cache system
         self.cache_dir = "cache/training_results"

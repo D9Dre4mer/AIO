@@ -34,7 +34,7 @@ def load_spam_dataset(sample_size: int = 1000) -> Tuple[pd.DataFrame, str, str]:
     """Load spam text classification dataset"""
     try:
         print(f"📊 Loading spam text dataset with {sample_size} samples...")
-        df = pd.read_csv('cache/2cls_spam_text_cls.csv')
+        df = pd.read_csv('data/2cls_spam_text_cls.csv')
         
         # Sample the dataset
         if len(df) > sample_size:
@@ -185,8 +185,8 @@ def test_model_with_vectorization(model_name: str, X: np.ndarray, y: np.ndarray,
             'random_state': 42
         })
         dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
-            dataset_path="cache/2cls_spam_text_cls.csv",
-            dataset_size=os.path.getsize("cache/2cls_spam_text_cls.csv"),
+            dataset_path="data/2cls_spam_text_cls.csv",
+            dataset_size=os.path.getsize("data/2cls_spam_text_cls.csv"),
             num_rows=len(X_train)
         )
         

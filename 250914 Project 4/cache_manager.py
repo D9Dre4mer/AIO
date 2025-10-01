@@ -23,13 +23,15 @@ import numpy as np
 import logging
 
 # CRITICAL: Disable parallel processing to prevent memory mapping errors
+# Only apply restrictions when not running in Streamlit
 import os
-os.environ['JOBLIB_MULTIPROCESSING'] = '0'
-os.environ['OMP_NUM_THREADS'] = '1'
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['MKL_NUM_THREADS'] = '1'
-os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
-os.environ['NUMEXPR_NUM_THREADS'] = '1'
+if not os.environ.get('STREAMLIT_RUNNING'):
+    os.environ['JOBLIB_MULTIPROCESSING'] = '0'
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['OPENBLAS_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+    os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 # CRITICAL: Add comprehensive temp file cleanup
 try:
@@ -81,12 +83,7 @@ class CacheManager:
         Args:
             cache_root_dir: Root directory for model caches
         """
-        # Move cache outside project directory to prevent file watcher issues
-        if cache_root_dir.startswith('cache/'):
-            # Use system temp directory instead of project cache
-            import tempfile
-            cache_root_dir = os.path.join(tempfile.gettempdir(), 'aio_cache', 'models')
-        
+        # Keep cache in project directory as requested
         self.cache_root_dir = Path(cache_root_dir)
         self.cache_root_dir.mkdir(parents=True, exist_ok=True)
         
@@ -788,5 +785,197 @@ class CacheManager:
         return cleared_count
 
 
-# Global cache manager instance
+class TrainingResultsCacheManager:
+    """Manages caching of comprehensive training results"""
+    
+    def __init__(self, cache_root_dir: str = "cache/training_results/"):
+        """Initialize training results cache manager
+        
+        Args:
+            cache_root_dir: Root directory for training results cache
+        """
+        self.cache_root_dir = Path(cache_root_dir)
+        self.cache_root_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Cache structure for training results
+        self.cache_structure = {
+            'training_results': 'training_results.json',
+            'comprehensive_results': 'comprehensive_results.json',
+            'step_data': 'step_data.json',
+            'metadata': 'metadata.json',
+            'cache_info': 'cache_info.json'
+        }
+    
+    def generate_session_key(self, step1_data: Dict, step2_data: Dict, step3_data: Dict) -> str:
+        """Generate unique session key from step data"""
+        session_data = {
+            'step1_dataset': step1_data.get('dataset_size', 0),
+            'step1_sampling': step1_data.get('sampling_config', {}),
+            'step2_preprocessing': step2_data.get('preprocessing_config', {}),
+            'step2_scalers': step2_data.get('selected_scalers', []),
+            'step3_models': step3_data.get('selected_models', []),
+            'step3_config': step3_data.get('optuna_config', {}),
+            'timestamp': datetime.now().strftime('%Y%m%d_%H%M%S')
+        }
+        
+        session_str = json.dumps(session_data, sort_keys=True, default=str)
+        return hashlib.sha256(session_str.encode()).hexdigest()[:16]
+    
+    def save_training_results(self, session_key: str, training_results: Dict[str, Any]) -> str:
+        """Save comprehensive training results to cache"""
+        try:
+            session_cache_dir = self.cache_root_dir / session_key
+            session_cache_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Extract components for separate storage
+            comprehensive_results = training_results.get('comprehensive_results', [])
+            step_data = {
+                'step1_data': training_results.get('step1_data', {}),
+                'step2_data': training_results.get('step2_data', {}),
+                'step3_data': training_results.get('step3_data', {})
+            }
+            
+            # Create metadata
+            metadata = {
+                'session_key': session_key,
+                'created_at': datetime.now().isoformat(),
+                'total_models': training_results.get('total_models', 0),
+                'successful_combinations': training_results.get('successful_combinations', 0),
+                'total_combinations': training_results.get('total_combinations', 0),
+                'elapsed_time': training_results.get('elapsed_time', 0),
+                'status': training_results.get('status', 'unknown')
+            }
+            
+            # Custom JSON serializer with better handling
+            def safe_json_serializer(obj):
+                try:
+                    if isinstance(obj, pd.DataFrame):
+                        return obj.to_dict('records')
+                    elif isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    elif isinstance(obj, np.integer):
+                        return int(obj)
+                    elif isinstance(obj, np.floating):
+                        return float(obj)
+                    elif hasattr(obj, '__class__') and 'Model' in obj.__class__.__name__:
+                        return f"<{obj.__class__.__name__} object>"
+                    elif hasattr(obj, '__class__') and 'Classifier' in obj.__class__.__name__:
+                        return f"<{obj.__class__.__name__} object>"
+                    elif hasattr(obj, '__class__') and 'Regressor' in obj.__class__.__name__:
+                        return f"<{obj.__class__.__name__} object>"
+                    elif hasattr(obj, '__class__') and 'Scaler' in obj.__class__.__name__:
+                        return f"<{obj.__class__.__name__} object>"
+                    elif isinstance(obj, dict):
+                        return {k: safe_json_serializer(v) for k, v in obj.items()}
+                    elif isinstance(obj, list):
+                        return [safe_json_serializer(item) for item in obj]
+                    elif isinstance(obj, tuple):
+                        return list(safe_json_serializer(item) for item in obj)
+                    elif hasattr(obj, '__dict__'):
+                        # For any object with __dict__, convert to string representation
+                        return f"<{obj.__class__.__name__} object>"
+                    else:
+                        return str(obj) if obj is not None else None
+                except Exception as e:
+                    return f"<SerializationError: {str(e)}>"
+            
+            # Save training results
+            training_results_file = session_cache_dir / self.cache_structure['training_results']
+            with open(training_results_file, 'w', encoding='utf-8') as f:
+                serializable_results = safe_json_serializer(training_results)
+                json.dump(serializable_results, f, indent=2, ensure_ascii=False)
+            
+            # Save comprehensive results
+            comprehensive_results_file = session_cache_dir / self.cache_structure['comprehensive_results']
+            with open(comprehensive_results_file, 'w', encoding='utf-8') as f:
+                serializable_comprehensive = safe_json_serializer(comprehensive_results)
+                json.dump(serializable_comprehensive, f, indent=2, ensure_ascii=False)
+            
+            # Save step data
+            step_data_file = session_cache_dir / self.cache_structure['step_data']
+            with open(step_data_file, 'w', encoding='utf-8') as f:
+                serializable_step_data = safe_json_serializer(step_data)
+                json.dump(serializable_step_data, f, indent=2, ensure_ascii=False)
+            
+            # Save metadata
+            metadata_file = session_cache_dir / self.cache_structure['metadata']
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            
+            logger.info(f"Training results cached successfully: {session_cache_dir}")
+            print(f"SUCCESS: Training results cached to {session_cache_dir}")
+            
+            return str(session_cache_dir)
+            
+        except Exception as e:
+            logger.error(f"Failed to save training results: {e}")
+            print(f"ERROR: Failed to save training results: {e}")
+            raise
+    
+    def load_training_results(self, session_key: str) -> Dict[str, Any]:
+        """Load comprehensive training results from cache"""
+        try:
+            session_cache_dir = self.cache_root_dir / session_key
+            
+            if not session_cache_dir.exists():
+                raise FileNotFoundError(f"Training results cache not found: {session_key}")
+            
+            # Load all components
+            training_results_file = session_cache_dir / self.cache_structure['training_results']
+            with open(training_results_file, 'r', encoding='utf-8') as f:
+                training_results = json.load(f)
+            
+            comprehensive_results_file = session_cache_dir / self.cache_structure['comprehensive_results']
+            with open(comprehensive_results_file, 'r', encoding='utf-8') as f:
+                comprehensive_results = json.load(f)
+            
+            step_data_file = session_cache_dir / self.cache_structure['step_data']
+            with open(step_data_file, 'r', encoding='utf-8') as f:
+                step_data = json.load(f)
+            
+            metadata_file = session_cache_dir / self.cache_structure['metadata']
+            with open(metadata_file, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            
+            # Reconstruct complete training results
+            complete_results = training_results.copy()
+            complete_results['comprehensive_results'] = comprehensive_results
+            complete_results.update(step_data)
+            complete_results['metadata'] = metadata
+            complete_results['from_cache'] = True
+            complete_results['cache_path'] = str(session_cache_dir)
+            
+            logger.info(f"Training results loaded from cache: {session_key}")
+            print(f"SUCCESS: Training results loaded from cache: {session_key}")
+            
+            return complete_results
+            
+        except Exception as e:
+            logger.error(f"Failed to load training results: {e}")
+            print(f"ERROR: Failed to load training results: {e}")
+            raise
+    
+    def check_training_results_exists(self, session_key: str) -> bool:
+        """Check if training results cache exists"""
+        session_cache_dir = self.cache_root_dir / session_key
+        
+        if not session_cache_dir.exists():
+            return False
+        
+        required_files = [
+            self.cache_structure['training_results'],
+            self.cache_structure['comprehensive_results'],
+            self.cache_structure['step_data'],
+            self.cache_structure['metadata']
+        ]
+        
+        for file_name in required_files:
+            if not (session_cache_dir / file_name).exists():
+                return False
+        
+        return True
+
+
+# Global cache manager instances
 cache_manager = CacheManager()
+training_results_cache = TrainingResultsCacheManager()

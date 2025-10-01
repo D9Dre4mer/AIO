@@ -54,19 +54,19 @@ class LightGBMModel(BaseModel):
             
             if device_config["use_gpu"]:
                 params.update(device_config["device_params"])
-                print(f"🚀 LightGBM configured for GPU: {device_config['gpu_info']}")
+                print(f"LightGBM configured for GPU: {device_config['gpu_info']}")
             else:
                 params.update({
                     "device_type": "cpu"
                 })
-                print(f"💻 LightGBM configured for CPU")
+                print(f"LightGBM configured for CPU")
                 
         except ImportError:
             # Fallback to CPU if gpu_config_manager not available
             params.update({
                 "device_type": "cpu"
             })
-            print(f"💻 LightGBM configured for CPU (fallback)")
+            print(f"LightGBM configured for CPU (fallback)")
     
     def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
             y: np.ndarray) -> 'LightGBMModel':

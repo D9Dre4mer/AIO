@@ -41,7 +41,7 @@ def load_heart_dataset(
     """Load heart dataset"""
     try:
         print("📊 Loading heart dataset...")
-        df = pd.read_csv('cache/heart.csv')
+        df = pd.read_csv('data/heart.csv')
 
         # Sample the dataset if requested
         if sample_size and len(df) > sample_size:
@@ -211,8 +211,8 @@ def test_model_with_preprocessing(model_name: str, X: np.ndarray, y: np.ndarray,
             'random_state': 42
         })
         dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
-            dataset_path="cache/heart.csv",
-            dataset_size=os.path.getsize("cache/heart.csv"),
+            dataset_path="data/heart.csv",
+            dataset_size=os.path.getsize("data/heart.csv"),
             num_rows=len(X_train)
         )
         
@@ -683,7 +683,7 @@ def main():
                 'samples': len(df),
                 'feature_columns': feature_columns,
                 'label_column': label_column,
-                'source_file': 'cache/heart.csv'
+                'source_file': 'data/heart.csv'
             },
             'test_config': {
                 'trials': 10,

@@ -160,10 +160,11 @@ def print_model_results(results_dict):
 
 def create_shap_explainer(model, X_sample, model_type="auto"):
     """
-    Create SHAP explainer for the given model - DEFINITIVE VERSION
+    Create SHAP explainer for the given model - ENHANCED VERSION
+    Supports custom model classes by extracting underlying sklearn models
     
     Args:
-        model: Trained model
+        model: Trained model (can be custom wrapper or sklearn model)
         X_sample: Sample data for SHAP analysis
         model_type: Type of model ('tree', 'linear', 'deep', 'auto')
     
@@ -173,45 +174,67 @@ def create_shap_explainer(model, X_sample, model_type="auto"):
     try:
         import shap
         
-        # Determine model type and create appropriate explainer
-        model_type_str = str(type(model)).lower()
-        model_name = model.__class__.__name__
-        
-        print(f"Debug: Creating SHAP explainer for {model_name}")
-        
-        if 'randomforest' in model_type_str or 'lightgbm' in model_type_str:
-            # Use TreeExplainer for tree-based models
+        def extract_underlying_model(model):
+            """Extract underlying sklearn model from custom wrapper"""
             try:
-                explainer = shap.TreeExplainer(model)
-                print(f"SUCCESS: Created TreeExplainer for {model_name}")
+                # Check if model has a .model attribute (custom wrapper)
+                if hasattr(model, 'model') and model.model is not None:
+                    return model.model
+                
+                # Check if model is already a sklearn model
+                elif hasattr(model, 'predict_proba') and hasattr(model, 'fit'):
+                    return model
+                
+                # Check if model has sklearn attributes
+                elif hasattr(model, 'estimators_') or hasattr(model, 'tree_'):
+                    return model
+                
+                else:
+                    return None
+                    
+            except Exception as e:
+                print(f"Error extracting underlying model: {e}")
+                return None
+        
+        # Extract underlying sklearn model
+        underlying_model = extract_underlying_model(model)
+        if underlying_model is None:
+            print("ERROR: Cannot extract underlying sklearn model")
+            return None
+        
+        model_name = model.__class__.__name__
+        underlying_name = underlying_model.__class__.__name__
+        
+        print(f"Creating SHAP explainer for {model_name} -> {underlying_name}")
+        
+        # Determine model type and create appropriate explainer
+        model_type_str = str(type(underlying_model)).lower()
+        
+        # Try TreeExplainer for tree-based models
+        if any(keyword in model_type_str for keyword in ['randomforest', 'lightgbm', 'xgboost', 'gradientboosting', 'decisiontree']):
+            try:
+                print(f"Attempting TreeExplainer for {underlying_name}")
+                explainer = shap.TreeExplainer(underlying_model)
+                print(f"SUCCESS: Created TreeExplainer for {underlying_name}")
                 return explainer
             except Exception as e:
-                print(f"WARNING: TreeExplainer failed for {model_name}: {e}")
+                print(f"WARNING: TreeExplainer failed for {underlying_name}: {e}")
                 # Fallback to Explainer with predict_proba
                 pass
         
-        if 'xgboost' in model_type_str:
-            # XGBoost has Unicode issues with TreeExplainer
-            print(f"INFO: Using Explainer with predict_proba for XGBoost {model_name}")
-            try:
-                def predict_proba_wrapper(X):
-                    return model.predict_proba(X)
-                explainer = shap.Explainer(predict_proba_wrapper, X_sample)
-                print(f"SUCCESS: Created Explainer with predict_proba for {model_name}")
-                return explainer
-            except Exception as e:
-                print(f"ERROR: Failed to create explainer for XGBoost {model_name}: {e}")
-                return None
-        
-        # Default: Try Explainer with predict_proba
+        # Try Explainer with predict_proba for other models
         try:
+            print(f"Attempting Explainer with predict_proba for {underlying_name}")
+            
             def predict_proba_wrapper(X):
-                return model.predict_proba(X)
+                return underlying_model.predict_proba(X)
+            
             explainer = shap.Explainer(predict_proba_wrapper, X_sample)
-            print(f"SUCCESS: Created Explainer with predict_proba for {model_name}")
+            print(f"SUCCESS: Created Explainer with predict_proba for {underlying_name}")
             return explainer
+            
         except Exception as e:
-            print(f"ERROR: Failed to create explainer for {model_name}: {e}")
+            print(f"ERROR: All SHAP explainer methods failed for {underlying_name}: {e}")
             return None
             
     except ImportError:

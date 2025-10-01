@@ -22,7 +22,7 @@ class AdaBoostModel(BaseModel):
         default_params = {
             'n_estimators': 50,
             'learning_rate': 1.0,
-            'algorithm': 'SAMME.R',
+            'algorithm': 'SAMME',  # Fixed: SAMME.R is not supported in newer scikit-learn versions
             'random_state': 42
         }
         
