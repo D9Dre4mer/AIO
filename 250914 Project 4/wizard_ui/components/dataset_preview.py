@@ -54,7 +54,7 @@ class DatasetPreviewComponent:
             })
         
         col_df = pd.DataFrame(col_info)
-        st.dataframe(col_df, use_container_width=True)
+        st.dataframe(col_df, width='stretch')
         
         # Data preview
         st.subheader("👀 Data Preview")
@@ -62,10 +62,10 @@ class DatasetPreviewComponent:
         tab1, tab2 = st.tabs(["First 10 Rows", "Last 10 Rows"])
         
         with tab1:
-            st.dataframe(df.head(10), use_container_width=True)
+            st.dataframe(df.head(10), width='stretch')
         
         with tab2:
-            st.dataframe(df.tail(10), use_container_width=True)
+            st.dataframe(df.tail(10), width='stretch')
         
         # Missing values visualization
         if df.isnull().sum().sum() > 0:
@@ -117,7 +117,7 @@ class DatasetPreviewComponent:
         # Get random sample
         sample_df = df.sample(n=min(sample_size, len(df)), random_state=42)
         
-        st.dataframe(sample_df, use_container_width=True)
+        st.dataframe(sample_df, width='stretch')
         
         # Sample info
         st.info(f"Showing {len(sample_df)} random rows from {len(df)} total rows")

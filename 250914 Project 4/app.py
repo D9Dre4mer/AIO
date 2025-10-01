@@ -2211,162 +2211,159 @@ def render_multi_input_section():
         )
         
         # Note: Column configuration is saved when clicking "🚀 Process Multi-Input Data" button below
+    
+    # Validation: Remove label column from input columns if selected (moved outside col2)
+    if label_col and label_col in input_cols:
+        input_cols = [col for col in input_cols if col != label_col]
+        st.warning(f"⚠️ Removed '{label_col}' from input columns as it's selected as label column")
+    
+    # Show data quality metrics if columns are selected (moved outside col2)
+    if input_cols and label_col:
+        # Data quality metrics
+        st.markdown("**📊 Data Quality Metrics:**")
         
-        # Validation: Remove label column from input columns if selected
-        if label_col and label_col in input_cols:
-            input_cols = [col for col in input_cols if col != label_col]
-            st.warning(f"⚠️ Removed '{label_col}' from input columns as it's selected as label column")
+        col1, col2, col3 = st.columns(3)
         
-        # Show data quality metrics if columns are selected
-        if input_cols and label_col:
-            # Data quality metrics
-            st.markdown("**📊 Data Quality Metrics:**")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                st.metric("📊 Input Features", len(input_cols))
-            
-            with col2:
-                unique_labels = df[label_col].nunique()
-                st.metric("🏷️ Unique Labels", unique_labels)
-            
-            with col3:
-                # Remove duplicates to avoid duplicate column names
-                all_cols = list(input_cols) + [label_col]
-                unique_cols = list(dict.fromkeys(all_cols))  # Preserve order, remove duplicates
-                missing_pct = (df[unique_cols].isnull().sum().sum() / 
-                              (len(df) * len(unique_cols))) * 100
-                st.metric("❌ Missing %", f"{missing_pct:.1f}%")
-            
-            # Show sample data
-            st.markdown("**👀 Sample Data:**")
+        with col1:
+            st.metric("📊 Input Features", len(input_cols))
+        
+        with col2:
+            unique_labels = df[label_col].nunique()
+            st.metric("🏷️ Unique Labels", unique_labels)
+        
+        with col3:
             # Remove duplicates to avoid duplicate column names
             all_cols = list(input_cols) + [label_col]
             unique_cols = list(dict.fromkeys(all_cols))  # Preserve order, remove duplicates
-            sample_data = df[unique_cols].head(5)
-            st.dataframe(sample_data, use_container_width=True)
+            missing_pct = (df[unique_cols].isnull().sum().sum() / 
+                          (len(df) * len(unique_cols))) * 100
+            st.metric("❌ Missing %", f"{missing_pct:.1f}%")
+        
+        # Show sample data
+        st.markdown("**👀 Sample Data:**")
+        # Remove duplicates to avoid duplicate column names
+        all_cols = list(input_cols) + [label_col]
+        unique_cols = list(dict.fromkeys(all_cols))  # Preserve order, remove duplicates
+        sample_data = df[unique_cols].head(5)
+        st.dataframe(sample_data, use_container_width=True)
+        
+        # Preprocessing options
+        st.markdown("**🧹 Preprocessing Options:**")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            numeric_scaler = st.multiselect(
+                "📊 Numeric Scaling:",
+                ["StandardScaler", "MinMaxScaler", "RobustScaler", "None"],
+                default=["StandardScaler"],  # Default to first option
+                key="multi_input_numeric_scaler",
+                help="Choose one or more scaling methods for numeric features. Multiple methods will train mixed models."
+            )
             
-            # Preprocessing options
-            st.markdown("**🧹 Preprocessing Options:**")
+            text_encoding = st.selectbox(
+                "📝 Text Encoding:",
+                ["TF-IDF", "Count Vectorizer", "Word Embeddings", "None"],
+                index=3,  # Default to "None" (index 3)
+                key="multi_input_text_encoding",
+                help="Choose encoding method for text features"
+            )
+        
+        with col2:
+            remove_duplicates = st.checkbox(
+                "🗑️ Remove Duplicates",
+                value=False,  # Default to False (keep duplicates like auto_train files)
+                key="multi_input_remove_duplicates",
+                help="Remove duplicate rows from dataset. Warning: This may significantly reduce dataset size and affect model performance."
+            )
             
+            if remove_duplicates:
+                # Show duplicate analysis
+                duplicates = df.duplicated()
+                duplicate_count = duplicates.sum()
+                duplicate_percentage = duplicate_count / len(df) * 100
+                
+                st.info(f"📊 Found {duplicate_count} duplicate rows ({duplicate_percentage:.1f}% of dataset)")
+                
+                if duplicate_percentage > 50:
+                    st.warning("⚠️ High duplicate percentage detected! Removing duplicates may significantly reduce dataset size.")
+                elif duplicate_percentage > 20:
+                    st.info("ℹ️ Moderate duplicate percentage detected.")
+                else:
+                    st.success("✅ Low duplicate percentage - safe to remove.")
+            
+            outlier_detection = st.checkbox(
+                "🔍 Outlier Detection",
+                value=False,  # Default to False
+                key="multi_input_outlier_detection",
+                help="Detect and handle outliers in numeric features"
+            )
+            
+            missing_strategy = st.selectbox(
+                "❌ Missing Values:",
+                ["Drop rows", "Fill with mean/median", "Fill with mode", "Forward fill"],
+                index=1,  # Default to "Fill with mean/median" (index 1)
+                key="multi_input_missing_strategy",
+                help="Strategy for handling missing values"
+            )
+        
+        # Process button (moved outside col2)
+        if st.button("🚀 Process Multi-Input Data", type="primary", key="multi_input_process_button"):
+            # Save multi-input configuration
+            multi_input_config = {
+                'input_columns': input_cols,
+                'label_column': label_col,
+                'numeric_scaler': numeric_scaler,
+                'text_encoding': text_encoding,
+                'missing_strategy': missing_strategy,
+                'outlier_detection': outlier_detection,
+                'remove_duplicates': remove_duplicates,
+                'processed': True
+            }
+            
+            # Save column configuration (similar to Single Input)
+            column_config = {
+                'text_column': None,  # Multi-input doesn't have single text column
+                'label_column': label_col,
+                'input_columns': input_cols,
+                'data_type': 'multi_input',
+                'completed': True
+            }
+            
+            # Save both configurations to session
+            session_manager.set_step_data(2, {
+                'multi_input_config': multi_input_config,
+                'column_config': column_config,
+                'completed': True
+            })
+            
+            st.success("✅ Multi-input data configuration saved!")
+            st.success("✅ Column configuration saved!")
+            st.info("💡 This configuration will be used for training in Step 4.")
+            
+            # Show configuration summary
+            st.markdown("**📋 Configuration Summary:**")
             col1, col2 = st.columns(2)
             
             with col1:
-                numeric_scaler = st.multiselect(
-                    "📊 Numeric Scaling:",
-                    ["StandardScaler", "MinMaxScaler", "RobustScaler", "None"],
-                    default=["StandardScaler"],  # Default to first option
-                    key="multi_input_numeric_scaler",
-                    help="Choose one or more scaling methods for numeric features. Multiple methods will train mixed models."
-                )
+                st.markdown("**📊 Column Configuration:**")
+                st.write(f"- Input Columns: {', '.join(input_cols)}")
+                st.write(f"- Label Column: {label_col}")
+                st.write(f"- Data Type: Multi-Input")
                 
-                text_encoding = st.selectbox(
-                    "📝 Text Encoding:",
-                    ["TF-IDF", "Count Vectorizer", "Word Embeddings", "None"],
-                    index=3,  # Default to "None" (index 3)
-                    key="multi_input_text_encoding",
-                    help="Choose encoding method for text features"
-                )
-            
             with col2:
-                remove_duplicates = st.checkbox(
-                    "🗑️ Remove Duplicates",
-                    value=False,  # Default to False (keep duplicates like auto_train files)
-                    key="multi_input_remove_duplicates",
-                    help="Remove duplicate rows from dataset. Warning: This may significantly reduce dataset size and affect model performance."
-                )
-                
-                if remove_duplicates:
-                    # Show duplicate analysis
-                    duplicates = df.duplicated()
-                    duplicate_count = duplicates.sum()
-                    duplicate_percentage = duplicate_count / len(df) * 100
-                    
-                    st.info(f"📊 Found {duplicate_count} duplicate rows ({duplicate_percentage:.1f}% of dataset)")
-                    
-                    if duplicate_percentage > 50:
-                        st.warning("⚠️ High duplicate percentage detected! Removing duplicates may significantly reduce dataset size.")
-                    elif duplicate_percentage > 20:
-                        st.info("ℹ️ Moderate duplicate percentage detected.")
-                    else:
-                        st.success("✅ Low duplicate percentage - safe to remove.")
-                
-                outlier_detection = st.checkbox(
-                    "🔍 Outlier Detection",
-                    value=False,  # Default to False
-                    key="multi_input_outlier_detection",
-                    help="Detect and handle outliers in numeric features"
-                    )
-                    
-                with col2:
-                    missing_strategy = st.selectbox(
-                        "❌ Missing Values:",
-                        ["Drop rows", "Fill with mean/median", "Fill with mode", "Forward fill"],
-                        index=1,  # Default to "Fill with mean/median" (index 1)
-                        key="multi_input_missing_strategy",
-                        help="Strategy for handling missing values"
-                    )
+                st.markdown("**⚙️ Processing Configuration:**")
+                st.write(f"- Numeric Scaler: {', '.join(numeric_scaler) if numeric_scaler else 'None'}")
+                st.write(f"- Text Encoding: {text_encoding}")
+                st.write(f"- Missing Strategy: {missing_strategy}")
+                st.write(f"- Outlier Detection: {'Yes' if outlier_detection else 'No'}")
             
-            # Process button
-            if st.button("🚀 Process Multi-Input Data", type="primary", key="multi_input_process_button"):
-                # Save multi-input configuration
-                multi_input_config = {
-                    'input_columns': input_cols,
-                    'label_column': label_col,
-                    'numeric_scaler': numeric_scaler,
-                    'text_encoding': text_encoding,
-                    'missing_strategy': missing_strategy,
-                    'outlier_detection': outlier_detection,
-                    'remove_duplicates': remove_duplicates,
-                    'processed': True
-                }
-                
-                # Save column configuration (similar to Single Input)
-                column_config = {
-                    'text_column': None,  # Multi-input doesn't have single text column
-                    'label_column': label_col,
-                    'input_columns': input_cols,
-                    'data_type': 'multi_input',
-                    'completed': True
-                }
-                
-                # Save both configurations to session
-                session_manager.set_step_data(2, {
-                    'multi_input_config': multi_input_config,
-                    'column_config': column_config,
-                    'completed': True
-                })
-                
-                st.success("✅ Multi-input data configuration saved!")
-                st.success("✅ Column configuration saved!")
-                st.info("💡 This configuration will be used for training in Step 4.")
-                
-                # Show configuration summary
-                st.markdown("**📋 Configuration Summary:**")
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("**📊 Column Configuration:**")
-                    st.write(f"- Input Columns: {', '.join(input_cols)}")
-                    st.write(f"- Label Column: {label_col}")
-                    st.write(f"- Data Type: Multi-Input")
-                    
-                with col2:
-                    st.markdown("**⚙️ Processing Configuration:**")
-                    st.write(f"- Numeric Scaler: {', '.join(numeric_scaler) if numeric_scaler else 'None'}")
-                    st.write(f"- Text Encoding: {text_encoding}")
-                    st.write(f"- Missing Strategy: {missing_strategy}")
-                    st.write(f"- Outlier Detection: {'Yes' if outlier_detection else 'No'}")
-                
-                # Show completion message
-                st.toast("Step 2 (Multi-Input) completed successfully!")
-                st.toast("Click 'Next ▶' button to proceed to Step 3.")
-        
-            else:
-                st.warning("⚠️ Please select input columns and label column to continue.")
-        else:
-            st.error("❌ No columns found in the dataset.")
+            # Show completion message
+            st.toast("Step 2 (Multi-Input) completed successfully!")
+            st.toast("Click 'Next ▶' button to proceed to Step 3.")
+    
+    else:
+        st.warning("⚠️ Please select input columns and label column to continue.")
 
 
 def _check_for_text_data():
@@ -2510,7 +2507,7 @@ def render_optuna_configuration():
         selected_models = st.multiselect(
             "Select models for optimization",
             available_models,
-            default=['random_forest', 'xgboost', 'lightgbm'],
+            default=available_models,  # Default to all models
             key="optuna_models"
         )
         
@@ -2555,16 +2552,17 @@ def render_voting_weight_ensemble():
     enable_voting = st.checkbox("Enable Voting/Weight Ensemble", value=False, key="enable_voting")
     
     if enable_voting:
-        # Traditional models for voting
+        # All available models for voting
         traditional_models = [
-            'random_forest', 'logistic_regression', 'svm', 'knn', 
-            'naive_bayes', 'decision_tree', 'adaboost', 'gradient_boosting'
+            'random_forest', 'xgboost', 'lightgbm', 'catboost',
+            'logistic_regression', 'svm', 'knn', 'naive_bayes', 
+            'decision_tree', 'adaboost', 'gradient_boosting'
         ]
         
         selected_models = st.multiselect(
             "Select traditional models for voting",
             traditional_models,
-            default=['random_forest', 'logistic_regression', 'svm'],
+            default=traditional_models,  # Default to all models
             key="voting_models"
         )
         
@@ -2594,8 +2592,8 @@ def render_voting_weight_ensemble():
                         step=0.1,
                         key=f"weight_{model}"
                     )
-                else:
-                    weights = None
+            else:
+                weights = None
             
             # Save voting configuration
             voting_config = {
@@ -2644,7 +2642,7 @@ def render_stacking_configuration():
         base_models = st.multiselect(
             "Select tree-based models for stacking",
             tree_models,
-            default=['random_forest', 'xgboost', 'lightgbm'],
+            default=tree_models,  # Default to all tree-based models
             key="stacking_models"
         )
         
@@ -4260,7 +4258,7 @@ def render_shap_analysis():
             selected_models = st.multiselect(
                 "Select Models for SHAP Analysis:",
                 available_models,
-                default=['random_forest', 'xgboost', 'lightgbm'],
+                default=available_models,  # Default to all available models
                 help="Choose tree-based models for SHAP analysis"
             )
         

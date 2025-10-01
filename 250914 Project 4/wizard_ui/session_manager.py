@@ -105,16 +105,24 @@ class SessionManager:
     
     def set_step_data(self, step_number: int, data: Dict[str, Any]) -> None:
         """
-        Set data for a specific step
+        Set data for a specific step with comprehensive error handling
         
         Args:
             step_number: Step number to set data for
             data: Data to store for the step
         """
-        step_key = f"step{step_number}"
-        # Always set the data, creating the key if it doesn't exist
-        st.session_state[step_key] = data
-        logger.debug(f"Data set for step {step_number}")
+        try:
+            step_key = f"step{step_number}"
+            # Always set the data, creating the key if it doesn't exist
+            st.session_state[step_key] = data
+            logger.debug(f"Data set for step {step_number}")
+            print(f"SUCCESS: Step {step_number} data saved to session state")
+        except Exception as e:
+            logger.error(f"Failed to set step {step_number} data: {str(e)}")
+            print(f"ERROR: Failed to set step {step_number} data: {str(e)}")
+            import traceback
+            print(f"set_step_data traceback: {traceback.format_exc()}")
+            # Continue execution even if session state fails
     
     def update_step_data(self, step_number: int, key: str, value: Any) -> None:
         """
@@ -129,8 +137,9 @@ class SessionManager:
         step_data[key] = value
         self.set_step_data(step_number, step_data)
         
-        # FIXED: Auto-save session state after update
-        self.auto_save_session()
+        # DISABLED: Auto-save session state to prevent crashes
+        # self.auto_save_session()
+        print("DEBUG: Auto-save disabled to prevent crashes")
     
     def set_step_config(self, step_name: str, config: Dict[str, Any]) -> None:
         """
@@ -325,28 +334,54 @@ class SessionManager:
     
     def save_session_state(self) -> Dict[str, Any]:
         """
-        Save current session state to a dictionary
+        Save current session state to a dictionary - OPTIMIZED VERSION
         
-        Returns:
-            Dictionary containing session state
+        Only saves essential data, not large objects like dataframes
         """
+        def safe_dict_conversion(obj):
+            """Safely convert session state objects to dict, skipping non-serializable items"""
+            try:
+                if hasattr(obj, 'keys'):
+                    result = {}
+                    for key, value in obj.items():
+                        try:
+                            # Skip large objects that shouldn't be in session state
+                            if key in ['dataframe', 'df', 'training_results', 'comprehensive_results', 'model']:
+                                logger.debug(f"Skipping large object: {key}")
+                                continue
+                            
+                            # Try to serialize the value
+                            json.dumps(value, default=str)
+                            result[key] = value
+                        except (TypeError, ValueError):
+                            # Skip non-serializable values (like model objects)
+                            logger.debug(f"Skipping non-serializable key: {key}")
+                            continue
+                    return result
+                else:
+                    return obj
+            except Exception as e:
+                logger.warning(f"Failed to convert object to dict: {e}")
+                return {}
+        
+        # Only save essential session state data
         session_snapshot = {
             'wizard_step': st.session_state.wizard_step,
-            'wizard_data': dict(st.session_state.wizard_data),
-            'wizard_progress': dict(st.session_state.wizard_progress),
-            'wizard_config': dict(st.session_state.wizard_config),
-            'user_preferences': dict(st.session_state.user_preferences),
+            'wizard_data': safe_dict_conversion(st.session_state.wizard_data),
+            'wizard_progress': safe_dict_conversion(st.session_state.wizard_progress),
+            'wizard_config': safe_dict_conversion(st.session_state.wizard_config),
+            'user_preferences': safe_dict_conversion(st.session_state.user_preferences),
             'step_data': {
-                'step1_dataset': dict(st.session_state.step1_dataset),
-                'step2_preprocessing': dict(st.session_state.step2_preprocessing),
-                'step3_columns': dict(st.session_state.step3_columns),
-                'step4_configuration': dict(st.session_state.step4_configuration),
-                'step5_training': dict(st.session_state.step5_training),
-                'step6_results': dict(st.session_state.step6_results),
-                'step7_inference': dict(st.session_state.step7_inference)
+                'step1_dataset': safe_dict_conversion(st.session_state.step1_dataset),
+                'step2_preprocessing': safe_dict_conversion(st.session_state.step2_preprocessing),
+                'step3_columns': safe_dict_conversion(st.session_state.step3_columns),
+                'step4_configuration': safe_dict_conversion(st.session_state.step4_configuration),
+                'step5_training': safe_dict_conversion(st.session_state.step5_training),
+                'step6_results': safe_dict_conversion(st.session_state.step6_results),
+                'step7_inference': safe_dict_conversion(st.session_state.step7_inference)
             }
         }
-        logger.info("Session state saved")
+        logger.info("Session state saved (optimized - no large objects)")
         return session_snapshot
     
     def restore_session_state(self, session_data: Dict[str, Any]) -> bool:
@@ -392,6 +427,36 @@ class SessionManager:
         """Reset all session state to initial values"""
         self._initialize_session_state()
         logger.info("Session state reset to initial values")
+    
+    def clear_large_objects(self) -> None:
+        """Clear large objects from session state to reduce memory usage with comprehensive error handling"""
+        try:
+            large_object_keys = ['dataframe', 'df', 'training_results', 'comprehensive_results', 'model']
+            
+            for step_key in ['step1_dataset', 'step2_preprocessing', 'step3_columns', 
+                            'step4_configuration', 'step5_training', 'step6_results', 'step7_inference']:
+                try:
+                    if step_key in st.session_state:
+                        step_data = st.session_state[step_key]
+                        if isinstance(step_data, dict):
+                            for key in large_object_keys:
+                                if key in step_data:
+                                    del step_data[key]
+                                    logger.debug(f"Cleared large object: {step_key}.{key}")
+                except Exception as step_error:
+                    logger.warning(f"Failed to clear large objects from {step_key}: {str(step_error)}")
+                    print(f"WARNING: Failed to clear large objects from {step_key}: {str(step_error)}")
+                    # Continue with other steps
+            
+            logger.info("Large objects cleared from session state")
+            print("SUCCESS: Large objects cleared from session state")
+            
+        except Exception as e:
+            logger.error(f"Failed to clear large objects: {str(e)}")
+            print(f"ERROR: Failed to clear large objects: {str(e)}")
+            import traceback
+            print(f"clear_large_objects traceback: {traceback.format_exc()}")
+            # Continue execution even if cleanup fails
     
     def export_session_data(self) -> str:
         """

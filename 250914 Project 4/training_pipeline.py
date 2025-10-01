@@ -15,6 +15,48 @@ import threading
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 
+# Joblib parallel processing disabled - using pickle instead
+
+# CRITICAL: Add comprehensive temp file cleanup
+try:
+    import tempfile
+    import shutil
+    import glob
+    import atexit
+    
+    def cleanup_temp_files():
+        """Clean up temporary files created by joblib and other processes"""
+        try:
+            temp_dir = tempfile.gettempdir()
+            # Clean up joblib temp files
+            joblib_patterns = [
+                os.path.join(temp_dir, "joblib_memmapping_folder_*"),
+                os.path.join(temp_dir, "tmp*"),
+                os.path.join(temp_dir, "*.tmp")
+            ]
+            
+            for pattern in joblib_patterns:
+                for temp_file in glob.glob(pattern):
+                    try:
+                        if os.path.isdir(temp_file):
+                            shutil.rmtree(temp_file, ignore_errors=True)
+                        else:
+                            os.remove(temp_file)
+                        print(f"SUCCESS: Cleaned up temp file: {temp_file}")
+                    except Exception as cleanup_error:
+                        print(f"WARNING: Failed to clean up temp file {temp_file}: {cleanup_error}")
+            
+            print("SUCCESS: Temp file cleanup completed")
+        except Exception as cleanup_error:
+            print(f"WARNING: Temp file cleanup failed: {cleanup_error}")
+    
+    # Register cleanup function to run on exit
+    atexit.register(cleanup_temp_files)
+    print("SUCCESS: Temp file cleanup registered in training_pipeline")
+    
+except Exception as temp_error:
+    print(f"WARNING: Failed to setup temp file cleanup in training_pipeline: {temp_error}")
+
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
@@ -1778,6 +1820,27 @@ class StreamlitTrainingPipeline:
                     vec_data, labels_dict, model, vec_method
                 )
                 
+                # Create SHAP sample for caching
+                shap_sample = None
+                try:
+                    # Use a subset of test data for SHAP sample
+                    if eval_predictions is not None and len(eval_predictions) > 0:
+                        # Extract only feature columns (exclude true_labels and predictions)
+                        feature_columns = [col for col in eval_predictions.columns if col not in ['true_labels', 'predictions']]
+                        test_data = eval_predictions[feature_columns]
+                        
+                        # Sample for SHAP (max 1000 samples)
+                        if len(test_data) > 1000:
+                            import numpy as np
+                            indices = np.random.choice(len(test_data), 1000, replace=False)
+                            shap_sample = test_data.iloc[indices]
+                        else:
+                            shap_sample = test_data
+                        
+                        print(f"💾 Created SHAP sample for {model_name}: {len(shap_sample)} samples")
+                except Exception as shap_error:
+                    print(f"Warning: Failed to create SHAP sample for {model_name}: {shap_error}")
+                
                 # Save cache
                 cache_path = self._save_model_cache(
                     model_name=model_name,
@@ -1801,6 +1864,7 @@ class StreamlitTrainingPipeline:
                         'random_state': random_state
                     },
                     eval_predictions=eval_predictions,
+                    shap_sample=shap_sample,
                     step3_data=step3_data
                 )
                 

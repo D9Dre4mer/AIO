@@ -160,108 +160,103 @@ def print_model_results(results_dict):
 
 def create_shap_explainer(model, X_sample, model_type="auto"):
     """
-    Create SHAP explainer for different model types
+    Create SHAP explainer for the given model - DEFINITIVE VERSION
     
     Args:
         model: Trained model
         X_sample: Sample data for SHAP analysis
-        model_type: Type of model ("tree", "linear", "auto")
-        
+        model_type: Type of model ('tree', 'linear', 'deep', 'auto')
+    
     Returns:
         SHAP explainer object
     """
     try:
         import shap
         
-        print(f"Debug: Creating SHAP explainer for model type: {model_type}")
-        print(f"Debug: Model class: {model.__class__.__name__}")
-        print(f"Debug: Model attributes: {dir(model)}")
+        # Determine model type and create appropriate explainer
+        model_type_str = str(type(model)).lower()
+        model_name = model.__class__.__name__
         
-        # Extract the actual sklearn model from wrapper if needed
-        sklearn_model = model
-        if hasattr(model, 'model'):
-            # Custom wrapper (e.g., RandomForestModel, AdaBoostModel, GradientBoostingModel)
-            sklearn_model = model.model
-            print(f"Debug: Extracted sklearn model: {sklearn_model.__class__.__name__}")
-        elif hasattr(model, 'booster') and model.booster is not None:
-            # LightGBM cache wrapper - use booster directly
-            sklearn_model = model.booster
-            print(f"Debug: Using LightGBM booster directly: {type(sklearn_model)}")
-        elif hasattr(model, 'get_booster'):
-            # XGBoost model - get booster
+        print(f"Debug: Creating SHAP explainer for {model_name}")
+        
+        if 'randomforest' in model_type_str or 'lightgbm' in model_type_str:
+            # Use TreeExplainer for tree-based models
             try:
-                sklearn_model = model.get_booster()
-                print(f"Debug: Using XGBoost booster: {type(sklearn_model)}")
+                explainer = shap.TreeExplainer(model)
+                print(f"SUCCESS: Created TreeExplainer for {model_name}")
+                return explainer
             except Exception as e:
-                print(f"Debug: Failed to get XGBoost booster: {e}")
-                sklearn_model = model
-        elif hasattr(model, 'estimators_'):
-            # AdaBoost/GradientBoosting - use the underlying estimators
-            sklearn_model = model
-            print(f"Debug: Using AdaBoost/GradientBoosting directly: {type(sklearn_model)}")
+                print(f"WARNING: TreeExplainer failed for {model_name}: {e}")
+                # Fallback to Explainer with predict_proba
+                pass
         
-        # Auto-detect model type if not specified
-        if model_type == "auto":
-            model_name = sklearn_model.__class__.__name__.lower()
-            print(f"Debug: Auto-detecting model type from: {model_name}")
-            if any(tree_model in model_name for tree_model in ['randomforest', 'decisiontree', 'gradientboosting', 'adaboost', 'xgboost', 'lightgbm', 'catboost', 'booster']):
-                model_type = "tree"
-            elif any(linear_model in model_name for linear_model in ['logisticregression', 'linearsvc', 'svm']):
-                model_type = "linear"
-            else:
-                model_type = "tree"  # Default to tree explainer
-        
-        print(f"Debug: Using model_type: {model_type}")
-        
-        # Create appropriate explainer
-        if model_type == "tree":
-            print("Debug: Creating TreeExplainer...")
+        if 'xgboost' in model_type_str:
+            # XGBoost has Unicode issues with TreeExplainer
+            print(f"INFO: Using Explainer with predict_proba for XGBoost {model_name}")
             try:
-                explainer = shap.TreeExplainer(sklearn_model)
+                def predict_proba_wrapper(X):
+                    return model.predict_proba(X)
+                explainer = shap.Explainer(predict_proba_wrapper, X_sample)
+                print(f"SUCCESS: Created Explainer with predict_proba for {model_name}")
+                return explainer
             except Exception as e:
-                print(f"Debug: TreeExplainer failed, trying with original model: {e}")
-                # Fallback to original model if booster fails
-                try:
-                    explainer = shap.TreeExplainer(model)
-                except Exception as e2:
-                    print(f"Debug: Both TreeExplainer attempts failed: {e2}")
-                    # For AdaBoost, try using Explainer with a prediction function
-                    if 'adaboost' in sklearn_model.__class__.__name__.lower():
-                        print("Debug: AdaBoost not supported by TreeExplainer, skipping...")
-                        return None
-                    # For XGBoost with Unicode errors, try different approach
-                    elif ('xgboost' in sklearn_model.__class__.__name__.lower() or 
-                          'xgbclassifier' in str(type(sklearn_model)).lower() or
-                          'xgboost' in str(type(model)).lower() or
-                          'xgbclassifier' in str(type(model)).lower()):
-                        print("Debug: XGBoost Unicode error detected, trying Explainer with prediction function...")
-                        try:
-                            # Use Explainer with prediction function instead of TreeExplainer
-                            explainer = shap.Explainer(model, X_sample)
-                            print("Debug: Successfully created Explainer for XGBoost")
-                        except Exception as e3:
-                            print(f"Debug: Explainer also failed for XGBoost: {e3}")
-                            print("Debug: XGBoost SHAP not supported due to Unicode encoding issues, skipping...")
-                            return None
-                    else:
-                        raise e2
-        elif model_type == "linear":
-            print("Debug: Creating LinearExplainer...")
-            explainer = shap.LinearExplainer(sklearn_model, X_sample)
-        else:
-            # Fallback to TreeExplainer
-            print("Debug: Creating TreeExplainer (fallback)...")
-            explainer = shap.TreeExplainer(sklearn_model)
+                print(f"ERROR: Failed to create explainer for XGBoost {model_name}: {e}")
+                return None
         
-        print(f"SUCCESS: SHAP {model_type.title()}Explainer created successfully")
-        return explainer
-        
+        # Default: Try Explainer with predict_proba
+        try:
+            def predict_proba_wrapper(X):
+                return model.predict_proba(X)
+            explainer = shap.Explainer(predict_proba_wrapper, X_sample)
+            print(f"SUCCESS: Created Explainer with predict_proba for {model_name}")
+            return explainer
+        except Exception as e:
+            print(f"ERROR: Failed to create explainer for {model_name}: {e}")
+            return None
+            
     except ImportError:
-        print("ERROR: SHAP not available. Please install with: pip install shap")
+        print("ERROR: SHAP not available")
         return None
     except Exception as e:
         print(f"ERROR: Error creating SHAP explainer: {e}")
         return None
+
+
+def get_shap_values_definitive(explainer, X_sample):
+    """
+    Get SHAP values in consistent format
+    
+    Args:
+        explainer: SHAP explainer object
+        X_sample: Sample data
+    
+    Returns:
+        tuple: (shap_values, shap_type) where shap_type is 'list', 'array', or 'explanation'
+    """
+    try:
+        if hasattr(explainer, 'shap_values'):
+            # TreeExplainer
+            shap_values = explainer.shap_values(X_sample)
+            if isinstance(shap_values, list):
+                # Multi-class: use positive class (index 1)
+                return shap_values[1], 'list'
+            else:
+                return shap_values, 'array'
+        else:
+            # Explainer (Exact)
+            shap_values = explainer(X_sample)
+            if hasattr(shap_values, 'values'):
+                # Explanation object
+                values = shap_values.values
+                if len(values.shape) == 3:  # (n_samples, n_features, n_classes)
+                    return values[:, :, 1], 'explanation'  # Positive class
+                else:
+                    return values, 'explanation'
+            else:
+                return shap_values, 'array'
+    except Exception as e:
+        print(f"ERROR: Failed to get SHAP values: {e}")
+        return None, None
 
 
 def generate_shap_summary_plot(explainer, X_sample, feature_names=None, max_display=20, save_path=None):
@@ -281,12 +276,10 @@ def generate_shap_summary_plot(explainer, X_sample, feature_names=None, max_disp
     try:
         import shap
         
-        # Calculate SHAP values
-        shap_values = explainer.shap_values(X_sample)
-        
-        # Handle multi-class case
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # Use positive class for binary classification
+        # Get SHAP values using definitive method
+        shap_values, shap_type = get_shap_values_definitive(explainer, X_sample)
+        if shap_values is None:
+            return None
         
         # Create summary plot
         fig, ax = plt.subplots(figsize=(10, 8))
@@ -304,7 +297,7 @@ def generate_shap_summary_plot(explainer, X_sample, feature_names=None, max_disp
         return fig
         
     except Exception as e:
-        print(f"❌ Error generating SHAP summary plot: {e}")
+        print(f"Error generating SHAP summary plot: {e}")
         return None
 
 
@@ -325,12 +318,10 @@ def generate_shap_bar_plot(explainer, X_sample, feature_names=None, max_display=
     try:
         import shap
         
-        # Calculate SHAP values
-        shap_values = explainer.shap_values(X_sample)
-        
-        # Handle multi-class case
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # Use positive class for binary classification
+        # Get SHAP values using definitive method
+        shap_values, shap_type = get_shap_values_definitive(explainer, X_sample)
+        if shap_values is None:
+            return None
         
         # Create bar plot
         fig, ax = plt.subplots(figsize=(10, 8))
@@ -348,7 +339,7 @@ def generate_shap_bar_plot(explainer, X_sample, feature_names=None, max_display=
         return fig
         
     except Exception as e:
-        print(f"❌ Error generating SHAP bar plot: {e}")
+        print(f"Error generating SHAP bar plot: {e}")
         return None
 
 
@@ -371,26 +362,100 @@ def generate_shap_dependence_plot(explainer, X_sample, feature_names=None,
     try:
         import shap
         
-        # Calculate SHAP values
-        shap_values = explainer.shap_values(X_sample)
-        
-        # Handle multi-class case
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # Use positive class for binary classification
+        # Get SHAP values using definitive method
+        shap_values, shap_type = get_shap_values_definitive(explainer, X_sample)
+        if shap_values is None:
+            return None
         
         # Create dependence plot
         fig, ax = plt.subplots(figsize=(10, 6))
         
-        if interaction_index is not None:
-            shap.dependence_plot(feature_index, shap_values, X_sample, 
-                                feature_names=feature_names, 
-                                interaction_index=interaction_index, show=False)
-        else:
-            shap.dependence_plot(feature_index, shap_values, X_sample, 
-                                feature_names=feature_names, show=False)
+        # Ensure feature_index is an integer
+        if isinstance(feature_index, str):
+            try:
+                feature_index = int(feature_index)
+            except ValueError:
+                feature_index = 0
         
-        feature_name = feature_names[feature_index] if feature_names else f"Feature {feature_index}"
-        ax.set_title(f"SHAP Dependence Plot: {feature_name}", fontsize=14, fontweight='bold')
+        try:
+            if interaction_index is not None:
+                shap.dependence_plot(feature_index, shap_values, X_sample, 
+                                    interaction_index=interaction_index, show=False)
+            else:
+                shap.dependence_plot(feature_index, shap_values, X_sample, show=False)
+            
+            # Force set title for all axes after plot creation
+            feature_name = feature_names[feature_index] if feature_names and len(feature_names) > feature_index else f"Feature {feature_index}"
+            for ax in fig.get_axes():
+                if not ax.get_title():  # Only set if title is empty
+                    ax.set_title(f"SHAP Dependence Plot: {feature_name}", fontsize=14, fontweight='bold')
+            
+            # Check if plot has meaningful content
+            axes = fig.get_axes()
+            has_content = False
+            for ax in axes:
+                if len(ax.get_lines()) > 0 or len(ax.collections) > 0:
+                    # Check if collections have actual data points
+                    for collection in ax.collections:
+                        if hasattr(collection, 'get_offsets') and len(collection.get_offsets()) > 0:
+                            has_content = True
+                            break
+                    if has_content:
+                        break
+            
+            if not has_content:
+                print("Warning: Dependence plot has no meaningful content, creating custom plot")
+                # Clear and create custom dependence plot
+                fig.clear()
+                ax = fig.add_subplot(111)
+                
+                # Extract feature values and SHAP values
+                feature_values = X_sample[:, feature_index]
+                shap_feature_values = shap_values[:, feature_index]
+                
+                # Create scatter plot
+                scatter = ax.scatter(feature_values, shap_feature_values, 
+                                   alpha=0.7, s=50, c=shap_feature_values, 
+                                   cmap='RdBu_r', edgecolors='black', linewidth=0.5)
+                
+                # Add colorbar
+                plt.colorbar(scatter, ax=ax, label='SHAP Value')
+                
+                # Set labels and title
+                feature_name = feature_names[feature_index] if feature_names and len(feature_names) > feature_index else f"Feature {feature_index}"
+                ax.set_xlabel(feature_name, fontsize=12)
+                ax.set_ylabel(f"SHAP Value for {feature_name}", fontsize=12)
+                ax.set_title(f"SHAP Dependence Plot: {feature_name}", fontsize=14, fontweight='bold')
+                
+                # Add grid
+                ax.grid(True, alpha=0.3)
+            
+        except Exception as dep_error:
+            print(f"Warning: Dependence plot failed, creating custom plot: {dep_error}")
+            # Create custom dependence plot
+            fig.clear()
+            ax = fig.add_subplot(111)
+            
+            # Extract feature values and SHAP values
+            feature_values = X_sample[:, feature_index]
+            shap_feature_values = shap_values[:, feature_index]
+            
+            # Create scatter plot
+            scatter = ax.scatter(feature_values, shap_feature_values, 
+                               alpha=0.7, s=50, c=shap_feature_values, 
+                               cmap='RdBu_r', edgecolors='black', linewidth=0.5)
+            
+            # Add colorbar
+            plt.colorbar(scatter, ax=ax, label='SHAP Value')
+            
+            # Set labels and title
+            feature_name = feature_names[feature_index] if feature_names and len(feature_names) > feature_index else f"Feature {feature_index}"
+            ax.set_xlabel(feature_name, fontsize=12)
+            ax.set_ylabel(f"SHAP Value for {feature_name}", fontsize=12)
+            ax.set_title(f"SHAP Dependence Plot: {feature_name}", fontsize=14, fontweight='bold')
+            
+            # Add grid
+            ax.grid(True, alpha=0.3)
         plt.tight_layout()
         
         # Save plot if path provided
@@ -401,7 +466,7 @@ def generate_shap_dependence_plot(explainer, X_sample, feature_names=None,
         return fig
         
     except Exception as e:
-        print(f"❌ Error generating SHAP dependence plot: {e}")
+        print(f"Error generating SHAP dependence plot: {e}")
         return None
 
 
@@ -496,17 +561,40 @@ def plot_shap_waterfall(explainer, X_sample, instance_index=0, feature_names=Non
     try:
         import shap
         
-        # Calculate SHAP values for the instance
-        shap_values = explainer.shap_values(X_sample[instance_index:instance_index+1])
+        # Get SHAP values for single instance using definitive method
+        shap_values, shap_type = get_shap_values_definitive(explainer, X_sample[instance_index:instance_index+1])
+        if shap_values is None:
+            return None
         
-        # Handle multi-class case
-        if isinstance(shap_values, list):
-            shap_values = shap_values[1]  # Use positive class for binary classification
+        # Ensure we have the right shape for single instance
+        if len(shap_values.shape) > 1:
+            instance_values = shap_values[0]
+        else:
+            instance_values = shap_values
         
         # Create waterfall plot
         plt.figure(figsize=(12, 8))
-        shap.waterfall_plot(explainer.expected_value, shap_values[0], X_sample[instance_index], 
-                           feature_names=feature_names, show=False)
+        
+        # Create Explanation object for waterfall plot
+        try:
+            # Get expected value
+            if hasattr(explainer, 'expected_value'):
+                expected_value = explainer.expected_value
+            else:
+                # For Explainer objects, calculate expected value
+                expected_value = np.mean(shap_values)
+            
+            # Create Explanation object for waterfall plot
+            explanation = shap.Explanation(
+                values=shap_values[0],
+                base_values=expected_value,
+                data=X_sample[instance_index]
+            )
+            shap.waterfall_plot(explanation)
+        except Exception as wf_error:
+            print(f"Warning: Waterfall plot failed, using bar plot instead: {wf_error}")
+            # Fallback to bar plot
+            shap.bar_plot(shap_values[0], show=False)
         
         plt.title(f"SHAP Waterfall Plot - Instance {instance_index}", fontsize=14, fontweight='bold')
         plt.tight_layout()
@@ -514,10 +602,10 @@ def plot_shap_waterfall(explainer, X_sample, instance_index=0, feature_names=Non
         # Save plot if path provided
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"✅ SHAP waterfall plot saved to: {save_path}")
+            print(f"SUCCESS: SHAP waterfall plot saved to: {save_path}")
         
         return plt.gcf()
         
     except Exception as e:
-        print(f"❌ Error generating SHAP waterfall plot: {e}")
+        print(f"Error generating SHAP waterfall plot: {e}")
         return None

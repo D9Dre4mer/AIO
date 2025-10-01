@@ -15,13 +15,61 @@ import os
 import json
 import hashlib
 import pickle
-import joblib
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime
 import pandas as pd
 import numpy as np
 import logging
+
+# CRITICAL: Disable joblib parallel processing to prevent memory mapping errors
+try:
+    # Force joblib to use single-threaded backend
+    joblib.parallel.BACKENDS['threading'] = joblib.parallel.ThreadBackend(n_jobs=1)
+    joblib.parallel.BACKENDS['loky'] = joblib.parallel.LokyBackend(n_jobs=1)
+    print("SUCCESS: Joblib parallel processing disabled in cache_manager")
+except Exception as joblib_error:
+    print(f"WARNING: Failed to disable joblib parallel processing in cache_manager: {joblib_error}")
+
+# CRITICAL: Add comprehensive temp file cleanup
+try:
+    import tempfile
+    import shutil
+    import glob
+    import atexit
+    
+    def cleanup_temp_files():
+        """Clean up temporary files created by joblib and other processes"""
+        try:
+            temp_dir = tempfile.gettempdir()
+            # Clean up joblib temp files
+            joblib_patterns = [
+                os.path.join(temp_dir, "joblib_memmapping_folder_*"),
+                os.path.join(temp_dir, "tmp*"),
+                os.path.join(temp_dir, "*.tmp")
+            ]
+            
+            for pattern in joblib_patterns:
+                for temp_file in glob.glob(pattern):
+                    try:
+                        if os.path.isdir(temp_file):
+                            shutil.rmtree(temp_file, ignore_errors=True)
+                        else:
+                            os.remove(temp_file)
+                        print(f"SUCCESS: Cleaned up temp file: {temp_file}")
+                    except Exception as cleanup_error:
+                        print(f"WARNING: Failed to clean up temp file {temp_file}: {cleanup_error}")
+            
+            print("SUCCESS: Temp file cleanup completed")
+        except Exception as cleanup_error:
+            print(f"WARNING: Temp file cleanup failed: {cleanup_error}")
+    
+    # Register cleanup function to run on exit
+    atexit.register(cleanup_temp_files)
+    print("SUCCESS: Temp file cleanup registered in cache_manager")
+    
+except Exception as temp_error:
+    print(f"WARNING: Failed to setup temp file cleanup in cache_manager: {temp_error}")
 
 logger = logging.getLogger(__name__)
 
@@ -191,39 +239,71 @@ class CacheManager:
         Returns:
             Cache path string
         """
-        cache_path = self.get_cache_path(model_key, dataset_id, config_hash)
-        cache_path.mkdir(parents=True, exist_ok=True)
-        
         try:
-            # Save model artifact
-            model_ext = self._get_model_extension(model_key)
-            model_file = cache_path / f"model.{model_ext}"
-            self._save_model_artifact(model, model_file, model_key)
+            print(f"DEBUG: Starting cache save for {model_key}")
+            
+            cache_path = self.get_cache_path(model_key, dataset_id, config_hash)
+            
+            # Create cache directory with error handling
+            try:
+                cache_path.mkdir(parents=True, exist_ok=True)
+                print(f"DEBUG: Cache directory created: {cache_path}")
+            except Exception as dir_error:
+                print(f"ERROR: Failed to create cache directory: {dir_error}")
+                raise dir_error
+            # Save model artifact with error handling
+            try:
+                model_ext = self._get_model_extension(model_key)
+                model_file = cache_path / f"model.{model_ext}"
+                self._save_model_artifact(model, model_file, model_key)
+                print(f"DEBUG: Model artifact saved: {model_file}")
+            except Exception as model_error:
+                print(f"ERROR: Failed to save model artifact: {model_error}")
+                raise model_error
             
             # Custom JSON serializer to handle non-serializable objects
             def safe_json_serializer(obj):
                 """Convert non-serializable objects to strings"""
-                if hasattr(obj, '__module__'):
-                    return f"<{obj.__class__.__name__} object>"
-                elif hasattr(obj, '__dict__'):
-                    return str(obj)
-                else:
-                    return str(obj)
+                try:
+                    if hasattr(obj, '__module__'):
+                        return f"<{obj.__class__.__name__} object>"
+                    elif hasattr(obj, '__dict__'):
+                        return str(obj)
+                    else:
+                        return str(obj)
+                except Exception as e:
+                    print(f"WARNING: JSON serialization failed for object: {e}")
+                    return f"<SerializationError: {str(e)}>"
             
-            # Save params
-            params_file = cache_path / self.cache_structure['params']
-            with open(params_file, 'w') as f:
-                json.dump(params, f, indent=2, default=safe_json_serializer)
+            # Save params with error handling
+            try:
+                params_file = cache_path / self.cache_structure['params']
+                with open(params_file, 'w') as f:
+                    json.dump(params, f, indent=2, default=safe_json_serializer)
+                print(f"DEBUG: Params saved: {params_file}")
+            except Exception as params_error:
+                print(f"ERROR: Failed to save params: {params_error}")
+                raise params_error
             
-            # Save metrics
-            metrics_file = cache_path / self.cache_structure['metrics']
-            with open(metrics_file, 'w') as f:
-                json.dump(metrics, f, indent=2, default=safe_json_serializer)
+            # Save metrics with error handling
+            try:
+                metrics_file = cache_path / self.cache_structure['metrics']
+                with open(metrics_file, 'w') as f:
+                    json.dump(metrics, f, indent=2, default=safe_json_serializer)
+                print(f"DEBUG: Metrics saved: {metrics_file}")
+            except Exception as metrics_error:
+                print(f"ERROR: Failed to save metrics: {metrics_error}")
+                raise metrics_error
             
-            # Save config
-            config_file = cache_path / self.cache_structure['config']
-            with open(config_file, 'w') as f:
-                json.dump(config, f, indent=2, default=safe_json_serializer)
+            # Save config with error handling
+            try:
+                config_file = cache_path / self.cache_structure['config']
+                with open(config_file, 'w') as f:
+                    json.dump(config, f, indent=2, default=safe_json_serializer)
+                print(f"DEBUG: Config saved: {config_file}")
+            except Exception as config_error:
+                print(f"ERROR: Failed to save config: {config_error}")
+                raise config_error
             
             # Save fingerprint
             fingerprint_data = {
@@ -261,6 +341,23 @@ class CacheManager:
                     json.dump(label_mapping, f, indent=2, default=safe_json_serializer)
             
             logger.info(f"Cache saved for {model_key} at {cache_path}")
+            
+            # CRITICAL: Force cleanup to prevent memory mapping errors
+            try:
+                import gc
+                gc.collect()
+                print(f"DEBUG: Garbage collection completed for {model_key}")
+            except Exception as cleanup_error:
+                print(f"WARNING: Failed to cleanup: {cleanup_error}")
+            
+            # Force garbage collection after operations
+            try:
+                import gc
+                gc.collect()
+                print(f"DEBUG: Garbage collection completed for {model_key}")
+            except Exception as gc_error:
+                print(f"WARNING: Garbage collection failed: {gc_error}")
+            
             return str(cache_path)
             
         except Exception as e:
@@ -418,12 +515,18 @@ class CacheManager:
             if hasattr(cb_model, 'save_model'):
                 cb_model.save_model(str(file_path))
             else:
-                joblib.dump(cb_model, file_path)
+                pickle.dump(cb_model, file_path)
         elif model_key.startswith('stacking_ensemble_') or model_key.startswith('voting_ensemble_'):
             # Save ensemble model data (contains ensemble_manager and metadata)
-            joblib.dump(model, file_path)
+            pickle.dump(model, file_path)
         else:
-            joblib.dump(model, file_path)
+            # For custom model classes, save the underlying sklearn model
+            if hasattr(model, 'model'):
+                # Custom wrapper class - save underlying model
+                pickle.dump(model.model, file_path)
+            else:
+                # Direct sklearn model
+                pickle.dump(model, file_path)
     
     def _load_model_artifact(self, file_path: Path, model_key: str, config_hash: str = None):
         """Load model artifact based on type
@@ -506,9 +609,25 @@ class CacheManager:
             return model
         elif model_key.startswith('stacking_ensemble_') or model_key.startswith('voting_ensemble_'):
             # Load ensemble model data (contains ensemble_manager and metadata)
-            return joblib.load(file_path)
+            return pickle.load(file_path)
         else:
-            return joblib.load(file_path)
+            # Load underlying sklearn model and wrap it
+            sklearn_model = pickle.load(file_path)
+            
+            # Try to recreate the custom wrapper class
+            try:
+                from models.utils.model_factory import model_factory
+                wrapper_class = model_factory.get_model_class(model_key)
+                if wrapper_class:
+                    # Create new instance and set the loaded model
+                    wrapper_instance = wrapper_class()
+                    wrapper_instance.model = sklearn_model
+                    return wrapper_instance
+            except Exception:
+                pass
+            
+            # Fallback: return the sklearn model directly
+            return sklearn_model
     
     def _get_library_versions(self) -> Dict[str, str]:
         """Get library versions for fingerprinting

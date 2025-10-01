@@ -545,7 +545,7 @@ class SHAPVisualizationStep:
                 performance_df = pd.DataFrame(performance_data)
                 performance_df = performance_df.sort_values('Accuracy', ascending=False)
                 
-                st.dataframe(performance_df, use_container_width=True)
+                st.dataframe(performance_df, width='stretch')
                 
                 # Best model
                 best_model = performance_df.iloc[0]

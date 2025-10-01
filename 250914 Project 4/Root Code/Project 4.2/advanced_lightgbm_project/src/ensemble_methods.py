@@ -576,7 +576,7 @@ class EnsembleMethods:
         Args:
             save_dir: Directory to save models
         """
-        import joblib
+        import pickle
         import os
         
         os.makedirs(save_dir, exist_ok=True)
@@ -584,8 +584,8 @@ class EnsembleMethods:
         for name, result in self.performance_results.items():
             try:
                 model = result['model']
-                model_path = os.path.join(save_dir, f"ensemble_{name}.joblib")
-                joblib.dump(model, model_path)
+                model_path = os.path.join(save_dir, f"ensemble_{name}.pkl")
+                pickle.dump(model, model_path)
                 print(f"✅ Saved {name} ensemble to {model_path}")
             except Exception as e:
                 print(f"⚠️  Error saving {name}: {e}")

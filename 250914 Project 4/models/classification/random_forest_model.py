@@ -7,6 +7,8 @@ import numpy as np
 from scipy import sparse
 from sklearn.ensemble import RandomForestClassifier
 
+# Joblib parallel processing disabled - using pickle instead
+
 from ..base.base_model import BaseModel
 from ..base.metrics import ModelMetrics
 

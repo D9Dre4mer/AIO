@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 import time
-import joblib
+import pickle
 import os
 
 warnings.filterwarnings('ignore')
@@ -621,8 +621,8 @@ class AdvancedLightGBM:
             'config': self.config
         }
         
-        info_filepath = filepath.replace('.txt', '_info.joblib')
-        joblib.dump(model_info, info_filepath)
+        info_filepath = filepath.replace('.txt', '_info.pkl')
+        pickle.dump(model_info, info_filepath)
         
         print(f"✅ Model saved to {filepath}")
         print(f"✅ Model info saved to {info_filepath}")
@@ -638,9 +638,9 @@ class AdvancedLightGBM:
         self.model = lgb.Booster(model_file=filepath)
         
         # Load additional information
-        info_filepath = filepath.replace('.txt', '_info.joblib')
+        info_filepath = filepath.replace('.txt', '_info.pkl')
         if os.path.exists(info_filepath):
-            model_info = joblib.load(info_filepath)
+            model_info = pickle.load(info_filepath)
             self.training_history = model_info.get('training_history', {})
             
             if model_info.get('feature_importance'):
