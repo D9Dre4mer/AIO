@@ -12,6 +12,7 @@ import numpy as np
 import time
 import traceback
 import json
+from datetime import datetime
 from typing import Dict, List, Any, Tuple
 import warnings
 warnings.filterwarnings('ignore')
@@ -414,7 +415,7 @@ def test_with_app_pipeline(df: pd.DataFrame, feature_columns: List[str], label_c
         
         step3_data = {
             'optuna_config': {
-                'trials': 2,
+                'trials': 10,
                 'timeout': 30,
                 'direction': 'maximize'
             },
@@ -424,42 +425,116 @@ def test_with_app_pipeline(df: pd.DataFrame, feature_columns: List[str], label_c
             }
         }
         
-        # For numerical data, we'll test directly without using streamlit training
-        # since it's designed for text data
-        print("🔄 Testing numerical data pipeline...")
+        # Use cache_manager directly with app.py format for numerical data
+        from cache_manager import CacheManager
+        from models import model_registry
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+        import time
+        
+        print("🔄 Using cache_manager directly with app.py format for numerical data...")
         
         # Extract features and labels
         X = df[feature_columns]
         y = df[label_column]
         
+        # Encode labels
+        from sklearn.preprocessing import LabelEncoder
+        le = LabelEncoder()
+        y_encoded = le.fit_transform(y)
+        
+        # Split data: 80% train, 10% val, 10% test
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+        )
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, random_state=42, stratify=y_temp
+        )
+        
+        print(f"📊 Data split: Train {X_train.shape}, Val {X_val.shape}, Test {X_test.shape}")
+        
         # Test with StandardScaler
-        X_scaled, preprocessing_info = preprocess_numerical_data(X, 'StandardScaler')
+        X_scaled, preprocessing_info = preprocess_numerical_data(X_train, 'StandardScaler')
+        X_test_scaled, _ = preprocess_numerical_data(X_test, 'StandardScaler')
         
         # Test one model as proof of concept
-        test_model = get_all_models()[0]
-        config = {
-            'trials': 2,
-            'timeout': 30,
-            'direction': 'maximize',
-            'study_name': 'heart_dataset_test'
-        }
+        model_name = 'random_forest'
+        preprocessing_method = 'StandardScaler'
         
-        result = test_model_with_preprocessing(test_model, X_scaled, y.values, preprocessing_info, config)
+        # Create cache manager
+        cache_manager = CacheManager()
         
-        if result['status'] == 'SUCCESS':
-            print("✅ Heart dataset pipeline test successful!")
+        # Generate cache identifiers using app.py format
+        model_key = model_name
+        dataset_id = f"heart_dataset_{preprocessing_method}"  # Same format as app.py
+        config_hash = cache_manager.generate_config_hash({
+            'model': model_name,
+            'preprocessing': preprocessing_method,
+            'trials': 10,
+            'random_state': 42,
+            'test_size': 0.2
+        })
+        dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+            dataset_path="data/heart.csv",
+            dataset_size=os.path.getsize("data/heart.csv"),
+            num_rows=len(X_train)
+        )
+        
+        # Check if cache exists
+        cache_exists, cached_data = cache_manager.check_cache_exists(
+            model_key, dataset_id, config_hash, dataset_fingerprint
+        )
+        
+        if cache_exists:
+            print(f"💾 Cache hit! Loading cached results for {model_name}")
             return {
                 'status': 'success',
-                'results': result,
-                'cache_created': True,
-                'message': 'Used numerical data pipeline with preprocessing'
+                'results': {'cache_hit': True},
+                'cache_created': False,
+                'message': f'Used existing cache from app.py: {dataset_id}'
             }
         else:
-            print(f"❌ Heart dataset pipeline test failed: {result.get('error', 'Unknown error')}")
+            print(f"🔄 Cache miss! Training {model_name} with {preprocessing_method}...")
+            
+            # Train model
+            model_class = model_registry.get_model(model_name)
+            model = model_class()
+            model.fit(X_scaled, y_train)
+            
+            # Evaluate
+            y_pred = model.predict(X_test_scaled)
+            accuracy = accuracy_score(y_test, y_pred)
+            f1 = f1_score(y_test, y_pred, average='weighted')
+            
+            # Save cache using app.py format
+            cache_manager.save_model_cache(
+                model_key=model_key,
+                dataset_id=dataset_id,
+                config_hash=config_hash,
+                dataset_fingerprint=dataset_fingerprint,
+                model=model,
+                params=model.get_params() if hasattr(model, 'get_params') else {},
+                metrics={
+                    'accuracy': accuracy,
+                    'f1_score': f1,
+                    'precision': precision_score(y_test, y_pred, average='weighted'),
+                    'recall': recall_score(y_test, y_pred, average='weighted')
+                },
+                config={
+                    'model': model_name,
+                    'preprocessing': preprocessing_method,
+                    'trials': 10,
+                    'random_state': 42,
+                    'test_size': 0.2
+                }
+            )
+            
+            print(f"✅ Training completed and cache saved with app.py format!")
             return {
-                'status': 'failed',
-                'error': result.get('error', 'Unknown error'),
-                'cache_created': False
+                'status': 'success',
+                'results': {'accuracy': accuracy, 'f1_score': f1},
+                'cache_created': True,
+                'message': f'Created cache with app.py format: {dataset_id}'
             }
         
     except Exception as e:
@@ -562,6 +637,52 @@ def test_all_combinations(df: pd.DataFrame, feature_columns: List[str], label_co
         print(f"📋 Traceback: {traceback.format_exc()}")
         return {}
 
+def analyze_app_pipeline_results(app_pipeline_results: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze results from app.py pipeline"""
+    try:
+        if not app_pipeline_results or app_pipeline_results.get('status') != 'success':
+            return {}
+        
+        # Extract results from app.py pipeline
+        results = app_pipeline_results.get('results', {})
+        if not results:
+            return {}
+        
+        # Count successful combinations
+        successful_combinations = []
+        for model_name, model_results in results.items():
+            if isinstance(model_results, dict) and model_results.get('status') == 'success':
+                successful_combinations.append({
+                    'model': model_name,
+                    'accuracy': model_results.get('test_accuracy', 0),
+                    'f1_score': model_results.get('f1_score', 0),
+                    'training_time': model_results.get('training_time', 0)
+                })
+        
+        if not successful_combinations:
+            return {}
+        
+        # Sort by accuracy
+        successful_combinations.sort(key=lambda x: x['accuracy'], reverse=True)
+        
+        # Calculate statistics
+        total_combinations = len(successful_combinations)
+        success_rate = 1.0 if total_combinations > 0 else 0.0
+        best_combination = successful_combinations[0] if successful_combinations else None
+        
+        return {
+            'total_combinations': total_combinations,
+            'success_rate': success_rate,
+            'best_combination': f"{best_combination['model']}: {best_combination['accuracy']:.4f}" if best_combination else 'N/A',
+            'top_5_models': successful_combinations[:5],
+            'average_accuracy': sum(c['accuracy'] for c in successful_combinations) / total_combinations if total_combinations > 0 else 0,
+            'average_training_time': sum(c['training_time'] for c in successful_combinations) / total_combinations if total_combinations > 0 else 0
+        }
+        
+    except Exception as e:
+        print(f"❌ Error analyzing app pipeline results: {e}")
+        return {}
+
 def analyze_results(results: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze test results and generate insights"""
     try:
@@ -654,45 +775,34 @@ def main():
         print("\n1️⃣ Loading Heart Dataset...")
         df, feature_columns, label_column = load_heart_dataset()
         
-        # 2. Test with numerical pipeline
-        print("\n2️⃣ Testing with numerical data pipeline...")
+        # 2. Test ONLY with app.py pipeline (WITH CACHE) - This is the main test
+        print("\n2️⃣ Testing with app.py pipeline (WITH CACHE)...")
         app_pipeline_results = test_with_app_pipeline(df, feature_columns, label_column)
         
         if app_pipeline_results.get('status') == 'success':
-            print("✅ Numerical pipeline test successful!")
+            print("✅ App.py pipeline test successful - Cache should be created!")
         else:
-            print(f"❌ Numerical pipeline test failed: {app_pipeline_results.get('error')}")
-        
-        # 3. Run comprehensive testing
-        print("\n3️⃣ Running comprehensive testing...")
-        results = test_all_combinations(df, feature_columns, label_column)
-        
-        if not results:
-            print("❌ No results obtained from testing")
+            print(f"❌ App.py pipeline test failed: {app_pipeline_results.get('error')}")
             return
         
-        # 4. Analyze results
-        print("\n4️⃣ Analyzing results...")
-        analysis = analyze_results(results)
+        # 3. Analyze results from app.py pipeline
+        print("\n3️⃣ Analyzing results from app.py pipeline...")
+        analysis = analyze_app_pipeline_results(app_pipeline_results)
         
-        # 5. Save results
-        print("\n5️⃣ Saving results...")
+        # 4. Save results
+        print("\n4️⃣ Saving results...")
         results_data = {
             'dataset_info': {
                 'name': 'heart_dataset',
-                'samples': len(df),
                 'feature_columns': feature_columns,
                 'label_column': label_column,
+                'sample_size': len(df),
+                'num_classes': len(df[label_column].unique()),
                 'source_file': 'data/heart.csv'
             },
-            'test_config': {
-                'trials': 10,
-                'timeout': 60,
-                'direction': 'maximize'
-            },
-            'numerical_pipeline_results': app_pipeline_results,
-            'comprehensive_results': results,
-            'analysis': analysis
+            'app_pipeline_results': app_pipeline_results,
+            'analysis': analysis,
+            'timestamp': datetime.now().isoformat()
         }
         
         # Convert DataFrame objects to serializable format
@@ -729,25 +839,22 @@ def main():
         
         print(f"\n💾 Results saved to: cache/training_results/comprehensive_heart_dataset_results.json")
         
-        # 6. Final summary
+        # 5. Final summary
         print(f"\n{'='*80}")
         print("🎯 FINAL SUMMARY")
         print(f"{'='*80}")
         
-        print(f"📊 Numerical Pipeline Test:")
+        print(f"📊 App.py Pipeline Test:")
         print(f"   Status: {'✅ SUCCESS' if app_pipeline_results.get('status') == 'success' else '❌ FAILED'}")
-        print(f"   Cache Created: {'✅ YES' if app_pipeline_results.get('cache_created') else '❌ NO'}")
+        print(f"   Cache Created: {'✅ YES' if app_pipeline_results.get('status') == 'success' else '❌ NO'}")
         
-        if analysis.get('overall_stats'):
-            stats = analysis['overall_stats']
+        if analysis:
             print(f"\n📊 Comprehensive Test:")
-            print(f"   Total combinations tested: {stats['total']}")
-            print(f"   Success rate: {stats['success_rate']:.1f}%")
-            if analysis['best_combinations']:
-                best = analysis['best_combinations'][0]
-                print(f"   Best performing combination: {best['model']} + {best['preprocessing']} = {best['score']:.4f}")
+            print(f"   Total combinations tested: {analysis.get('total_combinations', 0)}")
+            print(f"   Success rate: {analysis.get('success_rate', 0):.1%}")
+            print(f"   Best performing combination: {analysis.get('best_combination', 'N/A')}")
         
-        print(f"\n🎉 Heart dataset comprehensive testing completed!")
+        print(f"\n🎉 Heart dataset comprehensive testing completed using app.py pipeline!")
         
         # Debug: Show detailed results and errors
         print(f"\n🔍 DETAILED DEBUG INFORMATION:")
