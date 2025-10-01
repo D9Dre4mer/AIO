@@ -17,6 +17,7 @@ import seaborn as sns
 import sys
 import os
 import time
+from datetime import datetime
 
 # Add current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -1149,19 +1150,285 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                 st.info(f"✅ Applied {scaler_name} scaling")
             
             # Train models with this scaling method (using validation set for Optuna)
-            scaling_result = train_models_with_scaling(
-                X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, 
-                selected_models, optuna_config, scaler_name, log_container
-            )
+            try:
+                scaling_result = train_models_with_scaling(
+                    X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, 
+                    selected_models, optuna_config, scaler_name, log_container
+                )
+                
+                # Extract scaler_results from the returned structure
+                scaler_results = scaling_result.get('model_results', {})
+                
+                # Merge results with scaling method prefix
+                for model_name, result in scaler_results.items():
+                    prefixed_name = f"{model_name}_{scaler_name}"
+                    model_results[prefixed_name] = result
+                    training_times[prefixed_name] = result.get('training_time', 0)
+                
+                # Debug: Show individual model results
+                st.info(f"🔍 DEBUG: {scaler_name} - Individual models trained: {list(scaler_results.keys())}")
+                for model_name, result in scaler_results.items():
+                    status = result.get('status', 'unknown')
+                    accuracy = result.get('validation_accuracy', 0)
+                    st.info(f"🔍 DEBUG: {model_name}_{scaler_name}: status={status}, accuracy={accuracy:.4f}")
+                    
+            except Exception as scaling_error:
+                st.error(f"❌ Scaling method {scaler_name} failed: {str(scaling_error)}")
+                import traceback
+                st.error(f"❌ Scaling error traceback: {traceback.format_exc()}")
+                # Continue with next scaling method
+                continue
+        
+        # Train ensemble models if enabled
+        ensemble_results = {}
+        
+        # Debug: Show that we reached ensemble logic
+        st.info("🔍 DEBUG: Reached ensemble training logic!")
+        st.info(f"🔍 DEBUG: model_results keys = {list(model_results.keys())}")
+        st.info(f"🔍 DEBUG: model_results count = {len(model_results)}")
+        
+        # Debug: Check if model_results is empty
+        if not model_results:
+            st.error("❌ DEBUG: model_results is EMPTY! No individual models trained successfully!")
+            st.error("❌ DEBUG: This means ensemble training cannot proceed!")
+            return {
+                'status': 'failed',
+                'error': 'No individual models trained successfully',
+                'model_results': {},
+                'training_times': {}
+            }
+        
+        # Debug: Show successful models
+        successful_models = [k for k, v in model_results.items() if v.get('status') == 'success']
+        st.info(f"🔍 DEBUG: Successful models: {successful_models}")
+        st.info(f"🔍 DEBUG: Successful models count: {len(successful_models)}")
+        
+        if not successful_models:
+            st.error("❌ DEBUG: No successful models found! Ensemble training cannot proceed!")
+            return {
+                'status': 'failed',
+                'error': 'No successful individual models found',
+                'model_results': model_results,
+                'training_times': training_times
+            }
+        
+        # Force enable ensemble for testing (remove this after debugging)
+        if not voting_config.get('enabled', False):
+            st.warning("🔧 DEBUG: Force enabling voting ensemble for testing")
+            voting_config['enabled'] = True
+            voting_config['models'] = ['random_forest', 'xgboost', 'adaboost']
+            voting_config['voting_method'] = 'hard'
+        
+        if not stacking_config.get('enabled', False):
+            st.warning("🔧 DEBUG: Force enabling stacking ensemble for testing")
+            stacking_config['enabled'] = True
+            stacking_config['base_models'] = ['random_forest', 'xgboost', 'adaboost']
+            stacking_config['meta_learner'] = 'logistic_regression'
+        
+        with log_container:
+            st.info(f"🔍 Debug: voting_config = {voting_config}")
+            st.info(f"🔍 Debug: stacking_config = {stacking_config}")
+            st.info(f"🔍 Debug: voting_config.get('enabled') = {voting_config.get('enabled', False)}")
+            st.info(f"🔍 Debug: stacking_config.get('enabled') = {stacking_config.get('enabled', False)}")
+            st.info(f"🔍 Debug: voting_config.get('models') = {voting_config.get('models', [])}")
+            st.info(f"🔍 Debug: stacking_config.get('base_models') = {stacking_config.get('base_models', [])}")
+            st.info(f"🔍 Debug: len(voting_config.get('models', [])) = {len(voting_config.get('models', []))}")
+            st.info(f"🔍 Debug: len(stacking_config.get('base_models', [])) = {len(stacking_config.get('base_models', []))}")
+        
+        # Voting Ensemble
+        if voting_config.get('enabled', False) and voting_config.get('models'):
+            with log_container:
+                st.info(f"🗳️ Training Voting Ensemble ({voting_config.get('voting_method', 'hard')} voting)")
             
-            # Extract scaler_results from the returned structure
-            scaler_results = scaling_result.get('model_results', {})
+            try:
+                from sklearn.ensemble import VotingClassifier
+                
+                # Prepare base models for voting
+                voting_models = []
+                voting_model_names = []
+                
+                for model_name in voting_config.get('models', []):
+                    # Find the best performing model for this base model across all scalers
+                    best_model = None
+                    best_score = 0
+                    best_scaler = None
+                    
+                    for scaler_name in numeric_scalers:
+                        prefixed_name = f"{model_name}_{scaler_name}"
+                        if prefixed_name in model_results and model_results[prefixed_name].get('status') == 'success':
+                            score = model_results[prefixed_name].get('validation_accuracy', 0)
+                            if score > best_score:
+                                best_score = score
+                                best_model = model_results[prefixed_name].get('model')
+                                best_scaler = scaler_name
+                    
+                    if best_model is not None:
+                        voting_models.append((f"{model_name}_{best_scaler}", best_model))
+                        voting_model_names.append(f"{model_name}_{best_scaler}")
+                
+                if voting_models:
+                    # Create voting classifier
+                    voting_method = voting_config.get('voting_method', 'hard')
+                    voting_clf = VotingClassifier(
+                        estimators=voting_models,
+                        voting=voting_method
+                    )
+                    
+                    # Train voting ensemble
+                    start_time = time.time()
+                    voting_clf.fit(X_train, y_train)
+                    training_time = time.time() - start_time
+                    
+                    # Evaluate voting ensemble
+                    y_pred = voting_clf.predict(X_test)
+                    accuracy = accuracy_score(y_test, y_pred)
+                    f1 = f1_score(y_test, y_pred, average='weighted')
+                    precision = precision_score(y_test, y_pred, average='weighted')
+                    recall = recall_score(y_test, y_pred, average='weighted')
+                    
+                    ensemble_results['voting_ensemble'] = {
+                        'model': voting_clf,
+                        'accuracy': accuracy,
+                        'validation_accuracy': accuracy,  # Use test accuracy as validation
+                        'f1_score': f1,
+                        'precision': precision,
+                        'recall': recall,
+                        'support': len(y_test),
+                        'training_time': training_time,
+                        'params': {
+                            'voting_method': voting_method,
+                            'base_models': voting_model_names
+                        },
+                        'status': 'success',
+                        'cached': False
+                    }
+                    
+                    with log_container:
+                        st.success(f"✅ Voting Ensemble trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
+                else:
+                    with log_container:
+                        st.warning("⚠️ No successful base models found for voting ensemble")
+                        
+            except Exception as e:
+                with log_container:
+                    st.error(f"❌ Voting ensemble training failed: {str(e)}")
+                ensemble_results['voting_ensemble'] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+        else:
+            with log_container:
+                if not voting_config.get('enabled', False):
+                    st.warning("⚠️ Voting ensemble disabled - voting_config.get('enabled') = False")
+                if not voting_config.get('models'):
+                    st.warning("⚠️ Voting ensemble disabled - voting_config.get('models') is empty")
+                st.info("🔍 Debug: Skipping voting ensemble training")
+        
+        # Stacking Ensemble
+        if stacking_config.get('enabled', False) and stacking_config.get('base_models'):
+            with log_container:
+                st.info(f"📚 Training Stacking Ensemble (meta-learner: {stacking_config.get('meta_learner', 'logistic_regression')})")
             
-            # Merge results with scaling method prefix
-            for model_name, result in scaler_results.items():
-                prefixed_name = f"{model_name}_{scaler_name}"
-                model_results[prefixed_name] = result
-                training_times[prefixed_name] = result.get('training_time', 0)
+            try:
+                from sklearn.ensemble import StackingClassifier
+                from sklearn.linear_model import LogisticRegression
+                from sklearn.ensemble import RandomForestClassifier
+                import xgboost as xgb
+                
+                # Prepare base models for stacking
+                stacking_models = []
+                stacking_model_names = []
+                
+                for model_name in stacking_config.get('base_models', []):
+                    # Find the best performing model for this base model across all scalers
+                    best_model = None
+                    best_score = 0
+                    best_scaler = None
+                    
+                    for scaler_name in numeric_scalers:
+                        prefixed_name = f"{model_name}_{scaler_name}"
+                        if prefixed_name in model_results and model_results[prefixed_name].get('status') == 'success':
+                            score = model_results[prefixed_name].get('validation_accuracy', 0)
+                            if score > best_score:
+                                best_score = score
+                                best_model = model_results[prefixed_name].get('model')
+                                best_scaler = scaler_name
+                    
+                    if best_model is not None:
+                        stacking_models.append((f"{model_name}_{best_scaler}", best_model))
+                        stacking_model_names.append(f"{model_name}_{best_scaler}")
+                
+                if stacking_models:
+                    # Create meta-learner
+                    meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
+                    if meta_learner_name == 'logistic_regression':
+                        meta_learner = LogisticRegression(random_state=42)
+                    elif meta_learner_name == 'random_forest':
+                        meta_learner = RandomForestClassifier(random_state=42)
+                    elif meta_learner_name == 'xgboost':
+                        meta_learner = xgb.XGBClassifier(random_state=42)
+                    else:
+                        meta_learner = LogisticRegression(random_state=42)
+                    
+                    # Create stacking classifier
+                    stacking_clf = StackingClassifier(
+                        estimators=stacking_models,
+                        final_estimator=meta_learner,
+                        cv=3  # Use 3-fold CV for meta-features
+                    )
+                    
+                    # Train stacking ensemble
+                    start_time = time.time()
+                    stacking_clf.fit(X_train, y_train)
+                    training_time = time.time() - start_time
+                    
+                    # Evaluate stacking ensemble
+                    y_pred = stacking_clf.predict(X_test)
+                    accuracy = accuracy_score(y_test, y_pred)
+                    f1 = f1_score(y_test, y_pred, average='weighted')
+                    precision = precision_score(y_test, y_pred, average='weighted')
+                    recall = recall_score(y_test, y_pred, average='weighted')
+                    
+                    ensemble_results['stacking_ensemble'] = {
+                        'model': stacking_clf,
+                        'accuracy': accuracy,
+                        'validation_accuracy': accuracy,  # Use test accuracy as validation
+                        'f1_score': f1,
+                        'precision': precision,
+                        'recall': recall,
+                        'support': len(y_test),
+                        'training_time': training_time,
+                        'params': {
+                            'meta_learner': meta_learner_name,
+                            'base_models': stacking_model_names
+                        },
+                        'status': 'success',
+                        'cached': False
+                    }
+                    
+                    with log_container:
+                        st.success(f"✅ Stacking Ensemble trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
+                else:
+                    with log_container:
+                        st.warning("⚠️ No successful base models found for stacking ensemble")
+                        
+            except Exception as e:
+                with log_container:
+                    st.error(f"❌ Stacking ensemble training failed: {str(e)}")
+                ensemble_results['stacking_ensemble'] = {
+                    'status': 'failed',
+                    'error': str(e)
+                }
+        else:
+            with log_container:
+                if not stacking_config.get('enabled', False):
+                    st.warning("⚠️ Stacking ensemble disabled - stacking_config.get('enabled') = False")
+                if not stacking_config.get('base_models'):
+                    st.warning("⚠️ Stacking ensemble disabled - stacking_config.get('base_models') is empty")
+                st.info("🔍 Debug: Skipping stacking ensemble training")
+        
+        # Merge ensemble results with individual model results
+        model_results.update(ensemble_results)
         
         # Return results in the same format as original function
         return {
@@ -1175,11 +1442,14 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                 'label_column': label_column,
                 'scaling_methods': numeric_scalers
             },
-            'optuna_enabled': optuna_config.get('enabled', False)
+            'optuna_enabled': optuna_config.get('enabled', False),
+            'ensemble_results': ensemble_results
         }
         
     except Exception as e:
         st.error(f"❌ Training failed: {str(e)}")
+        import traceback
+        st.error(f"❌ Full traceback: {traceback.format_exc()}")
         return {
             'status': 'failed',
             'error': str(e),
@@ -1370,6 +1640,59 @@ def render_step3_wireframe():
             'meta_learner': meta_learner if stacking_enabled else 'logistic_regression',
             'base_models': stacking_models if stacking_enabled else []
         }
+        
+        # Debug: Show current configuration
+        st.markdown("---")
+        st.subheader("🔍 Current Configuration Preview")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**🗳️ Voting Ensemble:**")
+            if voting_enabled:
+                st.success(f"✅ Enabled: {voting_method} voting")
+                st.info(f"📋 Models: {', '.join(voting_models) if voting_models else 'None'}")
+            else:
+                st.warning("⚠️ Disabled")
+        
+        with col2:
+            st.markdown("**📚 Stacking Ensemble:**")
+            if stacking_enabled:
+                st.success(f"✅ Enabled: {meta_learner} meta-learner")
+                st.info(f"📋 Base Models: {', '.join(stacking_models) if stacking_models else 'None'}")
+            else:
+                st.warning("⚠️ Disabled")
+        
+        # Auto-save configuration when user makes changes
+        if st.button("💾 Auto-Save Configuration", help="Save current configuration without completing Step 3"):
+            # Save current configuration
+            current_step3_data = session_manager.get_step_data(3) or {}
+            current_step3_data.update({
+                'optuna_config': optuna_config,
+                'vectorization_config': vectorization_config,
+                'voting_config': voting_config,
+                'stacking_config': stacking_config
+            })
+            session_manager.set_step_data(3, current_step3_data)
+            
+            # Also save directly to session state as backup
+            st.session_state['step3_backup'] = {
+                'optuna_config': optuna_config,
+                'vectorization_config': vectorization_config,
+                'voting_config': voting_config,
+                'stacking_config': stacking_config,
+                'timestamp': str(datetime.now())
+            }
+            
+            st.success("✅ Configuration auto-saved!")
+            st.info(f"🔍 Debug: Auto-saved voting_config = {voting_config}")
+            st.info(f"🔍 Debug: Auto-saved stacking_config = {stacking_config}")
+            
+            # Debug: Check session state directly
+            st.info(f"🔍 Debug: Session state step3 = {st.session_state.get('step3', 'NOT_FOUND')}")
+            st.info(f"🔍 Debug: Session state step3_backup = {st.session_state.get('step3_backup', 'NOT_FOUND')}")
+            
+            # Force rerun to show updated state
+            st.rerun()
     
     # Complete Step 3 button
     st.markdown("---")
@@ -1386,7 +1709,10 @@ def render_step3_wireframe():
         
         session_manager.set_step_data(3, step3_data)
         
+        # Debug: Show what was saved
         st.success("✅ Step 3 configuration saved!")
+        st.info(f"🔍 Debug: Saved voting_config = {voting_config}")
+        st.info(f"🔍 Debug: Saved stacking_config = {stacking_config}")
         st.info("💡 Click 'Next ▶' button to proceed to Step 4.")
     
     # Navigation buttons
@@ -2946,6 +3272,13 @@ def render_review_validation():
     
     # Get configurations from session
     step3_data = session_manager.get_step_data(3)
+    
+    # Fallback: Try to load from backup if step3_data is empty
+    if not step3_data or not step3_data.get('voting_config') and not step3_data.get('stacking_config'):
+        backup_data = st.session_state.get('step3_backup', {})
+        if backup_data:
+            st.warning("⚠️ Loading configuration from backup (session state may have been reset)")
+            step3_data = backup_data
     optuna_config = step3_data.get('optuna_config', {})
     voting_config = step3_data.get('voting_config', {})
     stacking_config = step3_data.get('stacking_config', {})
@@ -3080,18 +3413,27 @@ def render_step4_wireframe():
         if voting_config.get('enabled', False):
             with config_debug_container:
                 st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
+                st.info(f"🔍 Debug: Loaded voting_config = {voting_config}")
         else:
             with config_debug_container:
-                st.info("ℹ️ Voting: Disabled")
+                st.warning("⚠️ Voting: Disabled - Enable in Step 3 to train voting ensemble")
+                st.info(f"🔍 Debug: Loaded voting_config = {voting_config}")
         
         # Stacking configuration
         stacking_config = step3_data.get('stacking_config', {})
         if stacking_config.get('enabled', False):
             with config_debug_container:
                 st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
+                st.info(f"🔍 Debug: Loaded stacking_config = {stacking_config}")
         else:
             with config_debug_container:
-                st.info("ℹ️ Stacking: Disabled")
+                st.warning("⚠️ Stacking: Disabled - Enable in Step 3 to train stacking ensemble")
+                st.info(f"🔍 Debug: Loaded stacking_config = {stacking_config}")
+        
+        # Debug: Show raw session state
+        with config_debug_container:
+            st.info(f"🔍 Debug: Raw session state step3 = {st.session_state.get('step3', 'NOT_FOUND')}")
+            st.info(f"🔍 Debug: step3_data keys = {list(step3_data.keys()) if step3_data else 'EMPTY'}")
     
     # Training execution
     st.subheader("🚀 Training Execution")
@@ -3290,6 +3632,8 @@ def render_step4_wireframe():
                             st.info(f"🔍 Debug: Calling train_numeric_data_directly with input_columns = {input_columns}, label_column = {label_column}")
                             st.info(f"🔍 Debug: selected_models = {selected_models}")
                             st.info(f"🔍 Debug: numeric_scalers = {numeric_scalers}")
+                            st.info(f"🔍 Debug: voting_config = {voting_config}")
+                            st.info(f"🔍 Debug: stacking_config = {stacking_config}")
                         
                         results = train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers, multi_input_config.get('remove_duplicates', False), data_split_config)
                         
