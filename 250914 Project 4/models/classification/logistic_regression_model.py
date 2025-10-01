@@ -7,7 +7,7 @@ import numpy as np
 from scipy import sparse
 from sklearn.linear_model import LogisticRegression
 
-# Joblib parallel processing disabled - using pickle instead
+# Parallel processing disabled - using pickle instead
 
 from ..base.base_model import BaseModel
 from ..base.metrics import ModelMetrics

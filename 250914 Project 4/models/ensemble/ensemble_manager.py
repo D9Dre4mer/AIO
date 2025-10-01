@@ -11,7 +11,7 @@ from sklearn.base import BaseEstimator, ClassifierMixin
 import time
 import warnings
 
-# Joblib parallel processing disabled - using pickle instead
+# Parallel processing disabled - using pickle instead
 
 from ..base.base_model import BaseModel
 
