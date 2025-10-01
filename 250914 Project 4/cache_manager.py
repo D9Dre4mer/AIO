@@ -22,14 +22,14 @@ import pandas as pd
 import numpy as np
 import logging
 
-# CRITICAL: Disable joblib parallel processing to prevent memory mapping errors
-try:
-    # Force joblib to use single-threaded backend
-    joblib.parallel.BACKENDS['threading'] = joblib.parallel.ThreadBackend(n_jobs=1)
-    joblib.parallel.BACKENDS['loky'] = joblib.parallel.LokyBackend(n_jobs=1)
-    print("SUCCESS: Joblib parallel processing disabled in cache_manager")
-except Exception as joblib_error:
-    print(f"WARNING: Failed to disable joblib parallel processing in cache_manager: {joblib_error}")
+# CRITICAL: Disable parallel processing to prevent memory mapping errors
+import os
+os.environ['JOBLIB_MULTIPROCESSING'] = '0'
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['OPENBLAS_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+os.environ['VECLIB_MAXIMUM_THREADS'] = '1'
+os.environ['NUMEXPR_NUM_THREADS'] = '1'
 
 # CRITICAL: Add comprehensive temp file cleanup
 try:
@@ -39,17 +39,16 @@ try:
     import atexit
     
     def cleanup_temp_files():
-        """Clean up temporary files created by joblib and other processes"""
+        """Clean up temporary files created by various processes"""
         try:
             temp_dir = tempfile.gettempdir()
-            # Clean up joblib temp files
-            joblib_patterns = [
-                os.path.join(temp_dir, "joblib_memmapping_folder_*"),
+            # Clean up temp files
+            temp_patterns = [
                 os.path.join(temp_dir, "tmp*"),
                 os.path.join(temp_dir, "*.tmp")
             ]
             
-            for pattern in joblib_patterns:
+            for pattern in temp_patterns:
                 for temp_file in glob.glob(pattern):
                     try:
                         if os.path.isdir(temp_file):
@@ -187,7 +186,7 @@ class CacheManager:
             
             # Check model artifact (with dynamic extension)
             model_artifact_found = False
-            for ext in ['joblib', 'json', 'txt', 'cbm']:
+            for ext in ['pkl', 'json', 'txt', 'cbm']:
                 model_file = cache_path / f'model.{ext}'
                 if model_file.exists():
                     model_artifact_found = True
@@ -467,7 +466,7 @@ class CacheManager:
         elif model_key in ['catboost']:
             return 'cbm'
         else:
-            return 'joblib'
+            return 'pkl'
     
     def _save_model_artifact(self, model, file_path: Path, model_key: str):
         """Save model artifact based on type
@@ -515,18 +514,22 @@ class CacheManager:
             if hasattr(cb_model, 'save_model'):
                 cb_model.save_model(str(file_path))
             else:
-                pickle.dump(cb_model, file_path)
+                with open(file_path, 'wb') as f:
+                    pickle.dump(cb_model, f)
         elif model_key.startswith('stacking_ensemble_') or model_key.startswith('voting_ensemble_'):
             # Save ensemble model data (contains ensemble_manager and metadata)
-            pickle.dump(model, file_path)
+            with open(file_path, 'wb') as f:
+                pickle.dump(model, f)
         else:
             # For custom model classes, save the underlying sklearn model
             if hasattr(model, 'model'):
                 # Custom wrapper class - save underlying model
-                pickle.dump(model.model, file_path)
+                with open(file_path, 'wb') as f:
+                    pickle.dump(model.model, f)
             else:
                 # Direct sklearn model
-                pickle.dump(model, file_path)
+                with open(file_path, 'wb') as f:
+                    pickle.dump(model, f)
     
     def _load_model_artifact(self, file_path: Path, model_key: str, config_hash: str = None):
         """Load model artifact based on type
@@ -609,10 +612,12 @@ class CacheManager:
             return model
         elif model_key.startswith('stacking_ensemble_') or model_key.startswith('voting_ensemble_'):
             # Load ensemble model data (contains ensemble_manager and metadata)
-            return pickle.load(file_path)
+            with open(file_path, 'rb') as f:
+                return pickle.load(f)
         else:
             # Load underlying sklearn model and wrap it
-            sklearn_model = pickle.load(file_path)
+            with open(file_path, 'rb') as f:
+                sklearn_model = pickle.load(f)
             
             # Try to recreate the custom wrapper class
             try:

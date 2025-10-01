@@ -15,7 +15,7 @@ import threading
 from typing import Dict, List, Tuple, Any, Optional
 from datetime import datetime
 
-# Joblib parallel processing disabled - using pickle instead
+# Parallel processing disabled - using pickle instead
 
 # CRITICAL: Add comprehensive temp file cleanup
 try:
@@ -25,17 +25,16 @@ try:
     import atexit
     
     def cleanup_temp_files():
-        """Clean up temporary files created by joblib and other processes"""
+        """Clean up temporary files created by various processes"""
         try:
             temp_dir = tempfile.gettempdir()
-            # Clean up joblib temp files
-            joblib_patterns = [
-                os.path.join(temp_dir, "joblib_memmapping_folder_*"),
+            # Clean up temp files
+            temp_patterns = [
                 os.path.join(temp_dir, "tmp*"),
                 os.path.join(temp_dir, "*.tmp")
             ]
             
-            for pattern in joblib_patterns:
+            for pattern in temp_patterns:
                 for temp_file in glob.glob(pattern):
                     try:
                         if os.path.isdir(temp_file):
