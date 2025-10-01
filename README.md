@@ -29,7 +29,80 @@ Below is a brief overview of the projects included in this repository:
   - **Performance Optimization**: GPU acceleration, batch processing
 - **Status**: ✅ Completed with advanced features
 
+### **[Project 3.1]**: Topic Modeling & Text Classification
+- **Technology Stack**: Python, Streamlit, scikit-learn, Transformers, FAISS
+- **Key Features**:
+  - **Topic Modeling**: ArXiv abstracts classification
+  - **Multiple Models**: KNN, Decision Tree, Naive Bayes, SVM, Random Forest
+  - **Text Vectorization**: BoW, TF-IDF, Word Embeddings
+  - **Interactive Wizard**: 7-step guided workflow
+  - **Ensemble Learning**: Voting and Stacking classifiers
+  - **GPU Acceleration**: CUDA support for embeddings
+  - **Cache Management**: Advanced caching system
+  - **Real-time Visualization**: Training progress and results
+- **Status**: ✅ Completed with comprehensive features
+
+### **[Project 4]**: Comprehensive Machine Learning Platform
+- **Technology Stack**: Python, Streamlit, scikit-learn, PyTorch, Optuna, GPU Acceleration
+- **Key Features**:
+  - **Multiple Datasets**: Heart disease, spam detection, large-scale text classification
+  - **15+ ML Models**: Classification, clustering, ensemble learning
+  - **Interactive Wizard**: 7-step guided workflow with real-time visualization
+  - **Advanced Features**: GPU acceleration, hyperparameter optimization, ensemble learning
+  - **Modular Architecture**: Extensible design for easy model addition
+  - **Automated Testing**: Comprehensive testing scripts for all datasets
+  - **Performance Optimization**: Memory management, caching, garbage collection
+- **Status**: ✅ Completed with comprehensive features
+
 ## 🚀 Key Highlights
+
+### **Project 4 - Comprehensive ML Platform**
+This project demonstrates advanced machine learning techniques with multiple datasets and comprehensive model evaluation:
+
+#### **🤖 AI/ML Components**
+- **12 Classification Models**: KNN, Decision Tree, Naive Bayes, Logistic Regression, SVM, Random Forest, AdaBoost, Gradient Boosting, XGBoost, LightGBM, CatBoost
+- **Ensemble Learning**: Voting Classifier, Stacking Classifier, Ensemble Manager
+- **Clustering**: K-Means with optimal K detection
+- **Hyperparameter Optimization**: Optuna integration for automatic tuning
+
+#### **📊 Multiple Datasets**
+- **Heart Disease Dataset**: Cardiovascular disease prediction (~1,000 samples)
+- **Spam Detection Dataset**: SMS spam/ham classification (~11,000 messages)
+- **Large Text Dataset**: Large-scale text classification (300,000+ samples)
+
+#### **🎨 Interactive Web Interface**
+- **7-Step Wizard**: Guided workflow from data loading to model inference
+- **Real-time Visualization**: Live training progress and performance metrics
+- **Model Comparison**: Side-by-side performance analysis
+- **Export Capabilities**: Results, models, and visualizations
+- **Session Management**: Save and resume work sessions
+
+#### **⚡ Performance Features**
+- **GPU Acceleration**: CUDA 12.6+ support for deep learning models
+- **Memory Management**: Efficient data processing and garbage collection
+- **Caching System**: Advanced cache management for faster loading
+- **Automated Testing**: Comprehensive testing scripts for all datasets
+
+### **Project 3.1 - Topic Modeling & Text Classification**
+This project demonstrates comprehensive text classification with ArXiv abstracts:
+
+#### **📚 Text Processing**
+- **ArXiv Dataset**: Large-scale academic paper abstracts
+- **Text Vectorization**: BoW, TF-IDF, Word Embeddings
+- **Preprocessing**: Text cleaning, tokenization, normalization
+- **Multi-class Classification**: Scientific paper categorization
+
+#### **🤖 Machine Learning Models**
+- **Traditional ML**: KNN, Decision Tree, Naive Bayes, SVM, Random Forest
+- **Ensemble Methods**: Voting and Stacking classifiers
+- **Performance Optimization**: GPU acceleration for embeddings
+- **Cross-validation**: Robust model evaluation
+
+#### **🎨 User Interface**
+- **Interactive Wizard**: 7-step guided workflow
+- **Real-time Training**: Live progress monitoring
+- **Visualization**: Confusion matrices and performance plots
+- **Export Features**: Results and model artifacts
 
 ### **Project 2.2 - Email Classification System**
 This project demonstrates advanced machine learning techniques for email spam classification with the following innovative features:
@@ -121,10 +194,50 @@ Each project includes comprehensive documentation:
 
 ## 🚀 Getting Started
 
+### **Project 4 - Comprehensive ML Platform**
+```bash
+# Navigate to project directory
+cd "250914 Project 4"
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Launch web application
+streamlit run app.py
+
+# Run automated testing scripts
+python auto_train_heart_dataset.py
+python auto_train_spam_ham.py
+python auto_train_large_dataset.py
+
+# Run command line tools
+python main.py
+python comprehensive_evaluation.py
+python training_pipeline.py
+```
+
+### **Project 3.1 - Topic Modeling**
+```bash
+# Navigate to project directory
+cd "250814 Project 3.1"
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Launch web application
+streamlit run app.py
+
+# Run comprehensive evaluation
+python comprehensive_evaluation.py
+
+# Run training pipeline
+python training_pipeline.py
+```
+
 ### **Project 2.2 - Email Classification**
 ```bash
 # Navigate to project directory
-cd "AIO/250730 Project 2.2 - Team GrID034"
+cd "250730 Project 2.2 - Team GrID034"
 
 # Install dependencies
 pip install -r requirements.txt
@@ -142,6 +255,18 @@ python main.py --run-email-classifier
 streamlit run app.py
 ```
 
+### **Project 1.2 - RAG Chatbot**
+```bash
+# Navigate to project directory
+cd "250712 Project 1.2 - Team GrID034"
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the chatbot application
+python rag_chatbot_app.py
+```
+
 ### **Documentation Navigation**
 - **📋 MIND_MAP.md**: Start here for system overview
 - **🚀 QUICK_GUIDE.md**: Fast implementation guide
@@ -154,6 +279,8 @@ streamlit run app.py
 |---------|--------|--------------|---------------|
 | Project 1.2 | ✅ Completed | RAG System, Vector Search | README.md |
 | Project 2.2 | ✅ Completed | Advanced ML, Gmail API, Cache System | Comprehensive Docs |
+| Project 3.1 | ✅ Completed | Topic Modeling, Text Classification | Comprehensive Docs |
+| Project 4 | ✅ Completed | Multi-dataset ML Platform, Interactive Wizard | Comprehensive Docs |
 
 ## 🤝 Collaboration
 
