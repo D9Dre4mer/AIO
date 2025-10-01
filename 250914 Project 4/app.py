@@ -750,7 +750,7 @@ def show_file_preview(df, file_extension):
     # Data preview box
     st.subheader("📊 Data Preview (First 5 rows)")
     
-    st.dataframe(df.head(5), use_container_width=True)
+    st.dataframe(df.head(5), width='stretch')
     
     # Get sampling configuration for display
     # Use global session_manager instance
@@ -1434,7 +1434,7 @@ def render_navigation_buttons():
     
     with col1:
         current_step = get_current_step(session_manager)
-        if st.button("◀ Previous", use_container_width=True, key=f"prev_btn_{current_step}"):
+        if st.button("◀ Previous", width='stretch', key=f"prev_btn_{current_step}"):
             # Go back to previous step
             # Use global session_manager instance
             if current_step > 1:
@@ -1445,7 +1445,7 @@ def render_navigation_buttons():
                 st.info("ℹ️ You're already at the first step.")
     
     with col2:
-        if st.button("Next ▶", use_container_width=True, key=f"next_btn_{current_step}"):
+        if st.button("Next ▶", width='stretch', key=f"next_btn_{current_step}"):
             # Use global session_manager instance
             current_step = get_current_step(session_manager)
             
@@ -1583,7 +1583,7 @@ def render_sidebar():
         if st.sidebar.button(
             f"{status_icon} Step {i}: {step_name}",
             type=button_color,
-            use_container_width=True,
+            width='stretch',
             key=f"step_nav_{i}",
             help=None,
 
@@ -1941,12 +1941,12 @@ def render_single_input_section():
     if 'step2_preview_cache' not in st.session_state:
         # Initial preview - show original data
         preview_df = df[[selected_text_column, selected_label_column]].head(5)
-        st.dataframe(preview_df, use_container_width=True)
+        st.dataframe(preview_df, width='stretch')
         st.caption("📝 **Original data preview** - Apply preprocessing to see transformed data")
     else:
         # Show cached preview with preprocessing applied
         cached_preview = st.session_state.step2_preview_cache
-        st.dataframe(cached_preview, use_container_width=True)
+        st.dataframe(cached_preview, width='stretch')
      
         # Add option to clear cache and show original data
         if st.button("🔄 Show Original Data", key="show_original_preview"):
@@ -1954,7 +1954,7 @@ def render_single_input_section():
             st.rerun()
     
     # Save configuration button
-    if st.button("💾 Save Column Configuration", type="primary", use_container_width=True):
+    if st.button("💾 Save Column Configuration", type="primary", width='stretch'):
         # Create preview cache with preprocessing applied
         preview_data = []
         sample_df = df[[selected_text_column, selected_label_column]].head(5)
@@ -2105,7 +2105,7 @@ def render_multi_input_section():
     
     # Data preview
     st.markdown("**📋 Data Preview:**")
-    st.dataframe(df.head(10), use_container_width=True)
+    st.dataframe(df.head(10), width='stretch')
     
     # Column information
     st.markdown("**📊 Column Information:**")
@@ -2115,7 +2115,7 @@ def render_multi_input_section():
         'Null Count': df.isnull().sum(),
         'Unique Values': df.nunique()
     })
-    st.dataframe(col_info, use_container_width=True)
+    st.dataframe(col_info, width='stretch')
     
     # Auto-detect data types
     st.markdown("**🔍 Auto-detect Data Types:**")
@@ -2245,7 +2245,7 @@ def render_multi_input_section():
         all_cols = list(input_cols) + [label_col]
         unique_cols = list(dict.fromkeys(all_cols))  # Preserve order, remove duplicates
         sample_data = df[unique_cols].head(5)
-        st.dataframe(sample_data, use_container_width=True)
+        st.dataframe(sample_data, width='stretch')
         
         # Preprocessing options
         st.markdown("**🧹 Preprocessing Options:**")
@@ -2466,7 +2466,7 @@ def render_step3_wireframe():
     st.markdown("---")
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("✅ Complete Step 3", use_container_width=True, key="complete_step3"):
+        if st.button("✅ Complete Step 3", width='stretch', key="complete_step3"):
             # Mark step 3 as completed
             current_data = session_manager.get_step_data(3)
             current_data['completed'] = True
@@ -2607,10 +2607,21 @@ def render_voting_weight_ensemble():
             current_data = session_manager.get_step_data(3)
             current_data['voting_config'] = voting_config
             session_manager.set_step_data(3, current_data)
+        else:
+            # No models selected - disable voting ensemble
+            voting_config = {
+                'enabled': False,
+                'models': [],
+                'voting_method': 'hard',
+                'weights': None
+            }
+            
+            # Merge with existing step data
+            current_data = session_manager.get_step_data(3)
+            current_data['voting_config'] = voting_config
+            session_manager.set_step_data(3, current_data)
             
             st.success(f"✅ Voting ensemble configured with {len(selected_models)} models")
-        else:
-            st.warning("⚠️ Please select at least one model for voting")
     else:
         # Save disabled state
         current_data = session_manager.get_step_data(3)
@@ -3350,7 +3361,7 @@ def render_step4_wireframe():
                         
                         # Display detailed results
                         st.subheader("📋 Detailed Results")
-                        st.dataframe(results_df, use_container_width=True)
+                        st.dataframe(results_df, width='stretch')
                         
                         # Save training results
                         step4_data = {
@@ -3358,6 +3369,10 @@ def render_step4_wireframe():
                             'completed': True
                         }
                         session_manager.set_step_data(4, step4_data)
+                        
+                        # Force garbage collection after training
+                        import gc
+                        gc.collect()
                         
                         st.success("✅ Training results saved!")
                         st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
@@ -3578,7 +3593,7 @@ def render_step5_wireframe():
             """, unsafe_allow_html=True)
         
         with col2:
-            if st.button("🚀 Go to Step 4", type="primary", use_container_width=True):
+            if st.button("🚀 Go to Step 4", type="primary", width='stretch'):
                 session_manager.set_current_step(4)
                 st.rerun()
         
@@ -3717,7 +3732,7 @@ def render_step5_wireframe():
                 height=500
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
     
     with tab2:    
@@ -3770,7 +3785,7 @@ def render_step5_wireframe():
                 # Use st.data_editor for interactive table
                 edited_df = st.data_editor(
                     model_df.drop('Actions', axis=1),  # Hide actions column
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                     num_rows="dynamic",
                     column_config={
@@ -3809,7 +3824,7 @@ def render_step5_wireframe():
                         break
                 
                 # Button to view details
-                if selected_result and st.button("🔍 View Detailed Analysis", type="primary", use_container_width=True):
+                if selected_result and st.button("🔍 View Detailed Analysis", type="primary", width='stretch'):
                     # Create unique key for this model combination
                     model_name = selected_result.get('model_name', 'Unknown')
                     embedding_name = selected_result.get('embedding_name', 'Unknown')
@@ -4169,7 +4184,7 @@ def render_step5_wireframe():
                     data=csv,
                     file_name="comprehensive_evaluation_results.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    width='stretch'
                 )
             else:
                 st.warning("⚠️ No data available for CSV export.")
@@ -4579,7 +4594,7 @@ def render_model_comparison():
                     
                     if metrics_data:
                         metrics_df = pd.DataFrame(metrics_data)
-                        st.dataframe(metrics_df, use_container_width=True)
+                        st.dataframe(metrics_df, width='stretch')
                         
                         # Find best model
                         best_result = max(comprehensive_results, key=lambda x: x.get('f1_score', 0))

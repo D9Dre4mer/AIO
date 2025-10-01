@@ -81,6 +81,12 @@ class CacheManager:
         Args:
             cache_root_dir: Root directory for model caches
         """
+        # Move cache outside project directory to prevent file watcher issues
+        if cache_root_dir.startswith('cache/'):
+            # Use system temp directory instead of project cache
+            import tempfile
+            cache_root_dir = os.path.join(tempfile.gettempdir(), 'aio_cache', 'models')
+        
         self.cache_root_dir = Path(cache_root_dir)
         self.cache_root_dir.mkdir(parents=True, exist_ok=True)
         

@@ -1,0 +1,13 @@
+[server]
+# Disable file watcher to prevent crashes from cache file changes
+fileWatcherType = "none"
+runOnSave = false
+maxMessageSize = 500
+
+[browser]
+# Disable auto-opening browser
+gatherUsageStats = false
+
+[logger]
+# Reduce log verbosity
+level = "warning"

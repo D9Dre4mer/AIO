@@ -105,7 +105,7 @@ class SessionManager:
     
     def set_step_data(self, step_number: int, data: Dict[str, Any]) -> None:
         """
-        Set data for a specific step with comprehensive error handling
+        Set data for a specific step with comprehensive error handling and rerun prevention
         
         Args:
             step_number: Step number to set data for
@@ -113,6 +113,13 @@ class SessionManager:
         """
         try:
             step_key = f"step{step_number}"
+            
+            # Prevent rerun loop by checking if data actually changed
+            current_data = st.session_state.get(step_key, {})
+            if current_data == data:
+                logger.debug(f"Step {step_number} data unchanged, skipping update")
+                return
+            
             # Always set the data, creating the key if it doesn't exist
             st.session_state[step_key] = data
             logger.debug(f"Data set for step {step_number}")
