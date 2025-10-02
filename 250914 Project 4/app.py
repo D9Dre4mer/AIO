@@ -305,6 +305,7 @@ st.markdown("""
         transition: opacity 0.1s ease !important;
     }
     
+        content: "🔄";
     /* Prevent dark screen during loading */
     .stApp[data-theme="dark"] .stSpinner {
         background: rgba(14, 17, 23, 0.8) !important;
@@ -1014,6 +1015,36 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                     with log_container:
                         st.info(f"🔍 Debug: Created SHAP sample with {shap_sample_size} samples for caching")
                     
+                    # Create label mapping with real labels from dataset
+                    # Get unique labels from y_train and y_test
+                    unique_labels = sorted(set(y_train) | set(y_test))
+                    
+                    # Try to get original labels from session data
+                    step1_data = session_manager.get_step_data(1) or {}
+                    step2_data = session_manager.get_step_data(2) or {}
+                    
+                    original_labels = None
+                    if step1_data.get('dataframe') is not None:
+                        df = step1_data['dataframe']
+                        label_column = step2_data.get('column_config', {}).get('label_column')
+                        if label_column and label_column in df.columns:
+                            # Get original labels from dataset
+                            original_labels = sorted(df[label_column].unique().tolist())
+                            with log_container:
+                                st.info(f"🔍 Debug: Found original labels: {original_labels}")
+                    
+                    # Create label mapping
+                    if original_labels and len(original_labels) == len(unique_labels):
+                        # Use original labels if available and count matches
+                        label_mapping = {i: original_labels[i] for i in range(len(unique_labels))}
+                        with log_container:
+                            st.info(f"✅ Using original labels: {label_mapping}")
+                    else:
+                        # Fallback to generic labels
+                        label_mapping = {i: f"Class_{i}" for i in range(len(unique_labels))}
+                        with log_container:
+                            st.info(f"⚠️ Using generic labels: {label_mapping}")
+                    
                     cache_path = cache_manager.save_model_cache(
                         model_key=model_key,
                         dataset_id=dataset_id,
@@ -1026,7 +1057,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         eval_predictions=eval_predictions,
                         shap_sample=shap_sample,
                         feature_names=feature_names,
-                        label_mapping={i: f"class_{i}" for i in range(len(set(y_train)))}
+                        label_mapping=label_mapping
                     )
                     
                     with log_container:
@@ -1514,6 +1545,104 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         'cached': False
                     }
                     
+                    # Cache voting ensemble model
+                    try:
+                        from cache_manager import CacheManager
+                        cache_manager = CacheManager()
+                        
+                        # Generate cache identifiers for ensemble
+                        ensemble_model_key = f"voting_ensemble_{voting_method}"
+                        dataset_id = f"numeric_dataset_{scaler_name}"
+                        config_hash = cache_manager.generate_config_hash({
+                            'model': ensemble_model_key,
+                            'preprocessing': scaler_name,
+                            'voting_method': voting_method,
+                            'base_models': voting_model_names,
+                            'random_state': 42
+                        })
+                        dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+                            dataset_path="numeric_data_in_memory",
+                            dataset_size=len(X_train_scaled),
+                            num_rows=len(X_train_scaled)
+                        )
+                        
+                        # Create eval_predictions DataFrame
+                        eval_predictions = pd.DataFrame({
+                            'true_labels': y_test,
+                            'predictions': voting_clf.predict(X_test_scaled)
+                        })
+                        
+                        # Add probability columns if available
+                        if hasattr(voting_clf, 'predict_proba'):
+                            proba = voting_clf.predict_proba(X_test_scaled)
+                            for i in range(proba.shape[1]):
+                                eval_predictions[f'proba_class_{i}'] = proba[:, i]
+                        
+                        # Create label mapping with real labels from dataset
+                        unique_labels = sorted(set(y_train) | set(y_test))
+                        
+                        # Try to get original labels from session data
+                        step1_data = session_manager.get_step_data(1) or {}
+                        step2_data = session_manager.get_step_data(2) or {}
+                        
+                        original_labels = None
+                        if step1_data.get('dataframe') is not None:
+                            df = step1_data['dataframe']
+                            label_column = step2_data.get('column_config', {}).get('label_column')
+                            if label_column and label_column in df.columns:
+                                # Get original labels from dataset
+                                original_labels = sorted(df[label_column].unique().tolist())
+                        
+                        # Create label mapping
+                        if original_labels and len(original_labels) == len(unique_labels):
+                            # Use original labels if available and count matches
+                            label_mapping = {i: original_labels[i] for i in range(len(unique_labels))}
+                        else:
+                            # Fallback to generic labels
+                            label_mapping = {i: f"Class_{i}" for i in range(len(unique_labels))}
+                        
+                        # Save ensemble cache
+                        cache_manager.save_model_cache(
+                            model_key=ensemble_model_key,
+                            dataset_id=dataset_id,
+                            config_hash=config_hash,
+                            dataset_fingerprint=dataset_fingerprint,
+                            model=voting_clf,
+                            params={
+                                'voting_method': voting_method,
+                                'base_models': voting_model_names,
+                                'random_state': 42
+                            },
+                            metrics={
+                                'validation_accuracy': accuracy,
+                                'test_accuracy': accuracy,
+                                'f1_score': f1,
+                                'precision': precision,
+                                'recall': recall,
+                                'training_time': training_time
+                            },
+                            config={
+                                'model_name': ensemble_model_key,
+                                'voting_method': voting_method,
+                                'base_models': voting_model_names,
+                                'preprocessing': scaler_name
+                            },
+                            eval_predictions=eval_predictions,
+                            shap_sample=None,  # Ensemble doesn't support SHAP directly
+                            feature_names=input_columns,
+                            label_mapping=label_mapping
+                        )
+                        
+                        # Update cached status
+                        ensemble_results[voting_ensemble_name]['cached'] = True
+                        
+                        with log_container:
+                            st.success(f"💾 Voting ensemble cached successfully!")
+                            
+                    except Exception as cache_error:
+                        with log_container:
+                            st.warning(f"⚠️ Failed to cache voting ensemble: {str(cache_error)}")
+                    
                     with log_container:
                         st.success(f"✅ Voting Ensemble trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
                 else:
@@ -1629,6 +1758,104 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         'status': 'success',
                         'cached': False
                     }
+                    
+                    # Cache stacking ensemble model
+                    try:
+                        from cache_manager import CacheManager
+                        cache_manager = CacheManager()
+                        
+                        # Generate cache identifiers for ensemble
+                        ensemble_model_key = f"stacking_ensemble_{meta_learner_name}"
+                        dataset_id = f"numeric_dataset_{scaler_name}"
+                        config_hash = cache_manager.generate_config_hash({
+                            'model': ensemble_model_key,
+                            'preprocessing': scaler_name,
+                            'meta_learner': meta_learner_name,
+                            'base_models': stacking_model_names,
+                            'random_state': 42
+                        })
+                        dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+                            dataset_path="numeric_data_in_memory",
+                            dataset_size=len(X_train_scaled),
+                            num_rows=len(X_train_scaled)
+                        )
+                        
+                        # Create eval_predictions DataFrame
+                        eval_predictions = pd.DataFrame({
+                            'true_labels': y_test,
+                            'predictions': stacking_clf.predict(X_test_scaled)
+                        })
+                        
+                        # Add probability columns if available
+                        if hasattr(stacking_clf, 'predict_proba'):
+                            proba = stacking_clf.predict_proba(X_test_scaled)
+                            for i in range(proba.shape[1]):
+                                eval_predictions[f'proba_class_{i}'] = proba[:, i]
+                        
+                        # Create label mapping with real labels from dataset
+                        unique_labels = sorted(set(y_train) | set(y_test))
+                        
+                        # Try to get original labels from session data
+                        step1_data = session_manager.get_step_data(1) or {}
+                        step2_data = session_manager.get_step_data(2) or {}
+                        
+                        original_labels = None
+                        if step1_data.get('dataframe') is not None:
+                            df = step1_data['dataframe']
+                            label_column = step2_data.get('column_config', {}).get('label_column')
+                            if label_column and label_column in df.columns:
+                                # Get original labels from dataset
+                                original_labels = sorted(df[label_column].unique().tolist())
+                        
+                        # Create label mapping
+                        if original_labels and len(original_labels) == len(unique_labels):
+                            # Use original labels if available and count matches
+                            label_mapping = {i: original_labels[i] for i in range(len(unique_labels))}
+                        else:
+                            # Fallback to generic labels
+                            label_mapping = {i: f"Class_{i}" for i in range(len(unique_labels))}
+                        
+                        # Save ensemble cache
+                        cache_manager.save_model_cache(
+                            model_key=ensemble_model_key,
+                            dataset_id=dataset_id,
+                            config_hash=config_hash,
+                            dataset_fingerprint=dataset_fingerprint,
+                            model=stacking_clf,
+                            params={
+                                'meta_learner': meta_learner_name,
+                                'base_models': stacking_model_names,
+                                'random_state': 42
+                            },
+                            metrics={
+                                'validation_accuracy': accuracy,
+                                'test_accuracy': accuracy,
+                                'f1_score': f1,
+                                'precision': precision,
+                                'recall': recall,
+                                'training_time': training_time
+                            },
+                            config={
+                                'model_name': ensemble_model_key,
+                                'meta_learner': meta_learner_name,
+                                'base_models': stacking_model_names,
+                                'preprocessing': scaler_name
+                            },
+                            eval_predictions=eval_predictions,
+                            shap_sample=None,  # Ensemble doesn't support SHAP directly
+                            feature_names=input_columns,
+                            label_mapping=label_mapping
+                        )
+                        
+                        # Update cached status
+                        ensemble_results[stacking_ensemble_name]['cached'] = True
+                        
+                        with log_container:
+                            st.success(f"💾 Stacking ensemble cached successfully!")
+                            
+                    except Exception as cache_error:
+                        with log_container:
+                            st.warning(f"⚠️ Failed to cache stacking ensemble: {str(cache_error)}")
                     
                     with log_container:
                         st.success(f"✅ Stacking Ensemble trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
@@ -4144,6 +4371,15 @@ def render_step4_wireframe():
         finally:
             # Always cleanup training states
             st.session_state.training_in_progress = False
+            
+            # CRITICAL: Clear any remaining spinner/progress indicators
+            try:
+                # Clear any progress bars or spinners that might be stuck
+                import gc
+                gc.collect()
+            except Exception:
+                pass
+            
             # Check if results exists and is successful before updating states
             if results is None or not (isinstance(results, dict) and results.get('status') == 'success'):
                 st.session_state.training_started = False
@@ -4954,35 +5190,31 @@ def render_confusion_matrix():
     with col1:
         normalize_method = st.selectbox(
             "Normalization Method:",
-            ["none", "true", "pred", "all"],
+            ["true", "pred", "all", None],
             index=0,
             help="How to normalize the confusion matrix"
         )
         
-        dataset_split = st.selectbox(
-            "Dataset Split:",
-            ["test", "validation", "train"],
-            index=0,
-            help="Which dataset split to use for confusion matrix"
+        save_plots = st.checkbox(
+            "Save Plots",
+            value=True,
+            help="Save confusion matrix plots to disk"
         )
     
     with col2:
-        threshold = st.slider(
-            "Classification Threshold:",
-            min_value=0.1,
-            max_value=0.9,
-            value=0.5,
-            step=0.05,
-            help="Threshold for binary classification"
+        show_metrics = st.checkbox(
+            "Show Metrics",
+            value=True,
+            help="Display classification metrics"
         )
         
-        show_percentages = st.checkbox(
-            "Show Percentages",
-            value=True,
-            help="Display percentages in confusion matrix"
+        labels_order = st.text_input(
+            "Labels Order (optional):",
+            placeholder="e.g., 0,1,2 or class_a,class_b,class_c",
+            help="Specify the order of class labels (comma-separated)"
         )
     
-    # Available models (check from cache - bao gồm cả mô hình cũ và mới)
+    # Available models (check from cache)
     st.markdown("**🔍 Available Cached Models:**")
     
     # Get available models from actual cache
@@ -4999,38 +5231,141 @@ def render_confusion_matrix():
         cached_models = []
     
     if cached_models:
-        selected_model = st.selectbox(
+        # Convert cached models to display format
+        model_options = []
+        for model in cached_models:
+            if isinstance(model, dict):
+                display_name = f"{model.get('model_key', 'Unknown')} - {model.get('dataset_id', 'Unknown')}"
+                model_options.append((display_name, model))
+            else:
+                model_options.append((str(model), model))
+        
+        selected_display_name = st.selectbox(
             "Select Model for Confusion Matrix:",
-            cached_models,
+            [option[0] for option in model_options],
             help="Choose a trained model to generate confusion matrix"
         )
         
+        # Get selected model object
+        selected_model = None
+        for display_name, model_obj in model_options:
+            if display_name == selected_display_name:
+                selected_model = model_obj
+                break
+        
         # Generate confusion matrix
-        if st.button("📊 Generate Confusion Matrix"):
+        if st.button("📊 Generate Confusion Matrix", type="primary"):
             with st.spinner("Generating confusion matrix..."):
-                # Save configuration
-                cm_config = {
-                    'normalize_method': normalize_method,
-                    'dataset_split': dataset_split,
-                    'threshold': threshold,
-                    'show_percentages': show_percentages,
-                    'selected_model': selected_model
-                }
+                try:
+                    from confusion_matrix_cache import ConfusionMatrixCache
+                    cm_cache = ConfusionMatrixCache()
+                    
+                    # Parse labels order if provided
+                    labels_list = None
+                    if labels_order.strip():
+                        labels_list = [label.strip() for label in labels_order.split(',')]
+                    
+                    # Generate confusion matrix from cache
+                    save_path = None
+                    if save_plots:
+                        # Create directory if it doesn't exist
+                        import os
+                        os.makedirs("cache/confusion_matrices", exist_ok=True)
+                        save_path = f"cache/confusion_matrices/{selected_model['model_key']}_{selected_model['dataset_id']}.png"
+                    
+                    result = cm_cache.generate_confusion_matrix_from_cache(
+                        model_key=selected_model['model_key'],
+                        dataset_id=selected_model['dataset_id'],
+                        config_hash=selected_model['config_hash'],
+                        normalize=normalize_method,
+                        labels_order=labels_list,
+                        save_path=save_path
+                    )
+                    
+                    if result and result.get('plot'):
+                        st.success("✅ Confusion matrix generated successfully!")
+                        
+                        # Save configuration and result to session
+                        cm_config = {
+                            'normalize_method': normalize_method,
+                            'save_plots': save_plots,
+                            'show_metrics': show_metrics,
+                            'labels_order': labels_order,
+                            'selected_model': selected_model
+                        }
+                        
+                        current_step5_data = session_manager.get_step_data(5) or {}
+                        current_step5_data['confusion_matrix_config'] = cm_config
+                        current_step5_data['confusion_matrix_result'] = result
+                        session_manager.set_step_data(5, current_step5_data)
+                        
+                    else:
+                        st.error("❌ Failed to generate confusion matrix. Please check if the model has evaluation predictions.")
+                        
+                except Exception as e:
+                    st.error(f"❌ Error generating confusion matrix: {str(e)}")
+                    st.info("💡 Make sure the model was trained with evaluation predictions saved to cache.")
+        
+        # Display confusion matrix results from session
+        current_step5_data = session_manager.get_step_data(5) or {}
+        if current_step5_data.get('confusion_matrix_result'):
+            st.markdown("**📊 Confusion Matrix Results:**")
+            result = current_step5_data['confusion_matrix_result']
+            
+            if result.get('plot'):
+                st.pyplot(result['plot'])
                 
-                # Save to session
-                current_step5_data = session_manager.get_step_data(5) or {}
-                current_step5_data['confusion_matrix_config'] = cm_config
-                session_manager.set_step_data(5, current_step5_data)
-                
-                st.success("✅ Confusion matrix configuration saved!")
-                st.info("📊 Confusion matrix will be generated from cached model predictions.")
-                
-                # Show configuration summary
-                st.markdown("**📋 Confusion Matrix Configuration:**")
-                st.write(f"- Model: {selected_model}")
-                st.write(f"- Dataset: {dataset_split}")
-                st.write(f"- Normalization: {normalize_method}")
-                st.write(f"- Threshold: {threshold}")
+                if show_metrics and result.get('metrics'):
+                    st.markdown("**📊 Classification Metrics:**")
+                    metrics = result['metrics']
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Accuracy", f"{metrics.get('accuracy', 0):.4f}")
+                    with col2:
+                        # Use macro_precision as default, fallback to precision
+                        precision = metrics.get('macro_precision', metrics.get('precision', 0))
+                        st.metric("Precision", f"{precision:.4f}")
+                    with col3:
+                        # Use macro_recall as default, fallback to recall
+                        recall = metrics.get('macro_recall', metrics.get('recall', 0))
+                        st.metric("Recall", f"{recall:.4f}")
+                    with col4:
+                        # Use macro_f1 as default, fallback to f1_score
+                        f1_score = metrics.get('macro_f1', metrics.get('f1_score', 0))
+                        st.metric("F1-Score", f"{f1_score:.4f}")
+                    
+                    # Show additional metrics if available
+                    if metrics.get('class_metrics'):
+                        st.markdown("**📊 Per-Class Metrics:**")
+                        class_metrics = metrics['class_metrics']
+                        
+                        # Create a table for per-class metrics
+                        import pandas as pd
+                        class_data = []
+                        for class_name, class_metric in class_metrics.items():
+                            class_data.append({
+                                'Class': class_name,
+                                'Precision': f"{class_metric.get('precision', 0):.4f}",
+                                'Recall': f"{class_metric.get('recall', 0):.4f}",
+                                'F1-Score': f"{class_metric.get('f1_score', 0):.4f}",
+                                'Support': class_metric.get('support', 0)
+                            })
+                        
+                        if class_data:
+                            class_df = pd.DataFrame(class_data)
+                            st.dataframe(class_df, width='stretch')
+                    
+                    # Show weighted averages if available
+                    if metrics.get('weighted_precision') is not None:
+                        st.markdown("**📊 Weighted Averages:**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Weighted Precision", f"{metrics.get('weighted_precision', 0):.4f}")
+                        with col2:
+                            st.metric("Weighted Recall", f"{metrics.get('weighted_recall', 0):.4f}")
+                        with col3:
+                            st.metric("Weighted F1-Score", f"{metrics.get('weighted_f1', 0):.4f}")
     else:
         st.warning("⚠️ No cached models found. Please complete model training first.")
 
@@ -5073,50 +5408,238 @@ def render_model_comparison():
     # Performance metrics from actual training results
     st.markdown("**📊 Performance Metrics:**")
     
+    # Column selection for comparison
+    st.markdown("**⚙️ Select Metrics to Display:**")
+    
+    available_metrics = [
+        "Accuracy",
+        "F1-Score", 
+        "Precision",
+        "Recall",
+        "Training Time",
+        "Validation Accuracy",
+        "CV Mean",
+        "CV Std",
+        "Support",
+        "Parameters",
+        "Status",
+        "Cached"
+    ]
+    
+    default_metrics = ["Accuracy", "F1-Score", "Training Time", "Status"]
+    
+    selected_metrics = st.multiselect(
+        "Choose metrics to display:",
+        options=available_metrics,
+        default=default_metrics,
+        help="Select which metrics you want to see in the comparison table"
+    )
+    
+    # Convert multiselect to individual boolean variables for compatibility
+    show_accuracy = "Accuracy" in selected_metrics
+    show_f1_score = "F1-Score" in selected_metrics
+    show_precision = "Precision" in selected_metrics
+    show_recall = "Recall" in selected_metrics
+    show_training_time = "Training Time" in selected_metrics
+    show_validation_acc = "Validation Accuracy" in selected_metrics
+    show_cv_mean = "CV Mean" in selected_metrics
+    show_cv_std = "CV Std" in selected_metrics
+    show_support = "Support" in selected_metrics
+    show_params = "Parameters" in selected_metrics
+    show_status = "Status" in selected_metrics
+    show_cached = "Cached" in selected_metrics
+    
     if st.button("📈 Load Model Metrics"):
         try:
-            # Get training results from Step 4
+            # Get training results from Step 4 cache
             step4_data = session_manager.get_step_data(4)
-            training_results = step4_data.get('training_results', {})
+            session_key = step4_data.get('session_key')
             
-            if training_results.get('status') == 'success':
-                results = training_results.get('results', {})
-                comprehensive_results = results.get('comprehensive_results', [])
+            if not session_key:
+                st.error("❌ No session key found. Please complete Step 4 first.")
+                return
+            
+            # Load training results from cache
+            from cache_manager import training_results_cache
+            training_results = training_results_cache.load_training_results(session_key)
+            
+            if not training_results or training_results.get('status') != 'success':
+                st.error("❌ No valid training results found. Please complete Step 4 first.")
+                return
+            
+            # Extract results from cache - data is directly in training_results, not in a 'results' key
+            comprehensive_results = training_results.get('comprehensive_results', [])
+            model_results = training_results.get('model_results', {})
+            
+            # Debug: Show all debug information in one container
+            debug_container = st.expander("🔍 Log", expanded=False)
+            
+            # Handle both formats: comprehensive_results (text) and model_results (numeric)
+            metrics_data = []
+            
+            if comprehensive_results:
+                st.info("📊 Loading metrics from comprehensive_results (text data)...")
                 
+                with debug_container:
+                    st.markdown("**Cache Data:**")
+                    st.json({
+                        'session_key': session_key,
+                        'training_results_keys': list(training_results.keys()) if training_results else 'None',
+                        'training_results_status': training_results.get('status') if training_results else 'None'
+                    })
+                    
+                    st.markdown("**Extracted Data:**")
+                    st.json({
+                        'comprehensive_results_count': len(comprehensive_results) if comprehensive_results else 0,
+                        'model_results_keys': list(model_results.keys()) if model_results else 'None',
+                        'model_results_count': len(model_results) if model_results else 0
+                    })
+                
+                for result in comprehensive_results:
+                    if result.get('status') == 'success':
+                        row_data = {'Model': f"{result.get('model_name', 'Unknown')} + {result.get('embedding_name', 'Unknown')}"}
+                        
+                        if show_accuracy:
+                            row_data['Accuracy'] = f"{result.get('test_accuracy', 0):.4f}"
+                        if show_f1_score:
+                            row_data['F1-Score'] = f"{result.get('f1_score', 0):.4f}"
+                        if show_precision:
+                            row_data['Precision'] = f"{result.get('precision', 0):.4f}"
+                        if show_recall:
+                            row_data['Recall'] = f"{result.get('recall', 0):.4f}"
+                        if show_training_time:
+                            row_data['Training Time'] = f"{result.get('training_time', 0):.1f}s"
+                        if show_validation_acc:
+                            row_data['Validation Accuracy'] = f"{result.get('validation_accuracy', 0):.4f}"
+                        if show_cv_mean:
+                            row_data['CV Mean'] = f"{result.get('cv_mean', 0):.4f}"
+                        if show_cv_std:
+                            row_data['CV Std'] = f"{result.get('cv_std', 0):.4f}"
+                        if show_support:
+                            row_data['Support'] = result.get('support', 0)
+                        if show_params:
+                            params = result.get('params', {})
+                            row_data['Parameters'] = f"{len(params)} params" if params else "Default"
+                        if show_status:
+                            row_data['Status'] = result.get('status', 'Unknown')
+                        if show_cached:
+                            row_data['Cached'] = "Yes" if result.get('cached', False) else "No"
+                        
+                        metrics_data.append(row_data)
+            
+            elif model_results:
+                st.toast("📊 Loading metrics from model_results (numeric data)...")
+                
+                with debug_container:
+                    st.markdown("**Cache Data:**")
+                    st.json({
+                        'session_key': session_key,
+                        'training_results_keys': list(training_results.keys()) if training_results else 'None',
+                        'training_results_status': training_results.get('status') if training_results else 'None'
+                    })
+                    
+                    st.markdown("**Extracted Data:**")
+                    st.json({
+                        'comprehensive_results_count': len(comprehensive_results) if comprehensive_results else 0,
+                        'model_results_keys': list(model_results.keys()) if model_results else 'None',
+                        'model_results_count': len(model_results) if model_results else 0
+                    })
+                    
+                    st.markdown("**Model Results Details:**")
+                    for model_name, model_data in list(model_results.items())[:3]:  # Show first 3 models
+                        st.json({
+                            'model_name': model_name,
+                            'model_data_keys': list(model_data.keys()) if isinstance(model_data, dict) else 'Not dict',
+                            'model_status': model_data.get('status') if isinstance(model_data, dict) else 'No status',
+                            'model_accuracy': model_data.get('accuracy') if isinstance(model_data, dict) else 'No accuracy'
+                        })
+                
+                for model_name, model_data in model_results.items():
+                    if isinstance(model_data, dict) and model_data.get('status') == 'success':
+                        # Convert string values to float for proper formatting
+                        accuracy = float(model_data.get('accuracy', 0))
+                        f1_score = float(model_data.get('f1_score', 0))
+                        precision = float(model_data.get('precision', 0))
+                        recall = float(model_data.get('recall', 0))
+                        training_time = float(model_data.get('training_time', 0))
+                        validation_acc = float(model_data.get('validation_accuracy', 0))
+                        cv_mean = float(model_data.get('cv_mean', 0))
+                        cv_std = float(model_data.get('cv_std', 0))
+                        support = int(model_data.get('support', 0))
+                        
+                        row_data = {'Model': model_name}
+                        
+                        if show_accuracy:
+                            row_data['Accuracy'] = f"{accuracy:.4f}"
+                        if show_f1_score:
+                            row_data['F1-Score'] = f"{f1_score:.4f}"
+                        if show_precision:
+                            row_data['Precision'] = f"{precision:.4f}"
+                        if show_recall:
+                            row_data['Recall'] = f"{recall:.4f}"
+                        if show_training_time:
+                            row_data['Training Time'] = f"{training_time:.1f}s"
+                        if show_validation_acc:
+                            row_data['Validation Accuracy'] = f"{validation_acc:.4f}"
+                        if show_cv_mean:
+                            row_data['CV Mean'] = f"{cv_mean:.4f}"
+                        if show_cv_std:
+                            row_data['CV Std'] = f"{cv_std:.4f}"
+                        if show_support:
+                            row_data['Support'] = support
+                        if show_params:
+                            params = model_data.get('params', {})
+                            row_data['Parameters'] = f"{len(params)} params" if params else "Default"
+                        if show_status:
+                            row_data['Status'] = model_data.get('status', 'Unknown')
+                        if show_cached:
+                            row_data['Cached'] = "Yes" if model_data.get('cached', False) else "No"
+                        
+                        metrics_data.append(row_data)
+            
+            if metrics_data:
+                import pandas as pd
+                metrics_df = pd.DataFrame(metrics_data)
+                st.dataframe(metrics_df, width='stretch')
+                
+                # Find best model
                 if comprehensive_results:
-                    st.info("📊 Loading metrics from actual training results...")
-                    
-                    # Create metrics table from real results
-                    import pandas as pd
-                    metrics_data = []
-                    
-                    for result in comprehensive_results:
-                        if result.get('status') == 'success':
-                            metrics_data.append({
-                                'Model': f"{result.get('model_name', 'Unknown')} + {result.get('embedding_name', 'Unknown')}",
-                                'Accuracy': f"{result.get('test_accuracy', 0):.4f}",
-                                'F1-Score': f"{result.get('f1_score', 0):.4f}",
-                                'Training Time': f"{result.get('training_time', 0):.1f}s",
-                                'Status': result.get('status', 'Unknown')
-                            })
-                    
-                    if metrics_data:
-                        metrics_df = pd.DataFrame(metrics_data)
-                        st.dataframe(metrics_df, width='stretch')
-                        
-                        # Find best model
-                        best_result = max(comprehensive_results, key=lambda x: x.get('f1_score', 0))
-                        best_model = f"{best_result.get('model_name', 'Unknown')} + {best_result.get('embedding_name', 'Unknown')}"
-                        best_f1 = best_result.get('f1_score', 0)
-                        
-                        st.success(f"🏆 **Best Model:** {best_model} (F1-Score: {best_f1:.4f})")
-                    else:
-                        st.warning("⚠️ No successful training results found.")
-                else:
-                    st.warning("⚠️ No comprehensive results available. Please complete Step 4 training first.")
-            else:
-                st.warning("⚠️ Training not completed successfully. Please complete Step 4 training first.")
+                    best_result = max(comprehensive_results, key=lambda x: x.get('f1_score', 0))
+                    best_model = f"{best_result.get('model_name', 'Unknown')} + {best_result.get('embedding_name', 'Unknown')}"
+                    best_f1 = best_result.get('f1_score', 0)
+                elif model_results:
+                    # Find best model by F1-score, handling string values
+                    best_model = None
+                    best_f1 = 0
+                    for model_name, model_data in model_results.items():
+                        if isinstance(model_data, dict) and model_data.get('status') == 'success':
+                            f1_score = float(model_data.get('f1_score', 0))
+                            if f1_score > best_f1:
+                                best_f1 = f1_score
+                                best_model = model_name
                 
+                st.success(f"🏆 **Best Model:** {best_model} (F1-Score: {best_f1:.4f})")
+            else:
+                st.warning("⚠️ No successful training results found.")
+                
+                with debug_container:
+                    st.markdown("**Why No Metrics Data:**")
+                    st.json({
+                        'comprehensive_results_found': bool(comprehensive_results),
+                        'model_results_found': bool(model_results),
+                        'comprehensive_results_length': len(comprehensive_results) if comprehensive_results else 0,
+                        'model_results_length': len(model_results) if model_results else 0,
+                        'metrics_data_length': len(metrics_data)
+                    })
+                    
+                    if model_results:
+                        st.write("**Model Results Status Check:**")
+                        for model_name, model_data in list(model_results.items())[:5]:
+                            if isinstance(model_data, dict):
+                                st.write(f"- {model_name}: status='{model_data.get('status')}', accuracy={model_data.get('accuracy')}")
+                            else:
+                                st.write(f"- {model_name}: Not a dict, type={type(model_data)}")
+            
         except Exception as e:
             st.error(f"❌ Error loading metrics: {str(e)}")
             st.info("💡 Please complete Step 4 training first to see actual metrics.")

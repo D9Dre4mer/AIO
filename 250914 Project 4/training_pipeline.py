@@ -1153,7 +1153,22 @@ class StreamlitTrainingPipeline:
                 
                 # Check if ensemble learning is enabled
                 if step3_data and isinstance(step3_data, dict):
+                    # First check for direct ensemble_learning config
                     ensemble_config = step3_data.get('ensemble_learning', {})
+                    
+                    # If not found, convert voting_config and stacking_config to ensemble_config
+                    if not ensemble_config or not ensemble_config.get('enabled', False):
+                        voting_config = step3_data.get('voting_config', {})
+                        stacking_config = step3_data.get('stacking_config', {})
+                        
+                        # Create ensemble_config from voting and stacking configs
+                        ensemble_config = {
+                            'enabled': voting_config.get('enabled', False) or stacking_config.get('enabled', False),
+                            'voting_config': voting_config,
+                            'stacking_config': stacking_config,
+                            'final_estimator': stacking_config.get('meta_learner', 'logistic_regression')
+                        }
+                    
                     ensemble_enabled = ensemble_config.get('enabled', False)
                 else:
                     ensemble_config = {}
@@ -1162,7 +1177,12 @@ class StreamlitTrainingPipeline:
                 print(f"🚀 [TRAINING_PIPELINE] Ensemble Learning: {'Enabled' if ensemble_enabled else 'Disabled'}")
                 if ensemble_enabled:
                     print(f"   • Final Estimator: {ensemble_config.get('final_estimator', 'logistic_regression')}")
+                    print(f"   • Voting Enabled: {ensemble_config.get('voting_config', {}).get('enabled', False)}")
+                    print(f"   • Stacking Enabled: {ensemble_config.get('stacking_config', {}).get('enabled', False)}")
                     print(f"   • Base Models: KNN + Decision Tree + Naive Bayes")
+                else:
+                    print(f"   • Voting Config: {step3_data.get('voting_config', {}).get('enabled', False) if step3_data else 'No step3_data'}")
+                    print(f"   • Stacking Config: {step3_data.get('stacking_config', {}).get('enabled', False) if step3_data else 'No step3_data'}")
                 
                 # Run comprehensive evaluation with selected models and embeddings
                 # FIXED: Pass the already sampled dataframe to evaluator
@@ -1216,8 +1236,8 @@ class StreamlitTrainingPipeline:
                     progress_callback(self.current_phase, "Saving results to cache...", 0.95)
                 
                 try:
-                    # CRITICAL FIX: Include step data and label mapping in cache
-                    # This ensures cache contains all necessary information for label mapping
+                    # CRITICAL FIX: Return full results but save large data to separate files
+                    # This prevents memory overload while keeping all data accessible
                     cache_results = {
                         'status': 'success',
                         'message': 'Comprehensive evaluation completed successfully',
@@ -1239,9 +1259,8 @@ class StreamlitTrainingPipeline:
                         'step2_data': step2_data,
                         'step3_data': step3_data,
                         # CRITICAL: Include label mapping at top level
-                        # Use self.original_label_mapping if available, otherwise fallback to evaluator
                         'labels': self.original_label_mapping if hasattr(self, 'original_label_mapping') and self.original_label_mapping else (evaluator.data_loader.id_to_label if hasattr(evaluator, 'data_loader') and evaluator.data_loader else {}),
-                        'label_mapping': self.original_label_mapping if hasattr(self, 'original_label_mapping') and self.original_label_mapping else (evaluator.data_loader.id_to_label if hasattr(evaluator, 'data_loader') and evaluator.data_loader else {})
+                        'label_mapping': evaluator.label_mapping if hasattr(evaluator, 'label_mapping') else {}
                     }
                     
                     # Save to cache

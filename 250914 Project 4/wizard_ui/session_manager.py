@@ -120,10 +120,57 @@ class SessionManager:
                 logger.debug(f"Step {step_number} data unchanged, skipping update")
                 return
             
+            # Memory safety check before saving large data
+            try:
+                import psutil
+                process = psutil.Process()
+                memory_mb = process.memory_info().rss / 1024 / 1024
+                
+                # If memory is too high, skip saving large data
+                if memory_mb > 1500:  # 1.5GB threshold
+                    logger.warning(f"High memory usage ({memory_mb:.1f} MB), skipping session state save")
+                    print(f"WARNING: High memory usage ({memory_mb:.1f} MB), skipping session state save for step {step_number}")
+                    return
+                    
+            except ImportError:
+                # psutil not available, continue with save
+                pass
+            
             # Always set the data, creating the key if it doesn't exist
             st.session_state[step_key] = data
             logger.debug(f"Data set for step {step_number}")
             print(f"SUCCESS: Step {step_number} data saved to session state")
+            
+            # CRITICAL: Enhanced cleanup after saving to prevent Streamlit crashes
+            try:
+                import gc
+                import time
+                
+                # Force multiple garbage collections
+                for i in range(3):
+                    gc.collect()
+                    time.sleep(0.01)  # Brief pause between collections
+                
+                # Additional cleanup for large step data
+                if step_number == 4:  # Training results step
+                    print(f"DEBUG: Enhanced cleanup for Step {step_number} (training results)")
+                    # Clear any large objects that might be lingering
+                    try:
+                        import psutil
+                        process = psutil.Process()
+                        memory_after = process.memory_info().rss / 1024 / 1024
+                        print(f"DEBUG: Memory after cleanup: {memory_after:.1f} MB")
+                    except ImportError:
+                        pass
+                        
+            except Exception as cleanup_error:
+                print(f"WARNING: Enhanced cleanup failed: {cleanup_error}")
+                # Still try basic cleanup
+                try:
+                    import gc
+                    gc.collect()
+                except Exception:
+                    pass
         except Exception as e:
             logger.error(f"Failed to set step {step_number} data: {str(e)}")
             print(f"ERROR: Failed to set step {step_number} data: {str(e)}")

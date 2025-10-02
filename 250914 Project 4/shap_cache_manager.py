@@ -21,7 +21,7 @@ class SHAPCacheManager:
         # Memory leak protection
         self._lock = threading.Lock()
         self._active_explainers = {}  # Track active explainers
-        self._max_memory_mb = 1000  # Max memory usage in MB
+        self._max_memory_mb = 2000  # Max memory usage in MB (increased from 1000)
         self._max_sample_size = 500  # Max sample size to prevent memory issues
         
         # Cleanup old cache files on init
@@ -44,6 +44,7 @@ class SHAPCacheManager:
         try:
             process = psutil.Process()
             memory_mb = process.memory_info().rss / 1024 / 1024
+            print(f"DEBUG: Current memory usage: {memory_mb:.1f} MB (limit: {self._max_memory_mb} MB)")
             return memory_mb < self._max_memory_mb
         except Exception:
             return True  # If can't check, assume OK
@@ -61,16 +62,31 @@ class SHAPCacheManager:
     def _memory_safe_operation(self):
         """Context manager for memory-safe operations"""
         try:
+            # Force garbage collection before checking memory
+            gc.collect()
+            
             # Check memory before operation
             if not self._check_memory_usage():
-                print("Warning: High memory usage detected, skipping SHAP operation")
-                yield False
-                return
+                print("Warning: High memory usage detected, attempting cleanup...")
+                # Try aggressive cleanup
+                gc.collect()
+                import time
+                time.sleep(0.1)  # Brief pause for cleanup
+                
+                # Check again after cleanup
+                if not self._check_memory_usage():
+                    print("Warning: Still high memory usage after cleanup, skipping SHAP operation")
+                    yield False
+                    return
+                else:
+                    print("INFO: Memory usage reduced after cleanup, proceeding with SHAP operation")
             
             yield True
         finally:
-            # Cleanup after operation
+            # Aggressive cleanup after operation
             gc.collect()
+            import time
+            time.sleep(0.05)  # Brief pause for cleanup
     
     def generate_shap_cache_key(self, model, sample_data, model_name=""):
         """Generate cache key for SHAP explainer and values with safety checks"""
@@ -123,19 +139,18 @@ class SHAPCacheManager:
                     
                     cache_file = self.cache_dir / f"{cache_key}.pkl"
                     
-                    # Save SHAP values and comprehensive metadata
+                    # Save SHAP values and comprehensive metadata (SAFE VERSION - no model objects)
                     cache_data = {
                         'shap_values': shap_values,
                         'sample_data': sample_data,
                         'model_name': model_name,
-                        'model_type': str(type(model)),
+                        'model_type': str(type(model)),  # Only string representation
                         'feature_names': feature_names,  # Add feature names
-                        'model_params': model.get_params() if hasattr(model, 'get_params') else {},  # Add model params
                         'sample_shape': sample_data.shape,  # Add sample shape
                         'shap_shape': shap_values.shape if hasattr(shap_values, 'shape') else 'unknown',  # Add SHAP shape
                         'timestamp': pd.Timestamp.now(),
                         'sample_size': len(sample_data),
-                        'cache_version': '1.1'  # Add version for future compatibility
+                        'cache_version': '1.2'  # Updated version
                     }
                     
                     # Atomic file write with temp file
@@ -147,6 +162,17 @@ class SHAPCacheManager:
                     temp_file.replace(cache_file)
                     
                     print(f"SUCCESS: SHAP cache saved for {model_name} at {cache_file}")
+                    
+                    # CRITICAL: Cleanup SHAP objects to prevent Streamlit crashes
+                    try:
+                        del explainer  # Remove explainer reference
+                        del shap_values  # Remove SHAP values reference
+                        import gc
+                        gc.collect()  # Force garbage collection
+                        print(f"DEBUG: SHAP objects cleaned up for {model_name}")
+                    except Exception as cleanup_error:
+                        print(f"WARNING: SHAP cleanup failed for {model_name}: {cleanup_error}")
+                    
                     return cache_file
                     
                 except Exception as e:

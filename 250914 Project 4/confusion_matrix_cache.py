@@ -10,13 +10,12 @@ Features:
 - Label ordering and mapping support
 """
 
-import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 import logging
 from sklearn.metrics import confusion_matrix
 from cache_manager import cache_manager
@@ -37,7 +36,6 @@ class ConfusionMatrixCache:
     
     def generate_confusion_matrix_from_cache(self, model_key: str, dataset_id: str, 
                                            config_hash: str, 
-                                           threshold: float = 0.5,
                                            normalize: str = "true",
                                            labels_order: Optional[List[str]] = None,
                                            save_path: Optional[str] = None) -> Dict[str, Any]:
@@ -47,7 +45,6 @@ class ConfusionMatrixCache:
             model_key: Model identifier
             dataset_id: Dataset identifier
             config_hash: Configuration hash
-            threshold: Threshold for binary classification
             normalize: Normalization method ('true', 'pred', 'all', None)
             labels_order: Order of labels for display
             save_path: Path to save confusion matrix plot
@@ -65,15 +62,25 @@ class ConfusionMatrixCache:
             eval_df = cache_data['eval_predictions']
             
             # Extract true labels and predictions
-            y_true = eval_df['y_true'].values
-            y_pred = self._extract_predictions(eval_df, threshold)
+            # Handle different column naming conventions
+            if 'y_true' in eval_df.columns:
+                y_true = eval_df['y_true'].values
+            elif 'true_labels' in eval_df.columns:
+                y_true = eval_df['true_labels'].values
+            else:
+                raise ValueError("No true labels column found. Expected 'y_true' or 'true_labels'")
+            
+            y_pred = self._extract_predictions(eval_df)
             
             # Get label mapping
             label_mapping = cache_data.get('label_mapping', {})
             if not label_mapping:
-                # Create default mapping
+                # Create default mapping using integer keys
                 unique_labels = sorted(set(y_true) | set(y_pred))
-                label_mapping = {i: f"Class_{i}" for i in unique_labels}
+                label_mapping = {int(i): f"Class_{i}" for i in unique_labels}
+            else:
+                # Convert string keys to integer keys if needed
+                label_mapping = {int(k): v for k, v in label_mapping.items()}
             
             # Apply label ordering if provided
             if labels_order:
@@ -131,7 +138,7 @@ class ConfusionMatrixCache:
                 'plot': fig,
                 'metrics': metrics,
                 'label_mapping': label_mapping,
-                'threshold': threshold,
+                'threshold': None,
                 'normalize': normalize,
                 'model_key': model_key,
                 'dataset_id': dataset_id,
@@ -145,30 +152,33 @@ class ConfusionMatrixCache:
             logger.error(f"Error generating confusion matrix for {model_key}: {e}")
             raise
     
-    def _extract_predictions(self, eval_df: pd.DataFrame, threshold: float = 0.5) -> np.ndarray:
+    def _extract_predictions(self, eval_df: pd.DataFrame) -> np.ndarray:
         """Extract predictions from evaluation dataframe
         
         Args:
             eval_df: Evaluation dataframe
-            threshold: Threshold for binary classification
             
         Returns:
-            Array of predictions
+            Array of predictions (already trained results from step 4)
         """
+        # Handle different column naming conventions
         if 'y_pred' in eval_df.columns:
             # Use existing predictions
             return eval_df['y_pred'].values
+        elif 'predictions' in eval_df.columns:
+            # Use existing predictions (from step 4 training)
+            return eval_df['predictions'].values
         
-        # Extract from probability columns
+        # If no direct predictions, try to extract from probability columns
         proba_cols = [col for col in eval_df.columns if col.startswith('proba__class_')]
         
         if not proba_cols:
             raise ValueError("No prediction columns found in eval_predictions")
         
         if len(proba_cols) == 2:
-            # Binary classification
-            proba_class_1 = eval_df[proba_cols[1]].values
-            y_pred = (proba_class_1 >= threshold).astype(int)
+            # Binary classification - use argmax for final prediction
+            proba_values = eval_df[proba_cols].values
+            y_pred = np.argmax(proba_values, axis=1)
         else:
             # Multiclass classification
             proba_values = eval_df[proba_cols].values
@@ -221,7 +231,7 @@ class ConfusionMatrixCache:
                 tp = cm[i, i]
                 fp = cm[:, i].sum() - tp
                 fn = cm[i, :].sum() - tp
-                tn = cm.sum() - tp - fp - fn
+                # tn = cm.sum() - tp - fp - fn  # Not used in current metrics
                 
                 precision = tp / (tp + fp) if (tp + fp) > 0 else 0
                 recall = tp / (tp + fn) if (tp + fn) > 0 else 0

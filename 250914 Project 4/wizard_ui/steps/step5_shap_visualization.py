@@ -352,6 +352,7 @@ class SHAPVisualizationStep:
         
         if not selected_models:
             st.warning("⚠️ No models selected for confusion matrix generation")
+            st.info("💡 Please go to 'Model Selection' tab and select some models first")
             return
         
         # Confusion matrix configuration
@@ -365,15 +366,6 @@ class SHAPVisualizationStep:
                 ["true", "pred", "all", None],
                 index=0,
                 help="How to normalize the confusion matrix"
-            )
-            
-            threshold = st.slider(
-                "Threshold (Binary Classification)",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.5,
-                step=0.01,
-                help="Threshold for binary classification"
             )
         
         with col2:
@@ -391,20 +383,20 @@ class SHAPVisualizationStep:
         
         # Generate confusion matrices
         if st.button("📊 Generate Confusion Matrices", type="primary"):
-            self._generate_confusion_matrices(selected_models, normalize, threshold, save_plots, show_metrics)
+            self._generate_confusion_matrices(selected_models, normalize, save_plots, show_metrics)
         
-        # Display confusion matrix results
+        # Display confusion matrix results from session
         cm_results = self.session_manager.get_step_data(5).get('confusion_matrix_results', {})
         
         if cm_results:
-            st.markdown("**📈 Confusion Matrix Results:**")
+            st.markdown("**📈 Confusion Matrix Results (from session):**")
             
             for model_key, result in cm_results.items():
                 with st.expander(f"📊 {model_key} Confusion Matrix", expanded=False):
                     self._display_confusion_matrix_result(model_key, result, show_metrics)
     
     def _generate_confusion_matrices(self, selected_models: List[Dict], normalize: str, 
-                                   threshold: float, save_plots: bool, show_metrics: bool):
+                                   save_plots: bool, show_metrics: bool):
         """Generate confusion matrices for selected models"""
         with st.spinner("Generating confusion matrices..."):
             try:
@@ -421,7 +413,6 @@ class SHAPVisualizationStep:
                             model_key=model_info['model_key'],
                             dataset_id=model_info['dataset_id'],
                             config_hash=model_info['config_hash'],
-                            threshold=threshold,
                             normalize=normalize
                         )
                         
@@ -448,6 +439,13 @@ class SHAPVisualizationStep:
                 
                 if cm_results:
                     st.success(f"🎉 Confusion matrices generated for {len(cm_results)} models!")
+                    
+                    # Display results immediately
+                    st.markdown("**📈 Confusion Matrix Results:**")
+                    
+                    for model_key, result in cm_results.items():
+                        with st.expander(f"📊 {model_key} Confusion Matrix", expanded=True):
+                            self._display_confusion_matrix_result(model_key, result, show_metrics)
                 else:
                     st.warning("⚠️ No confusion matrices generated")
                 
