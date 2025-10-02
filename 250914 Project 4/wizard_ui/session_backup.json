@@ -8,23 +8,13 @@
     "progress_tracking": true,
     "session_persistence": true
   },
-  "user_preferences": {
-    "theme": "light",
-    "compact_view": false,
-    "auto_save": true
-  },
   "step_data": {
-    "step1_dataset": {},
-    "step2_preprocessing": {},
-    "step3_columns": {},
-    "step4_configuration": {},
-    "step5_training": {},
-    "step6_results": {},
-    "step7_inference": {}
+    "step1": {},
+    "step2": {},
+    "step3": {},
+    "step4": {},
+    "step5": {}
   },
-  "_metadata": {
-    "saved_at": "2025-09-30T23:18:54.554102",
-    "version": "1.0",
-    "source": "SessionManager.save_to_file"
-  }
+  "last_updated": "2025-10-02T18:30:00.000Z",
+  "session_id": "fresh_start_session"
 }

@@ -796,245 +796,435 @@ def show_file_preview(df, file_extension):
         </div>
         """, unsafe_allow_html=True)
 
-def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, selected_models, optuna_config, scaler_name, log_container):
+def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, selected_models, optuna_config, scaler_name, log_container, input_columns=None):
     """Train models with specific scaling method using proper train/val/test split and cache system"""
-    from sklearn.model_selection import cross_val_score, StratifiedKFold
-    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, classification_report
-    from models import model_factory, model_registry
-    from optuna_optimizer import OptunaOptimizer
-    from cache_manager import CacheManager
-    import time
-    import os
-    import pandas as pd
-    
-    model_name_mapping = {
-        'random_forest': 'random_forest',
-        'xgboost': 'xgboost', 
-        'lightgbm': 'lightgbm',
-        'catboost': 'catboost',
-        'decision_tree': 'decision_tree',
-        'knn': 'knn',
-        'naive_bayes': 'naive_bayes',
-        'svm': 'svm',
-        'logistic_regression': 'logistic_regression',
-        'adaboost': 'adaboost',
-        'gradient_boosting': 'gradient_boosting'
-    }
-    
-    scaler_results = {}
-    optuna_enabled = optuna_config.get('enabled', False)
-    
-    # Initialize cache manager
-    cache_manager = CacheManager()
-    
-    with log_container:
-        st.info(f"🤖 Training {len(selected_models)} models with {scaler_name} scaling")
-    
-    for model_name in selected_models:
-        try:
-            with log_container:
-                st.info(f"🔄 Training {model_name} with {scaler_name}...")
-            
-            # Map model name
-            mapped_name = model_name_mapping.get(model_name, model_name)
-            
-            # Generate cache identifiers
-            model_key = mapped_name
-            dataset_id = f"numeric_dataset_{scaler_name}"
-            config_hash = cache_manager.generate_config_hash({
-                'model': mapped_name,
-                'preprocessing': scaler_name,
-                'trials': optuna_config.get('trials', 50) if optuna_enabled else 0,
-                'random_state': 42
-            })
-            dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
-                dataset_path="numeric_data_in_memory",
-                dataset_size=len(X_train_scaled),
-                num_rows=len(X_train_scaled)
-            )
-            
-            # Check cache first
-            cache_exists, cached_data = cache_manager.check_cache_exists(
-                model_key, dataset_id, config_hash, dataset_fingerprint
-            )
-            
-            if cache_exists:
-                # Load from cache
-                try:
-                    full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
-                    cached_metrics = full_cache_data.get('metrics', {})
-                    
-                    with log_container:
-                        st.success(f"💾 Cache hit! Loading {model_name} ({scaler_name}) from cache")
-                    
-                    scaler_results[model_name] = {
-                        'model': full_cache_data.get('model'),
-                        'accuracy': cached_metrics.get('accuracy', 0.0),
-                        'validation_accuracy': cached_metrics.get('validation_accuracy', 0.0),
-                        'f1_score': cached_metrics.get('f1_score', 0.0),
-                        'precision': cached_metrics.get('precision', 0.0),
-                        'recall': cached_metrics.get('recall', 0.0),
-                        'support': cached_metrics.get('support', 0),
-                        'cv_mean': cached_metrics.get('cv_mean', 0.0),
-                        'cv_std': cached_metrics.get('cv_std', 0.0),
-                        'training_time': 0.0,  # Cached, no training time
-                        'params': full_cache_data.get('params', {}),
-                        'status': 'success',
-                        'cached': True
-                    }
-                    continue
-                except Exception as cache_error:
-                    with log_container:
-                        st.warning(f"⚠️ Cache load failed for {model_name}: {cache_error}")
-                    # Continue to training
-            
-            # Cache miss - train new model
-            with log_container:
-                st.info(f"🔄 Cache miss! Training {model_name} ({scaler_name})...")
-            
-            # Create model using factory
-            model = model_factory.create_model(mapped_name)
-            if model is None:
+    try:
+        from sklearn.model_selection import cross_val_score, StratifiedKFold
+        from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, classification_report
+        from models import model_factory, model_registry
+        from optuna_optimizer import OptunaOptimizer
+        from shap_cache_manager import shap_cache_manager
+        from cache_manager import CacheManager
+        import time
+        import os
+        import pandas as pd
+        
+        with log_container:
+            st.info(f"🔍 DEBUG: Starting train_models_with_scaling for {scaler_name}")
+        
+        model_name_mapping = {
+            'random_forest': 'random_forest',
+            'xgboost': 'xgboost', 
+            'lightgbm': 'lightgbm',
+            'catboost': 'catboost',
+            'decision_tree': 'decision_tree',
+            'knn': 'knn',
+            'naive_bayes': 'naive_bayes',
+            'svm': 'svm',
+            'logistic_regression': 'logistic_regression',
+            'adaboost': 'adaboost',
+            'gradient_boosting': 'gradient_boosting'
+        }
+        
+        scaler_results = {}
+        optuna_enabled = optuna_config.get('enabled', False)
+        
+        # Initialize cache manager
+        cache_manager = CacheManager()
+        
+        with log_container:
+            st.info(f"🤖 Training {len(selected_models)} models with {scaler_name} scaling")
+        
+        for model_name in selected_models:
+            try:
                 with log_container:
-                    st.error(f"❌ Failed to create model: {mapped_name}")
-                continue
-            
-            start_time = time.time()
-            
-            if optuna_enabled:
-                # Use Optuna optimization
-                optimizer = OptunaOptimizer(optuna_config)
-                optimization_result = optimizer.optimize_model(
-                    model_name=mapped_name,
-                    model_class=model.__class__,
-                    X_train=X_train_scaled,
-                    y_train=y_train,
-                    X_val=X_val_scaled,  # Use validation set for Optuna
-                    y_val=y_val
+                    st.info(f"🔄 Training {model_name} with {scaler_name}...")
+                
+                # Map model name
+                mapped_name = model_name_mapping.get(model_name, model_name)
+                
+                # Generate cache identifiers
+                model_key = mapped_name
+                dataset_id = f"numeric_dataset_{scaler_name}"
+                config_hash = cache_manager.generate_config_hash({
+                    'model': mapped_name,
+                    'preprocessing': scaler_name,
+                    'trials': optuna_config.get('trials', 50) if optuna_enabled else 0,
+                    'random_state': 42
+                })
+                dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+                    dataset_path="numeric_data_in_memory",
+                    dataset_size=len(X_train_scaled),
+                    num_rows=len(X_train_scaled)
+                    )
+                
+                # Check cache first
+                cache_exists, cached_data = cache_manager.check_cache_exists(
+                    model_key, dataset_id, config_hash, dataset_fingerprint
                 )
                 
-                best_params = optimization_result['best_params']
-                best_score = optimization_result['best_score']
+                if cache_exists:
+                    # Load from cache
+                    try:
+                        full_cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                        cached_metrics = full_cache_data.get('metrics', {})
+                        
+                        with log_container:
+                            st.success(f"💾 Cache hit! Loading {model_name} ({scaler_name}) from cache")
+                        
+                        scaler_results[model_name] = {
+                            'model': full_cache_data.get('model'),
+                            'accuracy': cached_metrics.get('accuracy', 0.0),
+                            'validation_accuracy': cached_metrics.get('validation_accuracy', 0.0),
+                            'f1_score': cached_metrics.get('f1_score', 0.0),
+                            'precision': cached_metrics.get('precision', 0.0),
+                            'recall': cached_metrics.get('recall', 0.0),
+                            'support': cached_metrics.get('support', 0),
+                            'cv_mean': cached_metrics.get('cv_mean', 0.0),
+                            'cv_std': cached_metrics.get('cv_std', 0.0),
+                            'training_time': 0.0,  # Cached, no training time
+                            'params': full_cache_data.get('params', {}),
+                            'status': 'success',
+                            'cached': True
+                        }
+                        continue
+                    except Exception as cache_error:
+                        with log_container:
+                            st.warning(f"⚠️ Cache load failed for {model_name}: {cache_error}")
+                        # Continue to training
                 
-                # Train final model with best params
-                final_model = model_factory.create_model(mapped_name)
-                final_model.set_params(**best_params)
-                final_model.fit(X_train_scaled, y_train)
+                # Cache miss - train new model
+                with log_container:
+                    st.info(f"🔄 Cache miss! Training {model_name} ({scaler_name})...")
                 
-            else:
-                # Train without optimization
-                model.fit(X_train_scaled, y_train)
-                final_model = model
-                best_params = {}
-                best_score = model.score(X_val_scaled, y_val)  # Use validation set for scoring
-            
-            end_time = time.time()
-            training_time = end_time - start_time
-            
-            # Skip cross-validation to avoid double validation
-            # Optuna already provides validation, CV would be redundant
-            cv_mean = best_score  # Use validation score as CV estimate
-            cv_std = 0.0  # No CV std available
-            
-            # Final evaluation on test set (unseen data)
-            y_pred = final_model.predict(X_test_scaled)
-            test_accuracy = accuracy_score(y_test, y_pred)
-            f1 = f1_score(y_test, y_pred, average='weighted')
-            precision = precision_score(y_test, y_pred, average='weighted')
-            recall = recall_score(y_test, y_pred, average='weighted')
-            
-            # Calculate support (number of samples for each class)
-            from collections import Counter
-            support = sum(Counter(y_test).values())  # Total support
-            
-            scaler_results[model_name] = {
-                'model': final_model,
-                'accuracy': test_accuracy,  # Use test accuracy as final metric
-                'validation_accuracy': best_score,  # Keep validation accuracy for reference
-                'f1_score': f1,
-                'precision': precision,
-                'recall': recall,
-                'support': support,
-                'cv_mean': cv_mean,  # Validation score (no double validation)
-                'cv_std': cv_std,    # No CV std (avoid double validation)
-                'training_time': training_time,
-                'params': best_params,
-                'status': 'success',
-                'cached': False
-            }
-            
-            # Save to cache
-            try:
-                metrics = {
-                    'accuracy': test_accuracy,
-                    'validation_accuracy': best_score,
+                # Create model using factory
+                model = model_factory.create_model(mapped_name)
+                if model is None:
+                    with log_container:
+                        st.error(f"❌ Failed to create model: {mapped_name}")
+                    continue
+                
+                start_time = time.time()
+                
+                if optuna_enabled:
+                    # Use Optuna optimization
+                    optimizer = OptunaOptimizer(optuna_config)
+                    optimization_result = optimizer.optimize_model(
+                        model_name=mapped_name,
+                        model_class=model.__class__,
+                        X_train=X_train_scaled,
+                        y_train=y_train,
+                        X_val=X_val_scaled,  # Use validation set for Optuna
+                        y_val=y_val
+                    )
+                    
+                    best_params = optimization_result['best_params']
+                    best_score = optimization_result['best_score']
+                    
+                    # Train final model with best params
+                    final_model = model_factory.create_model(mapped_name)
+                    final_model.set_params(**best_params)
+                    final_model.fit(X_train_scaled, y_train)
+                else:
+                    # Train without optimization
+                    model.fit(X_train_scaled, y_train)
+                    final_model = model
+                    best_params = {}
+                    best_score = model.score(X_val_scaled, y_val)  # Use validation set for scoring
+                
+                end_time = time.time()
+                training_time = end_time - start_time
+                
+                # Skip cross-validation to avoid double validation
+                # Optuna already provides validation, CV would be redundant
+                cv_mean = best_score  # Use validation score as CV estimate
+                cv_std = 0.0  # No CV std available
+                
+                # Final evaluation on test set (unseen data)
+                y_pred = final_model.predict(X_test_scaled)
+                test_accuracy = accuracy_score(y_test, y_pred)
+                f1 = f1_score(y_test, y_pred, average='weighted')
+                precision = precision_score(y_test, y_pred, average='weighted')
+                recall = recall_score(y_test, y_pred, average='weighted')
+                
+                # Calculate support (number of samples for each class)
+                from collections import Counter
+                support = sum(Counter(y_test).values())  # Total support
+                
+                scaler_results[model_name] = {
+                    'model': final_model,
+                    'accuracy': test_accuracy,  # Use test accuracy as final metric
+                    'validation_accuracy': best_score,  # Keep validation accuracy for reference
                     'f1_score': f1,
                     'precision': precision,
                     'recall': recall,
                     'support': support,
-                    'cv_mean': cv_mean,
-                    'cv_std': cv_std
+                    'cv_mean': cv_mean,  # Validation score (no double validation)
+                    'cv_std': cv_std,    # No CV std (avoid double validation)
+                    'training_time': training_time,
+                    'params': best_params,
+                    'status': 'success',
+                    'cached': False
                 }
-                
-                cache_config = {
-                    'model': mapped_name,
-                    'preprocessing': scaler_name,
-                    'trials': optuna_config.get('trials', 50) if optuna_enabled else 0,
-                    'random_state': 42,
-                    'test_size': 0.2
-                }
-                
-                # Create eval_predictions DataFrame for SHAP analysis
-                eval_predictions = pd.DataFrame(X_test_scaled, columns=[f"feature_{i}" for i in range(X_train_scaled.shape[1])])
-                eval_predictions['true_labels'] = y_test
-                eval_predictions['predictions'] = y_pred
-                
-                cache_path = cache_manager.save_model_cache(
-                    model_key=model_key,
-                    dataset_id=dataset_id,
-                    config_hash=config_hash,
-                    dataset_fingerprint=dataset_fingerprint,
-                    model=final_model,
-                    params=best_params,
-                    metrics=metrics,
-                    config=cache_config,
-                    eval_predictions=eval_predictions,
-                    feature_names=[f"feature_{i}" for i in range(X_train_scaled.shape[1])],
-                    label_mapping={i: f"class_{i}" for i in range(len(set(y_train)))}
-                )
                 
                 with log_container:
-                    st.success(f"💾 Cache saved for {model_name} ({scaler_name})")
+                    st.success(f"✅ {model_name} ({scaler_name}): Val={best_score:.4f}, Test={test_accuracy:.4f} ({training_time:.2f}s)")
+                
+                # Save to cache
+                try:
+                    metrics = {
+                        'accuracy': test_accuracy,
+                        'validation_accuracy': best_score,
+                        'f1_score': f1,
+                        'precision': precision,
+                        'recall': recall,
+                        'support': support,
+                        'cv_mean': cv_mean,
+                        'cv_std': cv_std
+                    }
                     
-            except Exception as cache_error:
+                    cache_config = {
+                        'model': mapped_name,
+                        'preprocessing': scaler_name,
+                        'trials': optuna_config.get('trials', 50) if optuna_enabled else 0,
+                        'random_state': 42,
+                        'test_size': 0.2
+                    }
+                    
+                    # Create eval_predictions DataFrame for SHAP analysis
+                    # Use actual feature names from input_columns if available
+                    if input_columns is not None:
+                        feature_names = input_columns
+                    else:
+                        feature_names = [f"feature_{i}" for i in range(X_train_scaled.shape[1])]
+                    
+                    with log_container:
+                        st.info(f"🔍 Debug: Using feature names: {feature_names[:5]}{'...' if len(feature_names) > 5 else ''}")
+                        st.info(f"🔍 Debug: Total features: {len(feature_names)}")
+                    
+                    eval_predictions = pd.DataFrame(X_test_scaled, columns=feature_names)
+                    eval_predictions['true_labels'] = y_test
+                    eval_predictions['predictions'] = y_pred
+                    
+                    # Create SHAP sample for caching (first 30 samples to prevent memory issues)
+                    shap_sample_size = min(30, len(X_test_scaled))  # Reduced from 100 to 30
+                    shap_sample = pd.DataFrame(X_test_scaled[:shap_sample_size], columns=feature_names)
+                    
+                    with log_container:
+                        st.info(f"🔍 Debug: Created SHAP sample with {shap_sample_size} samples for caching")
+                    
+                    cache_path = cache_manager.save_model_cache(
+                        model_key=model_key,
+                        dataset_id=dataset_id,
+                        config_hash=config_hash,
+                        dataset_fingerprint=dataset_fingerprint,
+                        model=final_model,
+                        params=best_params,
+                        metrics=metrics,
+                        config=cache_config,
+                        eval_predictions=eval_predictions,
+                        shap_sample=shap_sample,
+                        feature_names=feature_names,
+                        label_mapping={i: f"class_{i}" for i in range(len(set(y_train)))}
+                    )
+                    
+                    with log_container:
+                        st.success(f"💾 Cache saved for {model_name} ({scaler_name})")
+                    
+                    # Generate and cache SHAP values for tree-based models (with comprehensive safety checks)
+                    with log_container:
+                        st.info(f"🔍 Starting SHAP cache generation for {model_name} ({scaler_name})")
+                    
+                    try:
+                        # Safety Check 1: Verify we're in a stable environment
+                        import sys
+                        if hasattr(sys, '_getframe'):
+                            with log_container:
+                                st.info("🔍 Environment check: Python environment is stable")
+                        
+                        # Safety Check 2: Check if SHAP is available
+                        try:
+                            import shap
+                            shap_available = True
+                            with log_container:
+                                st.info(f"🔍 SHAP version: {shap.__version__}")
+                        except ImportError as e:
+                            shap_available = False
+                            with log_container:
+                                st.error(f"❌ SHAP not available: {e}")
+                                st.info("💡 Please install SHAP: pip install shap")
+                                st.info("💡 Or use conda environment: conda activate PJ3.1")
+                        
+                        # Safety Check 3: Verify model is ready for SHAP
+                        if shap_available:
+                            if hasattr(final_model, 'predict_proba'):
+                                with log_container:
+                                    st.info("🔍 Model check: Model has predict_proba method")
+                            else:
+                                with log_container:
+                                    st.warning("⚠️ Model check: Model may not be compatible with SHAP")
+                            
+                            with log_container:
+                                st.info(f"🔍 SHAP is available, proceeding with cache generation")
+                        
+                        if shap_available:
+                            # Safety Check 4: Memory usage validation
+                            memory_before = shap_cache_manager.get_memory_usage()
+                            with log_container:
+                                st.info(f"🔍 Memory usage before SHAP: {memory_before:.1f} MB")
+                        
+                            # Safety Check 5: Sample data validation
+                            if shap_sample is None or len(shap_sample) == 0:
+                                with log_container:
+                                    st.error("❌ SHAP sample is empty or None")
+                                return
+                            
+                            with log_container:
+                                st.info(f"🔍 SHAP sample size: {len(shap_sample)} samples, {shap_sample.shape[1]} features")
+                        
+                            # Safety Check 6: Model type validation
+                            tree_based_models = ['random_forest', 'xgboost', 'lightgbm', 'catboost', 'gradient_boosting', 'decision_tree']
+                            is_tree_based = any(tree_model in model_name.lower() for tree_model in tree_based_models)
+                        
+                            if is_tree_based:
+                                with log_container:
+                                    st.info(f"🔍 Model type check: {model_name} is tree-based - suitable for SHAP")
+                            else:
+                                with log_container:
+                                    st.info(f"ℹ️ Model type check: {model_name} is not tree-based - skipping SHAP cache")
+                                # Skip SHAP cache generation but continue with model cache saving
+                                shap_available = False
+                        
+                            # Safety Check 7: Import SHAP cache manager with error handling
+                            try:
+                                from shap_cache_manager import shap_cache_manager
+                                with log_container:
+                                    st.info("🔍 SHAP cache manager imported successfully")
+                            except ImportError as e:
+                                with log_container:
+                                    st.error(f"❌ Failed to import SHAP cache manager: {e}")
+                                return
+                        
+                            # Safety Check 8: Import visualization functions
+                            try:
+                                from visualization import create_shap_explainer
+                                with log_container:
+                                    st.info("🔍 SHAP visualization functions imported successfully")
+                            except ImportError as e:
+                                with log_container:
+                                    st.error(f"❌ Failed to import SHAP visualization functions: {e}")
+                                return
+                        
+                            # Proceed with SHAP cache generation
+                            with log_container:
+                                st.info(f"🔍 Generating SHAP cache for tree-based model: {model_name}")
+                            
+                            # Create SHAP explainer with comprehensive error handling
+                            try:
+                                explainer = create_shap_explainer(final_model, shap_sample.values)
+                                
+                                if explainer is not None:
+                                    # Generate SHAP values with timeout protection
+                                    try:
+                                        shap_values = explainer.shap_values(shap_sample.values)
+                                        
+                                        # Save SHAP cache
+                                        with log_container:
+                                            st.info(f"🔍 Attempting to save SHAP cache for {model_name} ({scaler_name})")
+                                            st.info(f"🔍 Feature names: {input_columns}")
+                                            st.info(f"🔍 Sample data shape: {shap_sample.values.shape}")
+                                            st.info(f"🔍 SHAP values type: {type(shap_values)}")
+                                        
+                                        shap_cache_file = shap_cache_manager.save_shap_cache(
+                                            model=final_model,
+                                            sample_data=shap_sample.values,
+                                            explainer=explainer,
+                                            shap_values=shap_values,
+                                            model_name=f"{model_name}_{scaler_name}",
+                                            feature_names=input_columns
+                                        )
+                                        
+                                        with log_container:
+                                            if shap_cache_file:
+                                                st.success(f"🔍 SHAP cache saved successfully: {shap_cache_file}")
+                                            else:
+                                                st.error(f"❌ SHAP cache save failed for {model_name}")
+                                                
+                                    except Exception as shap_values_error:
+                                        with log_container:
+                                            st.warning(f"⚠️ Failed to generate SHAP values for {model_name}: {shap_values_error}")
+                                else:
+                                    with log_container:
+                                        st.warning(f"⚠️ Failed to create SHAP explainer for {model_name}")
+                                
+                            except Exception as explainer_error:
+                                with log_container:
+                                    st.warning(f"⚠️ SHAP explainer creation failed for {model_name}: {explainer_error}")
+                        else:
+                            with log_container:
+                                st.error("❌ SHAP not available - skipping SHAP cache generation")
+                                st.error("❌ This is why no SHAP cache is being created!")
+                                st.info("💡 Please install SHAP: pip install shap")
+                                st.info("💡 Or use conda environment: conda activate PJ3.1")
+                    
+                    except Exception as shap_error:
+                        with log_container:
+                            st.error(f"❌ SHAP cache generation failed for {model_name}: {shap_error}")
+                            st.error(f"❌ Error type: {type(shap_error).__name__}")
+                            st.error(f"❌ Error details: {str(shap_error)}")
+                            st.info("ℹ️ Continuing with training without SHAP cache...")
+                
+                except Exception as cache_error:
+                    with log_container:
+                        st.warning(f"⚠️ Cache save failed for {model_name}: {cache_error}")
+                
                 with log_container:
-                    st.warning(f"⚠️ Cache save failed for {model_name}: {cache_error}")
+                    st.success(f"✅ {model_name} ({scaler_name}): Val={best_score:.4f}, Test={test_accuracy:.4f} ({training_time:.2f}s)")
             
-            with log_container:
-                st.success(f"✅ {model_name} ({scaler_name}): Val={best_score:.4f}, Test={test_accuracy:.4f} ({training_time:.2f}s)")
-            
-        except Exception as e:
-            with log_container:
-                st.error(f"❌ {model_name} ({scaler_name}) failed: {str(e)}")
-            scaler_results[model_name] = {
-                'model': None,
-                'accuracy': 0.0,
-                'f1_score': 0.0,
-                'precision': 0.0,
-                'recall': 0.0,
-                'support': 0,
-                'cv_mean': 0.0,
-                'cv_std': 0.0,
-                'training_time': 0.0,
-                'params': {},
-                'status': 'failed',
-                'error': str(e)
-            }
+            except Exception as e:
+                with log_container:
+                    st.error(f"❌ {model_name} ({scaler_name}) failed: {str(e)}")
+                scaler_results[model_name] = {
+                    'model': None,
+                    'accuracy': 0.0,
+                    'f1_score': 0.0,
+                    'precision': 0.0,
+                    'recall': 0.0,
+                    'support': 0,
+                    'cv_mean': 0.0,
+                    'cv_std': 0.0,
+                    'training_time': 0.0,
+                    'params': {},
+                    'status': 'failed',
+                    'error': str(e)
+                }
+        
+        with log_container:
+            st.info(f"🔍 DEBUG: train_models_with_scaling completed for {scaler_name}")
+            st.info(f"🔍 DEBUG: scaler_results count = {len(scaler_results)}")
+            st.info(f"🔍 DEBUG: scaler_results keys = {list(scaler_results.keys())}")
+            st.info(f"🔍 DEBUG: About to return results for {scaler_name}")
+        
+        result = {
+            'model_results': scaler_results,
+            'status': 'success'
+        }
+        
+        with log_container:
+            st.info(f"🔍 DEBUG: Returning result for {scaler_name}: {result}")
+        
+        return result
     
-    return {
-        'model_results': scaler_results,
-        'status': 'success'
-    }
+    except Exception as e:
+        with log_container:
+            st.error(f"❌ train_models_with_scaling failed for {scaler_name}: {str(e)}")
+            import traceback
+            st.error(f"❌ Traceback: {traceback.format_exc()}")
+        return {
+            'model_results': {},
+            'status': 'failed',
+            'error': str(e)
+        }
 
 
 def train_numeric_data_directly(df, input_columns, label_column, selected_models, optuna_config, voting_config, stacking_config, progress_bar, status_text, numeric_scalers=None, remove_duplicates=False, data_split_config=None):
@@ -1153,11 +1343,18 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             try:
                 scaling_result = train_models_with_scaling(
                     X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, 
-                    selected_models, optuna_config, scaler_name, log_container
+                    selected_models, optuna_config, scaler_name, log_container, input_columns
                 )
                 
                 # Extract scaler_results from the returned structure
-                scaler_results = scaling_result.get('model_results', {})
+                if scaling_result is None:
+                    with log_container:
+                        st.error(f"❌ Scaling method {scaler_name} returned None")
+                    scaler_results = {}
+                else:
+                    scaler_results = scaling_result.get('model_results', {})
+                    with log_container:
+                        st.info(f"🔍 DEBUG: {scaler_name} returned {len(scaler_results)} models")
                 
                 # Merge results with scaling method prefix
                 for model_name, result in scaler_results.items():
@@ -1165,12 +1362,13 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     model_results[prefixed_name] = result
                     training_times[prefixed_name] = result.get('training_time', 0)
                 
-                # Debug: Show individual model results
-                st.info(f"🔍 DEBUG: {scaler_name} - Individual models trained: {list(scaler_results.keys())}")
-                for model_name, result in scaler_results.items():
-                    status = result.get('status', 'unknown')
-                    accuracy = result.get('validation_accuracy', 0)
-                    st.info(f"🔍 DEBUG: {model_name}_{scaler_name}: status={status}, accuracy={accuracy:.4f}")
+                # Debug: Show individual model results in Training Log
+                with log_container:
+                    st.info(f"🔍 DEBUG: {scaler_name} - Individual models trained: {list(scaler_results.keys())}")
+                    for model_name, result in scaler_results.items():
+                        status = result.get('status', 'unknown')
+                        accuracy = result.get('validation_accuracy', 0)
+                        st.info(f"🔍 DEBUG: {model_name}_{scaler_name}: status={status}, accuracy={accuracy:.4f}")
                     
             except Exception as scaling_error:
                 st.error(f"❌ Scaling method {scaler_name} failed: {str(scaling_error)}")
@@ -1182,29 +1380,31 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         # Train ensemble models if enabled
         ensemble_results = {}
         
-        # Debug: Show that we reached ensemble logic
-        st.info("🔍 DEBUG: Reached ensemble training logic!")
-        st.info(f"🔍 DEBUG: model_results keys = {list(model_results.keys())}")
-        st.info(f"🔍 DEBUG: model_results count = {len(model_results)}")
-        
-        # Debug: Check if model_results is empty
-        if not model_results:
-            st.error("❌ DEBUG: model_results is EMPTY! No individual models trained successfully!")
-            st.error("❌ DEBUG: This means ensemble training cannot proceed!")
-            return {
-                'status': 'failed',
-                'error': 'No individual models trained successfully',
-                'model_results': {},
-                'training_times': {}
-            }
-        
-        # Debug: Show successful models
-        successful_models = [k for k, v in model_results.items() if v.get('status') == 'success']
-        st.info(f"🔍 DEBUG: Successful models: {successful_models}")
-        st.info(f"🔍 DEBUG: Successful models count: {len(successful_models)}")
+        # Debug: Show ensemble training info in Training Log
+        with log_container:
+            st.info("🔍 DEBUG: Reached ensemble training logic!")
+            st.info(f"🔍 DEBUG: model_results keys = {list(model_results.keys())}")
+            st.info(f"🔍 DEBUG: model_results count = {len(model_results)}")
+            
+            # Debug: Check if model_results is empty
+            if not model_results:
+                st.error("❌ DEBUG: model_results is EMPTY! No individual models trained successfully!")
+                st.error("❌ DEBUG: This means ensemble training cannot proceed!")
+                return {
+                    'status': 'failed',
+                    'error': 'No individual models trained successfully',
+                    'model_results': {},
+                    'training_times': {}
+                }
+            
+            # Debug: Show successful models
+            successful_models = [k for k, v in model_results.items() if v.get('status') == 'success']
+            st.info(f"🔍 DEBUG: Successful models: {successful_models}")
+            st.info(f"🔍 DEBUG: Successful models count: {len(successful_models)}")
         
         if not successful_models:
-            st.error("❌ DEBUG: No successful models found! Ensemble training cannot proceed!")
+            with log_container:
+                st.error("❌ DEBUG: No successful models found! Ensemble training cannot proceed!")
             return {
                 'status': 'failed',
                 'error': 'No successful individual models found',
@@ -1213,19 +1413,19 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             }
         
         # Force enable ensemble for testing (remove this after debugging)
-        if not voting_config.get('enabled', False):
-            st.warning("🔧 DEBUG: Force enabling voting ensemble for testing")
-            voting_config['enabled'] = True
-            voting_config['models'] = ['random_forest', 'xgboost', 'adaboost']
-            voting_config['voting_method'] = 'hard'
-        
-        if not stacking_config.get('enabled', False):
-            st.warning("🔧 DEBUG: Force enabling stacking ensemble for testing")
-            stacking_config['enabled'] = True
-            stacking_config['base_models'] = ['random_forest', 'xgboost', 'adaboost']
-            stacking_config['meta_learner'] = 'logistic_regression'
-        
         with log_container:
+            if not voting_config.get('enabled', False):
+                st.warning("🔧 DEBUG: Force enabling voting ensemble for testing")
+                voting_config['enabled'] = True
+                voting_config['models'] = ['random_forest', 'xgboost', 'adaboost']
+                voting_config['voting_method'] = 'hard'
+            
+            if not stacking_config.get('enabled', False):
+                st.warning("🔧 DEBUG: Force enabling stacking ensemble for testing")
+                stacking_config['enabled'] = True
+                stacking_config['base_models'] = ['random_forest', 'xgboost', 'adaboost']
+                stacking_config['meta_learner'] = 'logistic_regression'
+        
             st.info(f"🔍 Debug: voting_config = {voting_config}")
             st.info(f"🔍 Debug: stacking_config = {stacking_config}")
             st.info(f"🔍 Debug: voting_config.get('enabled') = {voting_config.get('enabled', False)}")
@@ -3804,7 +4004,8 @@ def render_step4_wireframe():
                             )
                             
                             # Debug: Show session key
-                            st.info(f"🔍 Debug: Generated session key: {session_key}")
+                            with results_debug_container:
+                                st.info(f"🔍 Debug: Generated session key: {session_key}")
                             
                             # Save comprehensive results to cache
                             cache_path = training_results_cache.save_training_results(session_key, results)
@@ -3820,7 +4021,8 @@ def render_step4_wireframe():
                                 'status': results.get('status', 'unknown')
                             }
                             session_manager.set_step_data(4, step4_data)
-                            st.success("💾 Training results saved to cache successfully!")
+                            with results_debug_container:
+                                st.success("💾 Training results saved to cache successfully!")
                             
                         except Exception as cache_error:
                             st.warning(f"⚠️ Cache save failed: {str(cache_error)}")
@@ -3852,8 +4054,9 @@ def render_step4_wireframe():
                     # Don't aggressively delete objects that might be needed for UI updates
                     # Let Python's garbage collector handle cleanup naturally
                         
-                    st.success("✅ Training results saved!")
-                    st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
+                    with results_debug_container:
+                        st.success("✅ Training results saved!")
+                        st.info("💡 Click 'Next ▶' button to proceed to Step 5.")
                     
                     # Mark training as completed (will be set in finally block)
                 else:
@@ -4729,7 +4932,8 @@ def render_shap_analysis():
                     try:
                         # Import cache manager and visualization
                         from cache_manager import CacheManager
-                        from visualization import create_shap_explainer, generate_shap_summary_plot, generate_shap_bar_plot, generate_shap_dependence_plot
+                        from visualization import create_shap_explainer, generate_shap_summary_plot, generate_shap_bar_plot, generate_shap_dependence_plot, plot_shap_waterfall
+                        import numpy as np
                         
                         # Initialize cache manager
                         cache_manager = CacheManager()
@@ -4766,6 +4970,65 @@ def render_shap_analysis():
                         
                         st.success(f"✅ Found {len(cached_models)} cached models for SHAP analysis")
                         
+                        # Check SHAP cache availability
+                        st.info("🔍 Checking SHAP cache availability...")
+                        try:
+                            from shap_cache_manager import shap_cache_manager
+                            import os
+                            import time
+                            cache_dir = shap_cache_manager.cache_dir
+                            
+                            with st.expander("🔍 SHAP Cache Debug Info", expanded=False):
+                                st.info(f"🔍 Cache directory: {cache_dir}")
+                                st.info(f"🔍 Cache directory exists: {cache_dir.exists()}")
+                                if cache_dir.exists():
+                                    cache_files = list(cache_dir.glob("*.pkl"))
+                                    st.info(f"🔍 Cache files found: {len(cache_files)}")
+                                    if cache_files:
+                                        st.info("🔍 Cache file details:")
+                                        for cache_file in cache_files[:5]:  # Show first 5 files
+                                            file_size = cache_file.stat().st_size if cache_file.exists() else 0
+                                            file_age = time.time() - cache_file.stat().st_mtime if cache_file.exists() else 0
+                                            st.info(f"  - {cache_file.name} (size: {file_size} bytes, age: {file_age:.1f}s)")
+                                else:
+                                    st.warning("⚠️ SHAP cache directory does not exist")
+                                    st.info("💡 This means Step 4 never created SHAP cache")
+                            
+                            if cache_dir.exists():
+                                cache_files = list(cache_dir.glob("*.pkl"))
+                                if cache_files:
+                                    st.success(f"✅ Found {len(cache_files)} SHAP cache files")
+                                    st.info("Available SHAP cache files:")
+                                    for cache_file in cache_files[:10]:  # Show first 10 files
+                                        st.info(f"  - {cache_file.name}")
+                                    if len(cache_files) > 10:
+                                        st.info(f"  ... and {len(cache_files) - 10} more files")
+                                else:
+                                    st.warning("⚠️ No SHAP cache files found")
+                                    st.info("💡 Please complete Step 4 training to generate SHAP cache first.")
+                            else:
+                                st.warning("⚠️ SHAP cache directory does not exist")
+                                st.info("💡 Please complete Step 4 training to generate SHAP cache first.")
+                        except Exception as e:
+                            st.error(f"❌ Error checking SHAP cache: {e}")
+                        
+                        # Check if any SHAP cache files exist
+                        try:
+                            cache_dir = shap_cache_manager.cache_dir
+                            cache_files = list(cache_dir.glob("*.pkl")) if cache_dir.exists() else []
+                            
+                            if not cache_files:
+                                st.error("❌ No SHAP cache files found!")
+                                st.info("💡 **To generate SHAP cache:**")
+                                st.info("1. Go to Step 4 (Training Execution & Monitoring)")
+                                st.info("2. Enable SHAP cache generation during training")
+                                st.info("3. Complete the training process")
+                                st.info("4. Return to Step 5 to view SHAP analysis")
+                                return
+                        except Exception as e:
+                            st.error(f"❌ Error checking SHAP cache: {e}")
+                            return
+                        
                         # Generate SHAP plots for each cached model
                         for model_data in cached_models:
                             model_name = model_data['model_name']
@@ -4801,37 +5064,166 @@ def render_shap_analysis():
                                 else:
                                     sample_data = test_data
                                 
-                                # Create SHAP explainer
-                                st.info(f"🔍 Debug: Model type = {type(model)}, Model class = {model.__class__.__name__}")
-                                explainer = create_shap_explainer(model, sample_data)
-                                if explainer is None:
-                                    st.error(f"❌ Failed to create SHAP explainer for {model_name}")
+                                # Try to load SHAP cache first
+                                from shap_cache_manager import shap_cache_manager
+                                from visualization import (
+                                    generate_shap_summary_plot_from_values,
+                                    generate_shap_bar_plot_from_values,
+                                    generate_shap_dependence_plot_from_values,
+                                    plot_shap_waterfall_from_values
+                                )
+                                
+                                # Try different cache key formats
+                                cache_keys_to_try = [
+                                    cache_info['model_key'],  # Original key
+                                    model_name,  # Just model name
+                                    f"{model_name}_{cache_info.get('scaler_name', 'StandardScaler')}",  # Model name + scaler
+                                    f"{model_name}_StandardScaler",  # Default scaler
+                                    f"{model_name}_MinMaxScaler",  # Alternative scaler
+                                    f"{model_name}_RobustScaler",  # Alternative scaler
+                                ]
+                                
+                                # Remove duplicates while preserving order
+                                cache_keys_to_try = list(dict.fromkeys(cache_keys_to_try))
+                                
+                                cached_explainer, cached_shap_values = None, None
+                                successful_key = None
+                                
+                                for cache_key in cache_keys_to_try:
+                                    st.info(f"🔍 Trying SHAP cache key: '{cache_key}'")
+                                    cached_explainer, cached_shap_values = shap_cache_manager.load_shap_cache(
+                                        model=model,
+                                        sample_data=sample_data,
+                                        model_name=cache_key
+                                    )
+                                    if cached_shap_values is not None:
+                                        successful_key = cache_key
+                                        st.success(f"✅ Found SHAP cache with key: '{cache_key}'")
+                                        break
+                                    else:
+                                        st.info(f"❌ No SHAP cache found for key: '{cache_key}'")
+                                
+                                # Debug: List available SHAP cache files
+                                if cached_shap_values is None:
+                                    st.info("🔍 Debug: Available SHAP cache files:")
+                                    try:
+                                        import os
+                                        cache_dir = shap_cache_manager.cache_dir
+                                        if cache_dir.exists():
+                                            cache_files = list(cache_dir.glob("*.pkl"))
+                                            if cache_files:
+                                                for cache_file in cache_files[:10]:  # Show first 10 files
+                                                    st.info(f"  - {cache_file.name}")
+                                            else:
+                                                st.info("  - No SHAP cache files found")
+                                        else:
+                                            st.info("  - SHAP cache directory does not exist")
+                                    except Exception as e:
+                                        st.info(f"  - Error listing cache files: {e}")
+                                
+                                if cached_shap_values is not None:
+                                    st.success(f"✅ Loaded SHAP cache for {model_name} (key: {successful_key})")
+                                    # Use cached SHAP values
+                                    shap_values = cached_shap_values
+                                    explainer = None  # We have cached values, don't need explainer
+                                else:
+                                    st.warning(f"⚠️ No SHAP cache found for {model_name}")
+                                    st.info("💡 Please complete Step 4 training to generate SHAP cache first.")
+                                    st.info("ℹ️ Skipping SHAP analysis for this model.")
                                     continue
                                 
-                                shap_values = explainer.shap_values(sample_data)
+                                # Get feature names from cache
+                                feature_names = cache_data.get('feature_names')
+                                if feature_names is None:
+                                    # Fallback: create generic feature names
+                                    feature_names = [f"Feature_{i}" for i in range(sample_data.shape[1])]
+                                
+                                st.info(f"🔍 Debug: Using {len(feature_names)} feature names: {feature_names}")
                                 
                                 # Generate plots based on selected types
                                 for plot_type in plot_types:
                                     if plot_type == "summary":
-                                        fig = generate_shap_summary_plot(explainer, sample_data)
+                                        if explainer is not None:
+                                            fig = generate_shap_summary_plot(explainer, sample_data, feature_names)
+                                        else:
+                                            # Use cached SHAP values for summary plot
+                                            fig = generate_shap_summary_plot_from_values(shap_values, sample_data, feature_names)
                                         if fig:
                                             st.pyplot(fig)
                                     
                                     elif plot_type == "bar":
-                                        fig = generate_shap_bar_plot(explainer, sample_data)
+                                        if explainer is not None:
+                                            fig = generate_shap_bar_plot(explainer, sample_data, feature_names)
+                                        else:
+                                            # Use cached SHAP values for bar plot
+                                            fig = generate_shap_bar_plot_from_values(shap_values, sample_data, feature_names)
                                         if fig:
                                             st.pyplot(fig)
                                     
                                     elif plot_type == "dependence":
-                                        fig = generate_shap_dependence_plot(explainer, sample_data, sample_data)
-                                        if fig:
-                                            st.pyplot(fig)
+                                        # Generate dependence plots for top 3 features
+                                        if isinstance(shap_values, list):
+                                            shap_values_for_dep = shap_values[1]  # Use positive class for binary classification
+                                        else:
+                                            shap_values_for_dep = shap_values
+                                        
+                                        # Calculate mean absolute SHAP values to find top features
+                                        mean_shap = np.mean(np.abs(shap_values_for_dep), axis=0)
+                                        top_features = np.argsort(mean_shap)[-3:][::-1]  # Top 3 features
+                                        
+                                        for feature_idx in top_features:
+                                            if explainer is not None:
+                                                fig = generate_shap_dependence_plot(
+                                                    explainer, sample_data, feature_names, 
+                                                    feature_index=feature_idx
+                                                )
+                                            else:
+                                                # Use cached SHAP values for dependence plot
+                                                fig = generate_shap_dependence_plot_from_values(
+                                                    shap_values_for_dep, sample_data, feature_names, 
+                                                    feature_index=feature_idx
+                                                )
+                                            if fig:
+                                                st.pyplot(fig)
+                                    
+                                    elif plot_type == "waterfall":
+                                        # Generate waterfall plots for first 3 instances
+                                        for instance_idx in range(min(3, len(sample_data))):
+                                            if explainer is not None:
+                                                fig = plot_shap_waterfall(
+                                                    explainer, sample_data, 
+                                                    instance_index=instance_idx, 
+                                                    feature_names=feature_names
+                                                )
+                                            else:
+                                                # Use cached SHAP values for waterfall plot
+                                                fig = plot_shap_waterfall_from_values(
+                                                    shap_values, sample_data, 
+                                                    instance_index=instance_idx, 
+                                                    feature_names=feature_names
+                                                )
+                                            if fig:
+                                                st.pyplot(fig)
                                 
-                                st.success(f"✅ SHAP plots generated for {model_name}")
+                                # Count generated plots
+                                plot_count = len(plot_types)
+                                if "dependence" in plot_types:
+                                    plot_count += 2  # +2 for top 3 features (minus 1 for the base plot_type)
+                                if "waterfall" in plot_types:
+                                    plot_count += 2  # +2 for first 3 instances (minus 1 for the base plot_type)
+                                
+                                st.success(f"✅ Generated {plot_count} SHAP plots for {model_name}")
                                 
                             except Exception as e:
                                 st.error(f"❌ Error generating SHAP plots for {model_name}: {str(e)}")
                                 continue
+                        
+                        # Summary
+                        st.success("✅ SHAP analysis completed!")
+                        st.info("📊 **Summary:**")
+                        st.info(f"- Models processed: {len(cached_models)}")
+                        st.info(f"- SHAP cache files found: {len(cache_files)}")
+                        st.info("- Only cached SHAP data was used (no new training)")
                         
                         # Save SHAP configuration
                         shap_config = {

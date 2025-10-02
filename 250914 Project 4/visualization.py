@@ -210,31 +210,71 @@ def create_shap_explainer(model, X_sample, model_type="auto"):
         # Determine model type and create appropriate explainer
         model_type_str = str(type(underlying_model)).lower()
         
-        # Try TreeExplainer for tree-based models
+        # Try TreeExplainer for tree-based models (with memory protection)
         if any(keyword in model_type_str for keyword in ['randomforest', 'lightgbm', 'xgboost', 'gradientboosting', 'decisiontree']):
             try:
                 print(f"Attempting TreeExplainer for {underlying_name}")
+                
+                # Memory safety check
+                if len(X_sample) > 30:  # Limit sample size to prevent memory issues
+                    print(f"Warning: Sample size {len(X_sample)} too large, using first 30 samples")
+                    X_sample = X_sample[:30]
+                
                 explainer = shap.TreeExplainer(underlying_model)
-                print(f"SUCCESS: Created TreeExplainer for {underlying_name}")
-                return explainer
+                
+                # Test explainer with small sample to ensure it works
+                test_sample = X_sample[:5] if len(X_sample) >= 5 else X_sample
+                try:
+                    _ = explainer.shap_values(test_sample)
+                    print(f"SUCCESS: Created TreeExplainer for {underlying_name}")
+                    return explainer
+                except Exception as test_error:
+                    print(f"WARNING: TreeExplainer test failed for {underlying_name}: {test_error}")
+                    del explainer
+                    import gc
+                    gc.collect()
+                    raise test_error
+                    
             except Exception as e:
                 print(f"WARNING: TreeExplainer failed for {underlying_name}: {e}")
+                import gc
+                gc.collect()  # Force cleanup
                 # Fallback to Explainer with predict_proba
                 pass
         
-        # Try Explainer with predict_proba for other models
+        # Try Explainer with predict_proba for other models (with memory protection)
         try:
             print(f"Attempting Explainer with predict_proba for {underlying_name}")
+            
+            # Memory safety check
+            if len(X_sample) > 20:  # Limit sample size to prevent memory issues
+                print(f"Warning: Sample size {len(X_sample)} too large, using first 20 samples")
+                X_sample = X_sample[:20]
             
             def predict_proba_wrapper(X):
                 return underlying_model.predict_proba(X)
             
-            explainer = shap.Explainer(predict_proba_wrapper, X_sample)
-            print(f"SUCCESS: Created Explainer with predict_proba for {underlying_name}")
-            return explainer
+            # Create explainer with smaller background
+            background_sample = X_sample[:10] if len(X_sample) >= 10 else X_sample
+            explainer = shap.Explainer(predict_proba_wrapper, background_sample)
+            
+            # Test explainer
+            test_sample = X_sample[:3] if len(X_sample) >= 3 else X_sample
+            try:
+                _ = explainer(test_sample)
+                print(f"SUCCESS: Created Explainer with predict_proba for {underlying_name}")
+                return explainer
+            except Exception as test_error:
+                print(f"WARNING: Explainer test failed for {underlying_name}: {test_error}")
+                del explainer
+                import gc
+                gc.collect()
+                raise test_error
             
         except Exception as e:
             print(f"ERROR: All SHAP explainer methods failed for {underlying_name}: {e}")
+            import gc
+            gc.collect()  # Force cleanup
             return None
             
     except ImportError:
@@ -566,6 +606,114 @@ def generate_comprehensive_shap_analysis(model, X_sample, feature_names=None,
         print(f"❌ Error in comprehensive SHAP analysis: {e}")
         return None
 
+
+def generate_shap_summary_plot_from_values(shap_values, X_sample, feature_names=None):
+    """Generate SHAP summary plot from cached SHAP values"""
+    try:
+        import shap
+        import matplotlib.pyplot as plt
+        
+        # Handle multi-class SHAP values
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]  # Use positive class for binary classification
+        
+        plt.figure(figsize=(10, 8))
+        shap.summary_plot(shap_values, X_sample, feature_names=feature_names, show=False)
+        plt.title("SHAP Summary Plot (from cache)")
+        plt.tight_layout()
+        return plt.gcf()
+        
+    except Exception as e:
+        print(f"Error generating summary plot from cached values: {e}")
+        return None
+
+def generate_shap_bar_plot_from_values(shap_values, X_sample, feature_names=None):
+    """Generate SHAP bar plot from cached SHAP values"""
+    try:
+        import shap
+        import matplotlib.pyplot as plt
+        
+        # Handle multi-class SHAP values
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]  # Use positive class for binary classification
+        
+        plt.figure(figsize=(10, 6))
+        shap.bar_plot(shap_values, feature_names=feature_names, show=False)
+        plt.title("SHAP Bar Plot (from cache)")
+        plt.tight_layout()
+        return plt.gcf()
+        
+    except Exception as e:
+        print(f"Error generating bar plot from cached values: {e}")
+        return None
+
+def generate_shap_dependence_plot_from_values(shap_values, X_sample, feature_names=None, feature_index=0):
+    """Generate SHAP dependence plot from cached SHAP values"""
+    try:
+        import shap
+        import matplotlib.pyplot as plt
+        
+        # Handle multi-class SHAP values
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]  # Use positive class for binary classification
+        
+        plt.figure(figsize=(8, 6))
+        shap.dependence_plot(
+            feature_index, 
+            shap_values, 
+            X_sample, 
+            feature_names=feature_names,
+            show=False
+        )
+        plt.title(f"SHAP Dependence Plot - {feature_names[feature_index] if feature_names else f'Feature {feature_index}'} (from cache)")
+        plt.tight_layout()
+        return plt.gcf()
+        
+    except Exception as e:
+        print(f"Error generating dependence plot from cached values: {e}")
+        return None
+
+def plot_shap_waterfall_from_values(shap_values, X_sample, instance_index=0, feature_names=None):
+    """Generate SHAP waterfall plot from cached SHAP values"""
+    try:
+        import shap
+        import matplotlib.pyplot as plt
+        import numpy as np
+        
+        # Handle multi-class SHAP values
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1]  # Use positive class for binary classification
+        
+        # Get SHAP values for single instance
+        instance_values = shap_values[instance_index]
+        
+        plt.figure(figsize=(12, 8))
+        
+        # Create Explanation object for waterfall plot
+        try:
+            # Calculate expected value
+            expected_value = np.mean(shap_values)
+            
+            # Create Explanation object for waterfall plot
+            explanation = shap.Explanation(
+                values=instance_values,
+                base_values=expected_value,
+                data=X_sample[instance_index],
+                feature_names=feature_names
+            )
+            shap.waterfall_plot(explanation, show=False)
+        except Exception as wf_error:
+            print(f"Warning: Waterfall plot failed, using bar plot instead: {wf_error}")
+            # Fallback to bar plot
+            shap.bar_plot(instance_values, feature_names=feature_names, show=False)
+        
+        plt.title(f"SHAP Waterfall Plot - Instance {instance_index} (from cache)")
+        plt.tight_layout()
+        return plt.gcf()
+        
+    except Exception as e:
+        print(f"Error generating waterfall plot from cached values: {e}")
+        return None
 
 def plot_shap_waterfall(explainer, X_sample, instance_index=0, feature_names=None, save_path=None):
     """
