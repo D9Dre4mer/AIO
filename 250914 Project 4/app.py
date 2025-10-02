@@ -17,6 +17,7 @@ import seaborn as sns
 import sys
 import os
 import time
+import pickle
 from datetime import datetime
 
 # Add current directory to Python path
@@ -1091,9 +1092,8 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                                     st.info(f"🔍 Model type check: {model_name} is tree-based - suitable for SHAP")
                             else:
                                 with log_container:
-                                    st.info(f"ℹ️ Model type check: {model_name} is not tree-based - skipping SHAP cache")
-                                # Skip SHAP cache generation but continue with model cache saving
-                                shap_available = False
+                                    st.info(f"ℹ️ Model type check: {model_name} is not tree-based - will try SHAP anyway")
+                                # Don't skip SHAP cache generation - SHAP can work with many model types
                         
                             # Safety Check 7: Import SHAP cache manager with error handling
                             try:
@@ -1117,16 +1117,30 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         
                             # Proceed with SHAP cache generation
                             with log_container:
-                                st.info(f"🔍 Generating SHAP cache for tree-based model: {model_name}")
+                                st.info(f"🔍 Generating SHAP cache for model: {model_name}")
                             
                             # Create SHAP explainer with comprehensive error handling
                             try:
+                                with log_container:
+                                    st.info(f"🔍 Creating SHAP explainer for {model_name} ({scaler_name})")
+                                    st.info(f"🔍 Model type: {type(final_model)}")
+                                    st.info(f"🔍 Sample data shape: {shap_sample.values.shape}")
+                                
                                 explainer = create_shap_explainer(final_model, shap_sample.values)
                                 
                                 if explainer is not None:
+                                    with log_container:
+                                        st.success(f"✅ SHAP explainer created successfully for {model_name}")
+                                    
                                     # Generate SHAP values with timeout protection
                                     try:
+                                        with log_container:
+                                            st.info(f"🔍 Generating SHAP values for {model_name}")
+                                        
                                         shap_values = explainer.shap_values(shap_sample.values)
+                                        
+                                        with log_container:
+                                            st.success(f"✅ SHAP values generated successfully for {model_name}")
                                         
                                         # Save SHAP cache
                                         with log_container:
@@ -1140,7 +1154,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                                             sample_data=shap_sample.values,
                                             explainer=explainer,
                                             shap_values=shap_values,
-                                            model_name=f"{model_name}_{scaler_name}",
+                                            model_name=f"{model_key}_{scaler_name}",
                                             feature_names=input_columns
                                         )
                                         
@@ -1412,20 +1426,8 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                 'training_times': training_times
             }
         
-        # Force enable ensemble for testing (remove this after debugging)
+        # Debug: Show ensemble configuration
         with log_container:
-            if not voting_config.get('enabled', False):
-                st.warning("🔧 DEBUG: Force enabling voting ensemble for testing")
-                voting_config['enabled'] = True
-                voting_config['models'] = ['random_forest', 'xgboost', 'adaboost']
-                voting_config['voting_method'] = 'hard'
-            
-            if not stacking_config.get('enabled', False):
-                st.warning("🔧 DEBUG: Force enabling stacking ensemble for testing")
-                stacking_config['enabled'] = True
-                stacking_config['base_models'] = ['random_forest', 'xgboost', 'adaboost']
-                stacking_config['meta_learner'] = 'logistic_regression'
-        
             st.info(f"🔍 Debug: voting_config = {voting_config}")
             st.info(f"🔍 Debug: stacking_config = {stacking_config}")
             st.info(f"🔍 Debug: voting_config.get('enabled') = {voting_config.get('enabled', False)}")
@@ -1463,7 +1465,12 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                 best_scaler = scaler_name
                     
                     if best_model is not None:
-                        voting_models.append((f"{model_name}_{best_scaler}", best_model))
+                        # Extract the actual sklearn model from wrapper if needed
+                        actual_model = best_model
+                        if hasattr(best_model, 'model') and best_model.model is not None:
+                            actual_model = best_model.model
+                        
+                        voting_models.append((f"{model_name}_{best_scaler}", actual_model))
                         voting_model_names.append(f"{model_name}_{best_scaler}")
                 
                 if voting_models:
@@ -1486,7 +1493,11 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     precision = precision_score(y_test, y_pred, average='weighted')
                     recall = recall_score(y_test, y_pred, average='weighted')
                     
-                    ensemble_results['voting_ensemble'] = {
+                    # Create descriptive name for voting ensemble
+                    voting_method = voting_config.get('voting_method', 'hard')
+                    voting_ensemble_name = f"Voting Ensemble ({voting_method.title()})"
+                    
+                    ensemble_results[voting_ensemble_name] = {
                         'model': voting_clf,
                         'accuracy': accuracy,
                         'validation_accuracy': accuracy,  # Use test accuracy as validation
@@ -1512,7 +1523,11 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             except Exception as e:
                 with log_container:
                     st.error(f"❌ Voting ensemble training failed: {str(e)}")
-                ensemble_results['voting_ensemble'] = {
+                # Create descriptive name for failed voting ensemble
+                voting_method = voting_config.get('voting_method', 'hard')
+                voting_ensemble_name = f"Voting Ensemble ({voting_method.title()})"
+                
+                ensemble_results[voting_ensemble_name] = {
                     'status': 'failed',
                     'error': str(e)
                 }
@@ -1555,7 +1570,12 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                 best_scaler = scaler_name
                     
                     if best_model is not None:
-                        stacking_models.append((f"{model_name}_{best_scaler}", best_model))
+                        # Extract the actual sklearn model from wrapper if needed
+                        actual_model = best_model
+                        if hasattr(best_model, 'model') and best_model.model is not None:
+                            actual_model = best_model.model
+                        
+                        stacking_models.append((f"{model_name}_{best_scaler}", actual_model))
                         stacking_model_names.append(f"{model_name}_{best_scaler}")
                 
                 if stacking_models:
@@ -1589,7 +1609,11 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     precision = precision_score(y_test, y_pred, average='weighted')
                     recall = recall_score(y_test, y_pred, average='weighted')
                     
-                    ensemble_results['stacking_ensemble'] = {
+                    # Create descriptive name for stacking ensemble
+                    meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
+                    stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()})"
+                    
+                    ensemble_results[stacking_ensemble_name] = {
                         'model': stacking_clf,
                         'accuracy': accuracy,
                         'validation_accuracy': accuracy,  # Use test accuracy as validation
@@ -1615,7 +1639,11 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             except Exception as e:
                 with log_container:
                     st.error(f"❌ Stacking ensemble training failed: {str(e)}")
-                ensemble_results['stacking_ensemble'] = {
+                # Create descriptive name for failed stacking ensemble
+                meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
+                stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()})"
+                
+                ensemble_results[stacking_ensemble_name] = {
                     'status': 'failed',
                     'error': str(e)
                 }
@@ -3597,10 +3625,13 @@ def render_step4_wireframe():
     # Create debug container for configuration details
     config_debug_container = st.expander("🔍 Configuration Debug", expanded=False)
     
+    # Load configurations from Step 3 (always load, not just for display)
+    optuna_config = step3_data.get('optuna_config', {})
+    voting_config = step3_data.get('voting_config', {})
+    stacking_config = step3_data.get('stacking_config', {})
+    
     # Only show configuration summary if training hasn't started
     if not st.session_state.training_started:
-        # Optuna configuration
-        optuna_config = step3_data.get('optuna_config', {})
         if optuna_config.get('enabled', False):
             with config_debug_container:
                 st.success(f"✅ Optuna: {optuna_config.get('trials', 'N/A')} trials, {len(optuna_config.get('models', []))} models")
@@ -3608,8 +3639,6 @@ def render_step4_wireframe():
             with config_debug_container:
                 st.info("ℹ️ Optuna: Disabled")
         
-        # Voting configuration
-        voting_config = step3_data.get('voting_config', {})
         if voting_config.get('enabled', False):
             with config_debug_container:
                 st.success(f"✅ Voting: {voting_config.get('voting_method', 'N/A')} voting, {len(voting_config.get('models', []))} models")
@@ -3619,8 +3648,6 @@ def render_step4_wireframe():
                 st.warning("⚠️ Voting: Disabled - Enable in Step 3 to train voting ensemble")
                 st.info(f"🔍 Debug: Loaded voting_config = {voting_config}")
         
-        # Stacking configuration
-        stacking_config = step3_data.get('stacking_config', {})
         if stacking_config.get('enabled', False):
             with config_debug_container:
                 st.success(f"✅ Stacking: {stacking_config.get('meta_learner', 'N/A')} meta-learner, {len(stacking_config.get('base_models', []))} base models")
@@ -4220,658 +4247,95 @@ def render_step5_wireframe():
             session_manager.set_current_step(4)
             st.rerun()
         return
-    
-    # Get comprehensive results from cache
-    comprehensive_results = training_results.get('comprehensive_results', [])
-    
-    
-    if not comprehensive_results:
-        st.error("❌ No comprehensive results found for analysis.")
-        st.info("💡 This might happen if Step 4 didn't complete successfully.")
-        return
-    
-    # Tab System for Step 5
-    # Create tabs for different views
-    tab1, tab2 = st.tabs(["📊 Results Overview", "🔍 Detailed Analysis"])
-    
-    with tab1:
-        # Results Overview Tab
-        st.markdown("**📊 Results Overview**")
-        
-        # Best Model Selection Section
-        best_combinations = training_results.get('best_combinations', {})
-        best_overall = best_combinations.get('best_overall', {})
-        
-        if best_overall:
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                model_name = best_overall.get('combination_key', 'N/A')
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>🥇 TOP PERFORMER</h4>
-                    <p><strong>{model_name}</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                f1_score = best_overall.get('f1_score', 0)
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>📊 F1 Score</h4>
-                    <p><strong>{f1_score:.3f}</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col3:
-                training_time = best_overall.get('training_time', 0)
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>⏱️ Training Time</h4>
-                    <p><strong>{training_time:.1f}s</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Additional metrics
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                test_accuracy = best_overall.get('test_accuracy', 0)
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>🎯 Test Accuracy</h4>
-                    <p><strong>{test_accuracy:.3f}</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with col2:
-                if 'test_metrics' in best_overall:
-                    test_metrics = best_overall['test_metrics']
-                    precision = test_metrics.get('precision', 0)
-                    
-                    st.markdown(f"""
-                    <div class="metric-box">
-                        <h4>📊 Precision</h4>
-                        <p><strong>{precision:.3f}</strong></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            with col3:
-                if 'test_metrics' in best_overall:
-                    test_metrics = best_overall['test_metrics']
-                    recall = test_metrics.get('recall', 0)
-                    
-                    st.markdown(f"""
-                    <div class="metric-box">
-                        <h4>📈 Recall</h4>
-                        <p><strong>{recall:.3f}</strong></p>
-                    </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.warning("⚠️ No best model results found in training data.")
-        
-        # Model Comparison Chart Section
-        st.markdown("**🎯 Model Comparison Chart:**")
-        
-        # Create comparison data
-        comparison_data = []
-        for result in comprehensive_results:
-            if result.get('status') == 'success':
-                model_name = result.get('model_name', 'Unknown')
-                embedding_name = result.get('embedding_name', 'Unknown')
-                combination_key = f"{model_name} + {embedding_name}"
-                
-                # Get both F1 Score and Test Accuracy separately
-                f1_score = result.get('f1_score', 0)
-                test_accuracy = result.get('test_accuracy', 0)
-                
-                comparison_data.append({
-                    'Model': combination_key.replace('_', ' ').title(),
-                    'F1 Score': f1_score,
-                    'Test Accuracy': test_accuracy,
-                    'Precision': result.get('test_metrics', {}).get('precision', 0),
-                    'Recall': result.get('test_metrics', {}).get('recall', 0),
-                    'Training Time': result.get('training_time', 0)
-                })
-        
-        if comparison_data:
-            # Create interactive bar chart
-            import plotly.express as px
-            import plotly.graph_objects as go
-            
-            # Sort by F1 Score for better visualization
-            comparison_df = pd.DataFrame(comparison_data)
-            comparison_df = comparison_df.sort_values('F1 Score', ascending=False)
-            
-            # Create bar chart
-            fig = px.bar(
-                comparison_df,
-                x='Model',
-                y='F1 Score',
-                title='Model Performance Comparison (F1 Score)',
-                color='F1 Score',
-                color_continuous_scale='viridis',
-                text=comparison_df['F1 Score'].apply(lambda x: f'{x:.3f}')
-            )
-            
-            fig.update_traces(textposition='outside')
-            fig.update_layout(
-                xaxis_title="Model + Vectorization",
-                yaxis_title="F1 Score",
-                showlegend=False,
-                height=500
-            )
-            
-            st.plotly_chart(fig, width='stretch')
-            
-    
-    with tab2:    
-            # Group results by model type for better organization
-            model_groups = {}
-            for result in comprehensive_results:
-                if result.get('status') == 'success':
-                    model_name = result.get('model_name', 'Unknown')
-                    if model_name not in model_groups:
-                        model_groups[model_name] = []
-                    model_groups[model_name].append(result)
-            
-            # Create interactive table for model selection
-            model_table_data = []
-            
-            for model_name, results in model_groups.items():
-                for result in results:
-                    embedding_name = result.get('embedding_name', 'Unknown')
-                    f1_score = result.get('f1_score', 0)
-                    test_accuracy = result.get('test_accuracy', 0)
-                    training_time = result.get('training_time', 0)
-                    precision = result.get('test_metrics', {}).get('precision', 0)
-                    recall = result.get('test_metrics', {}).get('recall', 0)
-                    
-                    # Create unique key for this model combination
-                    model_key = f"{model_name}_{embedding_name}"
-                    
-                    # Safe formatting for metrics
-                    f1_display = f"{f1_score:.1%}" if f1_score is not None else "N/A"
-                    acc_display = f"{test_accuracy:.1%}" if test_accuracy is not None else "N/A"
-                    prec_display = f"{precision:.1%}" if precision is not None else "N/A"
-                    rec_display = f"{recall:.1%}" if recall is not None else "N/A"
-                    time_display = f"{training_time:.1f}" if training_time is not None else "N/A"
-                    
-                    model_table_data.append({
-                        'Model': model_name.replace('_', ' ').title(),
-                        'Vectorization': embedding_name.replace('_', ' ').title(),
-                        'F1 Score': f1_display,
-                        'Accuracy': acc_display,
-                        'Precision': prec_display,
-                        'Recall': rec_display,
-                        'Training Time (s)': time_display,
-                        'Actions': model_key  # Hidden column for actions
-                    })
-            
-            if model_table_data:
-                # Create DataFrame
-                model_df = pd.DataFrame(model_table_data)
-                             
-                # Use st.data_editor for interactive table
-                edited_df = st.data_editor(
-                    model_df.drop('Actions', axis=1),  # Hide actions column
-                    width='stretch',
-                    hide_index=True,
-                    num_rows="dynamic",
-                    column_config={
-                        "Model": st.column_config.TextColumn("🧠 Model", width="medium"),
-                        "Vectorization": st.column_config.TextColumn("🔤 Vectorization", width="medium"),
-                        "F1 Score": st.column_config.TextColumn("📊 F1 Score", width="small"),
-                        "Accuracy": st.column_config.TextColumn("🎯 Accuracy", width="small"),
-                        "Precision": st.column_config.TextColumn("📈 Precision", width="small"),
-                        "Recall": st.column_config.TextColumn("📉 Recall", width="small"),
-                        "Training Time (s)": st.column_config.NumberColumn("⏱️ Time (s)", format="%.1f", width="small")
-                    }
-                )
-                                
-                # Create selection dropdown
-                model_options = [f"{row['Model']} + {row['Vectorization']}" for row in model_table_data]
-                selected_model_display = st.selectbox(
-                    "Choose a model to analyze:",
-                    options=model_options,
-                    index=0,
-                    help="Select a model to view detailed analysis including confusion matrix"
-                )
-                
-                # Find the selected result
-                selected_result = None
-                for i, row in enumerate(model_table_data):
-                    if f"{row['Model']} + {row['Vectorization']}" == selected_model_display:
-                        # Find the actual result data
-                        for model_name, results in model_groups.items():
-                            for result in results:
-                                if (model_name.replace('_', ' ').title() == row['Model'] and 
-                                    result.get('embedding_name', 'Unknown').replace('_', ' ').title() == row['Vectorization']):
-                                    selected_result = result
-                                    break
-                            if selected_result:
-                                break
-                        break
-                
-                # Button to view details
-                if selected_result and st.button("🔍 View Detailed Analysis", type="primary", width='stretch'):
-                    # Create unique key for this model combination
-                    model_name = selected_result.get('model_name', 'Unknown')
-                    embedding_name = selected_result.get('embedding_name', 'Unknown')
-                    model_key = f"{model_name}_{embedding_name}"
-                    
-                    st.session_state.selected_model_detail = model_key
-                    st.session_state.selected_model_result = selected_result
-                    st.rerun()
-            else:
-                st.warning("⚠️ No models available for detailed analysis.")
-                   
-            successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
-            if successful_results:
-                # Find best overall model
-                best_model = max(successful_results, key=lambda x: x.get('f1_score', 0))
-                best_accuracy = best_model.get('f1_score', 0)
-                best_model_name = f"{best_model.get('model_name', 'Unknown')} + {best_model.get('embedding_name', 'Unknown')}"
-                
-                # Find fastest training model
-                fastest_model = min(successful_results, key=lambda x: x.get('training_time', float('inf')))
-                fastest_time = fastest_model.get('training_time', 0)
-                fastest_model_name = f"{fastest_model.get('model_name', 'Unknown')} + {fastest_model.get('embedding_name', 'Unknown')}"
-                
-                # Find most memory efficient (assuming smaller models are more efficient)
-                most_efficient = min(successful_results, key=lambda x: x.get('training_time', 0))  # Using training time as proxy
-                efficient_time = most_efficient.get('training_time', 0)
-                efficient_model_name = f"{most_efficient.get('model_name', 'Unknown')} + {most_efficient.get('embedding_name', 'Unknown')}"
-    
-            # Individual Model Confusion Matrix Window
-            if st.session_state.get('selected_model_detail') and st.session_state.get('selected_model_result'):
-                selected_result = st.session_state.selected_model_result
-                
-                st.markdown("---")
-                st.markdown(f"""
-                <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🧠 Model: {selected_result.get('model_name', 'Unknown').replace('_', ' ').title()} + {selected_result.get('embedding_name', 'Unknown').replace('_', ' ').title()} - Detailed Analysis</h3>
-                """, unsafe_allow_html=True)
-                
-                # Set default metric (Accuracy)
-                selected_metric = "Accuracy"
-                selected_metric_value = selected_result.get('test_accuracy', 0)
-                
-                # Set default display mode
-                cm_display_mode = "Percentages (Normalized)"
-                
-                # Add display format selection
-                cm_display_mode = st.radio(
-                    "Choose display format:",
-                    options=["Percentages (Normalized)", "Counts (Raw Numbers)"],
-                    index=0,
-                    help="Percentages show relative proportions, Counts show actual prediction numbers"
-                )
-                
-                # Display confusion matrix if available
-                # Sử dụng màu "green royal" làm theme chính cho confusion matrix
-                MAIN_THEME_CMAP = 'YlGn'  # Royal green style
-                MAIN_THEME_TITLE_COLOR = '#006400'  # Dark green (royal green)
-
-                if 'confusion_matrix' in selected_result:
-                    st.markdown("**🎯 Confusion Matrix:**")
-
-                    # Get confusion matrix data
-                    cm = selected_result['confusion_matrix']
-                    if isinstance(cm, (list, np.ndarray)) and len(cm) > 0:
-                        # Use consistent helper function to get labels
-                        # Pass cache_data to prioritize top-level labels over individual result labels
-                        cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
-                        
-
-                        
-                        unique_labels, label_mapping = _get_unique_labels_and_mapping(
-                            selected_result, 
-                            cache_data=cache_data
-                        )
-                        
-
-                        
-                        # If no unique_labels found, fall back to matrix dimensions
-                        if unique_labels is None:
-                            unique_labels = list(range(len(cm)))
-                        
-                        # Get consistent class labels
-                        class_labels = _get_consistent_labels(unique_labels, label_mapping)
-                        
-
-
-                        # Create heatmap with project theme color
-                        fig, ax = plt.subplots(figsize=(8, 6))
-                        cmap = MAIN_THEME_CMAP
-                        title_color = MAIN_THEME_TITLE_COLOR
-
-                        # Create heatmap with selected metric value in title
-                        if cm_display_mode == "Percentages (Normalized)":
-                            # Normalize confusion matrix to percentages
-                            cm_arr = np.array(cm)
-                            cm_normalized = cm_arr.astype('float') / np.sum(cm_arr, axis=1)[:, np.newaxis]
-                            cm_normalized = np.nan_to_num(cm_normalized, nan=0.0)
-
-                            # Create heatmap with percentage format
-                            sns.heatmap(
-                                cm_normalized, annot=True, fmt='.1%', cmap=cmap,
-                                xticklabels=class_labels, yticklabels=class_labels,
-                                ax=ax, cbar_kws={'label': f'{selected_metric} Focus (%)'}
-                            )
-
-                            ax.set_title(
-                                f'Confusion Matrix (Normalized %) - {selected_metric}: '
-                                f'{selected_metric_value:.1%}',
-                                color=title_color, fontsize=14, fontweight='bold'
-                            )
-                        else:
-                            # Create heatmap with count format
-                            sns.heatmap(
-                                cm, annot=True, fmt='d', cmap=cmap,
-                                xticklabels=class_labels, yticklabels=class_labels,
-                                ax=ax, cbar_kws={'label': f'{selected_metric} Focus (Counts)'}
-                            )
-
-                            ax.set_title(
-                                f'Confusion Matrix (Counts) - {selected_metric}: '
-                                f'{selected_metric_value:.1%}',
-                                color=title_color, fontsize=14, fontweight='bold'
-                            )
-                        ax.set_xlabel('Predicted', fontsize=12)
-                        ax.set_ylabel('Actual', fontsize=12)
-
-                        st.pyplot(fig)
-                        plt.close(fig)
-                    else:
-                        st.info("📊 Confusion matrix data not available for this model.")
-                elif 'predictions' in selected_result and 'true_labels' in selected_result:
-                    st.markdown("**🎯 Confusion Matrix (generated from predictions):**")
-
-                    try:
-                        from sklearn.metrics import confusion_matrix
-
-                        y_pred = selected_result['predictions']
-                        y_true = selected_result['true_labels']
-
-                        if (
-                            y_pred is not None and y_true is not None
-                            and len(y_pred) > 0 and len(y_true) > 0
-                        ):
-                            # Use consistent helper function to get labels
-                            # Pass cache_data to prioritize top-level labels over individual result labels
-                            cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
-                            
-
-                            
-                            unique_labels, label_mapping = _get_unique_labels_and_mapping(
-                                selected_result, 
-                                cache_data=cache_data
-                            )
-                            
-
-                            
-                            # If no unique_labels found, calculate from predictions
-                            if unique_labels is None:
-                                unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
-
-                            # Create confusion matrix with correct label order
-                            cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
-
-                            # Get consistent class labels
-                            class_labels = _get_consistent_labels(unique_labels, label_mapping)
-                            
-
-
-                            # Vẽ heatmap confusion matrix
-                            fig, ax = plt.subplots(figsize=(8, 6))
-                            cmap = MAIN_THEME_CMAP
-                            title_color = MAIN_THEME_TITLE_COLOR
-
-                            if cm_display_mode == "Percentages (Normalized)":
-                                cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-                                cm_normalized = np.nan_to_num(cm_normalized, nan=0.0)
-                                sns.heatmap(
-                                    cm_normalized, annot=True, fmt='.1%', cmap=cmap,
-                                    xticklabels=class_labels, yticklabels=class_labels,
-                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (%)'}
-                                )
-                                ax.set_title(
-                                    f'Confusion Matrix (Generated, Normalized %) - {selected_metric}: '
-                                    f'{selected_metric_value:.1%}',
-                                    color=title_color, fontsize=14, fontweight='bold'
-                                )
-                            else:
-                                sns.heatmap(
-                                    cm, annot=True, fmt='d', cmap=cmap,
-                                    xticklabels=class_labels, yticklabels=class_labels,
-                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (Counts)'}
-                                )
-                                ax.set_title(
-                                    f'Confusion Matrix (Generated, Counts) - {selected_metric}: '
-                                    f'{selected_metric_value:.1%}',
-                                    color=title_color, fontsize=14, fontweight='bold'
-                                )
-                            ax.set_xlabel('Predicted', fontsize=12)
-                            ax.set_ylabel('Actual', fontsize=12)
-
-                            st.pyplot(fig)
-                            plt.close(fig)
-
-                            # Lưu lại confusion matrix vào selected_result
-                            selected_result['confusion_matrix'] = cm
-                            st.success("✅ Confusion matrix generated successfully from predictions!")
-                        else:
-                            st.warning("⚠️ Predictions or true labels are empty or None")
-                    except Exception as e:
-                        st.error(f"❌ Error generating confusion matrix: {e}")
-                        st.info(
-                            "💡 This might happen if predictions/true_labels are not in the expected format"
-                        )
-                elif selected_result.get('model_name') == 'Ensemble Learning' and 'ensemble_info' in selected_result:
-                    st.markdown("**🎯 Confusion Matrix (generated from ensemble model):**")
-
-                    try:
-                        from sklearn.metrics import confusion_matrix
-
-                        # Extract data directly from ensemble model (not from base models)
-                        y_pred = selected_result.get('predictions', [])
-                        y_true = selected_result.get('true_labels', [])
-                        
-                        if not y_pred or not y_true:
-                            st.warning("⚠️ No predictions or true labels found in ensemble result")
-                            return
-                        
-                        st.info(f"✅ Using ensemble model data with {selected_result.get('embedding_name', 'unknown')} embedding")
-                        
-                        if (
-                            y_pred is not None and y_true is not None
-                            and len(y_pred) > 0 and len(y_true) > 0
-                        ):
-                            # Use consistent helper function to get labels
-                            # Pass cache_data to prioritize top-level labels over individual result labels
-                            cache_data = st.session_state.get('cache_data') or step4_data.get('training_results', {})
-                            
-                            # Create a dummy model_data dict for ensemble model
-                            ensemble_model_data = {
-                                'predictions': y_pred,
-                                'true_labels': y_true,
-                                'label_mapping': selected_result.get('label_mapping', {})
-                            }
-                            
-                            unique_labels, label_mapping = _get_unique_labels_and_mapping(
-                                selected_result, 
-                                ensemble_model_data,
-                                cache_data=cache_data
-                            )
-                            
-                            # If no unique_labels found, calculate from predictions
-                            if unique_labels is None:
-                                unique_labels = sorted(list(set(np.concatenate([y_true, y_pred]))))
-
-                            # Create confusion matrix with correct label order
-                            cm = confusion_matrix(y_true, y_pred, labels=unique_labels)
-
-                            # Get consistent class labels
-                            class_labels = _get_consistent_labels(unique_labels, label_mapping)
-                            
-
-
-                            # Draw confusion matrix heatmap
-                            fig, ax = plt.subplots(figsize=(8, 6))
-                            cmap = MAIN_THEME_CMAP
-                            title_color = MAIN_THEME_TITLE_COLOR
-
-                            if cm_display_mode == "Percentages (Normalized)":
-                                cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-                                cm_normalized = np.nan_to_num(cm_normalized, nan=0.0)
-                                sns.heatmap(
-                                    cm_normalized, annot=True, fmt='.1%', cmap=cmap,
-                                    xticklabels=class_labels, yticklabels=class_labels,
-                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (%)'}
-                                )
-                                ax.set_title(
-                                    f'Ensemble Learning Confusion Matrix (Normalized %) - {selected_metric}: '
-                                    f'{selected_metric_value:.1%}',
-                                    color=title_color, fontsize=14, fontweight='bold'
-                                )
-                            else:
-                                sns.heatmap(
-                                    cm, annot=True, fmt='d', cmap=cmap,
-                                    xticklabels=class_labels, yticklabels=class_labels,
-                                    ax=ax, cbar_kws={'label': f'{selected_metric} Focus (Counts)'}
-                                )
-                                ax.set_title(
-                                    f'Ensemble Learning Confusion Matrix (Counts) - {selected_metric}: '
-                                    f'{selected_metric_value:.1%}',
-                                    color=title_color, fontsize=14, fontweight='bold'
-                                )
-                            ax.set_xlabel('Predicted', fontsize=12)
-                            ax.set_ylabel('Actual', fontsize=12)
-
-                            st.pyplot(fig)
-                            plt.close(fig)
-
-                            # Save confusion matrix to selected_result
-                            selected_result['confusion_matrix'] = cm
-                            st.success("✅ Ensemble confusion matrix generated successfully from base model data!")
-                        else:
-                            st.warning("⚠️ Base model predictions or true labels are empty or None")
-                    except Exception as e:
-                        st.error(f"❌ Error generating ensemble confusion matrix: {e}")
-                        st.info(
-                            "💡 This might happen if ensemble base model data is not in the expected format"
-                        )
-                        import traceback
-                        st.code(traceback.format_exc())
-                else:
-                    st.info("📊 Confusion matrix not available for this model.")
-                    st.info(
-                        "💡 Available keys: " +
-                        ", ".join([
-                            k for k in selected_result.keys()
-                            if k not in ['predictions', 'true_labels', 'confusion_matrix']
-                        ])
-                    )        
-        
-              
-    # Close results container
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Export Functionality Section - Only in Tab 2
-    st.markdown("---")
-    st.markdown("""
-    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">📤 Export & Documentation:</h3>
-    """, unsafe_allow_html=True)
-        
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # CSV Export
-        if comprehensive_results:
-            # Prepare CSV data
-            csv_data = []
-            for result in comprehensive_results:
-                if result.get('status') == 'success':
-                    csv_data.append({
-                        'Model': result.get('model_name', 'Unknown'),
-                        'Vectorization': result.get('embedding_name', 'Unknown'),
-                        'F1 Score': result.get('f1_score', 0),
-                        'Test Accuracy': result.get('test_accuracy', 0),
-                        'Precision': result.get('test_metrics', {}).get('precision', 0),
-                        'Recall': result.get('test_metrics', {}).get('recall', 0),
-                        'Training Time (s)': result.get('training_time', 0),
-                        'Overfitting Level': result.get('overfitting_level', 'N/A'),
-                        'CV Mean Accuracy': result.get('cv_mean_accuracy', 0),
-                        'CV Std Accuracy': result.get('cv_std_accuracy', 0)
-                    })
-            
-            if csv_data:
-                csv_df = pd.DataFrame(csv_data)
-                csv = csv_df.to_csv(index=False)
-                
-                st.download_button(
-                    label="📥 Download Results CSV",
-                    data=csv,
-                    file_name="comprehensive_evaluation_results.csv",
-                    mime="text/csv",
-                    width='stretch'
-                )
-            else:
-                st.warning("⚠️ No data available for CSV export.")
-        else:
-            st.warning("⚠️ No results available for export.")
-    
-    with col2:
-        # Summary Report
-        if comprehensive_results:
-            # Generate summary statistics
-            successful_results = [r for r in comprehensive_results if r.get('status') == 'success']
-            
-            if successful_results:
-                total_models = len(successful_results)
-                avg_accuracy = sum(r.get('f1_score', 0) for r in successful_results) / total_models
-                avg_training_time = sum(r.get('training_time', 0) for r in successful_results) / total_models
-                
-                st.markdown(f"""
-                <div class="metric-box">
-                    <h4>📊 Summary</h4>
-                    <p>• Total Models: <strong>{total_models}</strong></p>
-                    <p>• Avg Accuracy: <strong>{avg_accuracy:.3f}</strong></p>
-                    <p>• Avg Training Time: <strong>{avg_training_time:.2f}s</strong></p>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.warning("⚠️ No successful results for summary.")
-        else:
-            st.warning("⚠️ No results available for summary.")
-        
-        # Save step 5 configuration
-        step5_config = {
-            'results_analyzed': True,
-            'best_model': best_overall,
-            'total_models': len(comprehensive_results) if comprehensive_results else 0,
-            'export_generated': True,
-        'completed': True
-    }
-    session_manager.set_step_config('step5', step5_config)
-    
-    # Show completion message
-    st.toast("✅ Step 5 completed successfully!")
-    st.toast("Click 'Next ▶' button to proceed to Step 5.")
-    
-
 def render_shap_analysis():
     """Render SHAP analysis and visualization"""
+    # Initialize debug info collection
+    debug_info = []
+    
+    # Beautiful header for SHAP Analysis
     st.markdown("""
-    <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🔍 SHAP (SHapley Additive exPlanations) Analysis</h3>
+    <div style="
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 2rem;
+        border-radius: 15px;
+        margin: 1rem 0 2rem 0;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    ">
+        <h2 style="
+            color: white;
+            margin: 0 0 1rem 0;
+            text-align: center;
+            font-size: 2rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        ">
+            🔍 SHAP Analysis
+        </h2>
+        <p style="
+            color: rgba(255, 255, 255, 0.9);
+            text-align: center;
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 300;
+        ">
+            SHapley Additive exPlanations - Explain individual predictions by computing feature contributions
+        </p>
+    </div>
     """, unsafe_allow_html=True)
     
-    st.info("📝 **SHAP** explains individual predictions by computing the contribution of each feature to the model's output. Best suited for tree-based models.")
+    # Information card
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    ">
+        <h4 style="
+            color: white;
+            margin: 0 0 0.5rem 0;
+            font-size: 1.2rem;
+            font-weight: bold;
+        ">
+            📝 What is SHAP?
+        </h4>
+        <p style="
+            color: rgba(255, 255, 255, 0.9);
+            margin: 0;
+            line-height: 1.5;
+        ">
+            SHAP explains individual predictions by computing the contribution of each feature to the model's output. 
+            Best suited for tree-based models like Random Forest, XGBoost, LightGBM, and CatBoost.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Enable/Disable SHAP
     enable_shap = st.checkbox("Enable SHAP Analysis", value=True, help="Enable SHAP visualization for tree-based models")
     
     if enable_shap:
+        # Configuration section with beautiful styling
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        ">
+            <h4 style="
+                color: #333;
+                margin: 0 0 1rem 0;
+                font-size: 1.2rem;
+                font-weight: bold;
+                text-align: center;
+            ">
+                ⚙️ Configuration Settings
+            </h4>
+        </div>
+        """, unsafe_allow_html=True)
+        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -4907,8 +4371,27 @@ def render_shap_analysis():
                 help="Choose tree-based models for SHAP analysis"
             )
         
-        # SHAP plot types
-        st.markdown("**📊 SHAP Plot Types:**")
+        # SHAP plot types with beautiful styling
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        ">
+            <h4 style="
+                color: #333;
+                margin: 0 0 1rem 0;
+                font-size: 1.2rem;
+                font-weight: bold;
+                text-align: center;
+            ">
+                📊 SHAP Plot Types
+            </h4>
+        </div>
+        """, unsafe_allow_html=True)
+        
         plot_types = st.multiselect(
             "Select Plot Types:",
             ["summary", "bar", "dependence", "waterfall"],
@@ -4925,8 +4408,12 @@ def render_shap_analysis():
                 help="Select features for dependence plots"
             )
         
-        # Generate SHAP plots
-        if st.button("🚀 Generate SHAP Analysis"):
+        # Generate SHAP plots button with beautiful styling
+        st.markdown("""
+        <div style="text-align: center; margin: 2rem 0;">
+        """, unsafe_allow_html=True)
+        
+        if st.button("🚀 Generate SHAP Analysis", key="generate_shap_btn", help="Click to generate SHAP analysis for selected models"):
             if selected_models and plot_types:
                 with st.spinner("Generating SHAP analysis from cache..."):
                     try:
@@ -4945,7 +4432,7 @@ def render_shap_analysis():
                             st.warning("⚠️ No cached models found. Please complete training in Step 4 first.")
                             return
                         
-                        st.info(f"📊 Found {len(available_caches)} cached models")
+                        debug_info.append(f"📊 Found {len(available_caches)} cached models")
                         
                         # Filter models that are selected and available in cache
                         cached_models = []
@@ -4963,52 +4450,56 @@ def render_shap_analysis():
                         
                         if not cached_models:
                             st.warning(f"⚠️ No cached models found for selected models: {selected_models}")
-                            st.info("Available cached models:")
+                            debug_info.append("Available cached models:")
                             for cache_info in available_caches:
-                                st.write(f"- {cache_info.get('model_key', 'Unknown')}")
+                                debug_info.append(f"- {cache_info.get('model_key', 'Unknown')}")
                             return
                         
-                        st.success(f"✅ Found {len(cached_models)} cached models for SHAP analysis")
+                        debug_info.append(f"✅ Found {len(cached_models)} cached models for SHAP analysis")
                         
                         # Check SHAP cache availability
-                        st.info("🔍 Checking SHAP cache availability...")
+                        debug_info.append("🔍 Checking SHAP cache availability...")
                         try:
                             from shap_cache_manager import shap_cache_manager
                             import os
                             import time
                             cache_dir = shap_cache_manager.cache_dir
                             
-                            with st.expander("🔍 SHAP Cache Debug Info", expanded=False):
-                                st.info(f"🔍 Cache directory: {cache_dir}")
-                                st.info(f"🔍 Cache directory exists: {cache_dir.exists()}")
-                                if cache_dir.exists():
-                                    cache_files = list(cache_dir.glob("*.pkl"))
-                                    st.info(f"🔍 Cache files found: {len(cache_files)}")
-                                    if cache_files:
-                                        st.info("🔍 Cache file details:")
-                                        for cache_file in cache_files[:5]:  # Show first 5 files
-                                            file_size = cache_file.stat().st_size if cache_file.exists() else 0
-                                            file_age = time.time() - cache_file.stat().st_mtime if cache_file.exists() else 0
-                                            st.info(f"  - {cache_file.name} (size: {file_size} bytes, age: {file_age:.1f}s)")
-                                else:
-                                    st.warning("⚠️ SHAP cache directory does not exist")
-                                    st.info("💡 This means Step 4 never created SHAP cache")
+                            # Add cache directory info to debug_info
+                            debug_info.append(f"🔍 Cache directory: {cache_dir}")
+                            debug_info.append(f"🔍 Cache directory exists: {cache_dir.exists()}")
+                            if cache_dir.exists():
+                                cache_files = list(cache_dir.glob("*.pkl"))
+                                debug_info.append(f"🔍 Cache files found: {len(cache_files)}")
+                                if cache_files:
+                                    debug_info.append("🔍 Cache file details:")
+                                    for cache_file in cache_files[:5]:  # Show first 5 files
+                                        file_size = cache_file.stat().st_size if cache_file.exists() else 0
+                                        file_age = time.time() - cache_file.stat().st_mtime if cache_file.exists() else 0
+                                        debug_info.append(f"  - {cache_file.name} (size: {file_size} bytes, age: {file_age:.1f}s)")
+                            else:
+                                debug_info.append("⚠️ SHAP cache directory does not exist")
+                                debug_info.append("💡 This means Step 4 never created SHAP cache")
+                            
+                            # Add debug info for SHAP analysis process
+                            debug_info.append("🔍 **SHAP Analysis Debug Info:**")
+                            debug_info.append("🔍 This section shows detailed debug information for SHAP cache search and plot generation")
                             
                             if cache_dir.exists():
                                 cache_files = list(cache_dir.glob("*.pkl"))
                                 if cache_files:
-                                    st.success(f"✅ Found {len(cache_files)} SHAP cache files")
-                                    st.info("Available SHAP cache files:")
+                                    debug_info.append(f"✅ Found {len(cache_files)} SHAP cache files")
+                                    debug_info.append("Available SHAP cache files:")
                                     for cache_file in cache_files[:10]:  # Show first 10 files
-                                        st.info(f"  - {cache_file.name}")
+                                        debug_info.append(f"  - {cache_file.name}")
                                     if len(cache_files) > 10:
-                                        st.info(f"  ... and {len(cache_files) - 10} more files")
+                                        debug_info.append(f"  ... and {len(cache_files) - 10} more files")
                                 else:
-                                    st.warning("⚠️ No SHAP cache files found")
-                                    st.info("💡 Please complete Step 4 training to generate SHAP cache first.")
+                                    debug_info.append("⚠️ No SHAP cache files found")
+                                    debug_info.append("💡 Please complete Step 4 training to generate SHAP cache first.")
                             else:
-                                st.warning("⚠️ SHAP cache directory does not exist")
-                                st.info("💡 Please complete Step 4 training to generate SHAP cache first.")
+                                debug_info.append("⚠️ SHAP cache directory does not exist")
+                                debug_info.append("💡 Please complete Step 4 training to generate SHAP cache first.")
                         except Exception as e:
                             st.error(f"❌ Error checking SHAP cache: {e}")
                         
@@ -5034,7 +4525,7 @@ def render_shap_analysis():
                             model_name = model_data['model_name']
                             cache_info = model_data['cache_info']
                             
-                            st.info(f"🔍 Generating SHAP plots for {model_name}...")
+                            debug_info.append(f"🔍 Generating SHAP plots for {model_name}...")
                             
                             try:
                                 # Load the cached model and data
@@ -5073,15 +4564,28 @@ def render_shap_analysis():
                                     plot_shap_waterfall_from_values
                                 )
                                 
-                                # Try different cache key formats
-                                cache_keys_to_try = [
-                                    cache_info['model_key'],  # Original key
-                                    model_name,  # Just model name
-                                    f"{model_name}_{cache_info.get('scaler_name', 'StandardScaler')}",  # Model name + scaler
-                                    f"{model_name}_StandardScaler",  # Default scaler
-                                    f"{model_name}_MinMaxScaler",  # Alternative scaler
-                                    f"{model_name}_RobustScaler",  # Alternative scaler
-                                ]
+                                # Try different cache key formats - use the exact model_name from cache_info
+                                # The cache was created with model_name="{model_key}_{scaler_name}" in Step 4 (after fix)
+                                # Extract scaler_name from dataset_id (e.g., "numeric_dataset_StandardScaler" -> "StandardScaler")
+                                dataset_id = cache_info.get('dataset_id', '')
+                                scaler_name_from_dataset = dataset_id.replace('numeric_dataset_', '') if dataset_id.startswith('numeric_dataset_') else 'StandardScaler'
+                                
+                                # Try all possible scalers since cache files have different scalers
+                                all_possible_scalers = ['StandardScaler', 'MinMaxScaler', 'RobustScaler']
+                                
+                                cache_keys_to_try = []
+                                # Add exact key from Step 4 first
+                                cache_keys_to_try.append(f"{cache_info['model_key']}_{scaler_name_from_dataset}")
+                                # Add all possible scaler combinations
+                                for scaler in all_possible_scalers:
+                                    cache_keys_to_try.append(f"{cache_info['model_key']}_{scaler}")
+                                # Add original key without scaler
+                                cache_keys_to_try.append(cache_info['model_key'])
+                                # Add model name combinations
+                                cache_keys_to_try.append(f"{model_name}_{scaler_name_from_dataset}")
+                                for scaler in all_possible_scalers:
+                                    cache_keys_to_try.append(f"{model_name}_{scaler}")
+                                cache_keys_to_try.append(model_name)
                                 
                                 # Remove duplicates while preserving order
                                 cache_keys_to_try = list(dict.fromkeys(cache_keys_to_try))
@@ -5089,23 +4593,58 @@ def render_shap_analysis():
                                 cached_explainer, cached_shap_values = None, None
                                 successful_key = None
                                 
-                                for cache_key in cache_keys_to_try:
-                                    st.info(f"🔍 Trying SHAP cache key: '{cache_key}'")
-                                    cached_explainer, cached_shap_values = shap_cache_manager.load_shap_cache(
-                                        model=model,
-                                        sample_data=sample_data,
-                                        model_name=cache_key
-                                    )
-                                    if cached_shap_values is not None:
-                                        successful_key = cache_key
-                                        st.success(f"✅ Found SHAP cache with key: '{cache_key}'")
-                                        break
-                                    else:
-                                        st.info(f"❌ No SHAP cache found for key: '{cache_key}'")
+                                # Try to load SHAP cache directly from files (bypass hash-based key)
+                                debug_info = []
+                                debug_info.append(f"🔍 Debug: Trying to find cache for keys: {cache_keys_to_try}")
+                                
+                                try:
+                                    cache_dir = shap_cache_manager.cache_dir
+                                    if cache_dir.exists():
+                                        cache_files = list(cache_dir.glob("*.pkl"))
+                                        
+                                        # Create a mapping of model names to cache data for efficient lookup
+                                        cache_mapping = {}
+                                        for cache_file in cache_files:
+                                            try:
+                                                with open(cache_file, 'rb') as f:
+                                                    cache_data = pickle.load(f)
+                                                cached_model_name = cache_data.get('model_name', '')
+                                                if cached_model_name:
+                                                    cache_mapping[cached_model_name] = cache_data
+                                            except Exception as e:
+                                                continue
+                                        
+                                        # Try to find cache using efficient lookup
+                                        for cache_key in cache_keys_to_try:
+                                            # Direct match first
+                                            if cache_key in cache_mapping:
+                                                cached_shap_values = cache_mapping[cache_key].get('shap_values')
+                                                if cached_shap_values is not None:
+                                                    successful_key = cache_key
+                                                    debug_info.append(f"✅ Found SHAP cache for key: '{cache_key}'")
+                                                    break
+                                            
+                                            # Pattern match for scaler combinations
+                                            for cached_model_name, cache_data in cache_mapping.items():
+                                                if cached_model_name.startswith(cache_key + "_"):
+                                                    cached_shap_values = cache_data.get('shap_values')
+                                                    if cached_shap_values is not None:
+                                                        successful_key = cache_key
+                                                        debug_info.append(f"✅ Found SHAP cache for key: '{cache_key}' (model: '{cached_model_name}')")
+                                                        break
+                                            else:
+                                                continue  # No match found, try next key
+                                            break  # Match found, exit outer loop
+                                        
+                                        if cached_shap_values is None:
+                                            debug_info.append(f"❌ No SHAP cache found for any key in {len(cache_files)} files")
+                                            
+                                except Exception as e:
+                                    debug_info.append(f"❌ Error searching cache files: {e}")
                                 
                                 # Debug: List available SHAP cache files
                                 if cached_shap_values is None:
-                                    st.info("🔍 Debug: Available SHAP cache files:")
+                                    debug_info.append("🔍 Debug: Available SHAP cache files:")
                                     try:
                                         import os
                                         cache_dir = shap_cache_manager.cache_dir
@@ -5113,23 +4652,29 @@ def render_shap_analysis():
                                             cache_files = list(cache_dir.glob("*.pkl"))
                                             if cache_files:
                                                 for cache_file in cache_files[:10]:  # Show first 10 files
-                                                    st.info(f"  - {cache_file.name}")
+                                                    debug_info.append(f"  - {cache_file.name}")
                                             else:
-                                                st.info("  - No SHAP cache files found")
+                                                debug_info.append("  - No SHAP cache files found")
                                         else:
-                                            st.info("  - SHAP cache directory does not exist")
+                                            debug_info.append("  - SHAP cache directory does not exist")
                                     except Exception as e:
-                                        st.info(f"  - Error listing cache files: {e}")
+                                        debug_info.append(f"  - Error listing cache files: {e}")
                                 
                                 if cached_shap_values is not None:
-                                    st.success(f"✅ Loaded SHAP cache for {model_name} (key: {successful_key})")
+                                    debug_info.append(f"✅ Loaded SHAP cache for {model_name} (key: {successful_key})")
                                     # Use cached SHAP values
                                     shap_values = cached_shap_values
                                     explainer = None  # We have cached values, don't need explainer
                                 else:
-                                    st.warning(f"⚠️ No SHAP cache found for {model_name}")
-                                    st.info("💡 Please complete Step 4 training to generate SHAP cache first.")
-                                    st.info("ℹ️ Skipping SHAP analysis for this model.")
+                                    debug_info.append(f"⚠️ No SHAP cache found for {model_name}")
+                                    debug_info.append("💡 Please complete Step 4 training to generate SHAP cache first.")
+                                    debug_info.append("ℹ️ Skipping SHAP analysis for this model.")
+                                    continue
+                                
+                                # Get sample data from cache (should match SHAP values)
+                                sample_data = cache_data.get('sample_data')
+                                if sample_data is None:
+                                    st.error(f"❌ No sample_data found in cache for {model_name}")
                                     continue
                                 
                                 # Get feature names from cache
@@ -5138,72 +4683,170 @@ def render_shap_analysis():
                                     # Fallback: create generic feature names
                                     feature_names = [f"Feature_{i}" for i in range(sample_data.shape[1])]
                                 
-                                st.info(f"🔍 Debug: Using {len(feature_names)} feature names: {feature_names}")
+                                debug_info.append(f"🔍 Debug: Using {len(feature_names)} feature names: {feature_names}")
+                                debug_info.append(f"🔍 Debug: sample_data from cache - type: {type(sample_data)}, shape: {getattr(sample_data, 'shape', 'No shape')}")
+                                
+                                # Create organized layout for this model
+                                st.markdown(f"""
+                                <div style="
+                                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                                    padding: 1rem;
+                                    border-radius: 10px;
+                                    margin: 1.5rem 0;
+                                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                                ">
+                                    <h4 style="
+                                        color: white;
+                                        margin: 0;
+                                        text-align: center;
+                                        font-size: 1.2rem;
+                                        font-weight: bold;
+                                        text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+                                    ">
+                                        🤖 {model_name.replace('_', ' ').title()} Model Analysis
+                                    </h4>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Create tabs for different plot types within each model
+                                plot_tabs = st.tabs([f"📊 {plot_type.title()}" for plot_type in plot_types])
                                 
                                 # Generate plots based on selected types
-                                for plot_type in plot_types:
-                                    if plot_type == "summary":
-                                        if explainer is not None:
-                                            fig = generate_shap_summary_plot(explainer, sample_data, feature_names)
-                                        else:
-                                            # Use cached SHAP values for summary plot
-                                            fig = generate_shap_summary_plot_from_values(shap_values, sample_data, feature_names)
-                                        if fig:
-                                            st.pyplot(fig)
-                                    
-                                    elif plot_type == "bar":
-                                        if explainer is not None:
-                                            fig = generate_shap_bar_plot(explainer, sample_data, feature_names)
-                                        else:
-                                            # Use cached SHAP values for bar plot
-                                            fig = generate_shap_bar_plot_from_values(shap_values, sample_data, feature_names)
-                                        if fig:
-                                            st.pyplot(fig)
-                                    
-                                    elif plot_type == "dependence":
-                                        # Generate dependence plots for top 3 features
-                                        if isinstance(shap_values, list):
-                                            shap_values_for_dep = shap_values[1]  # Use positive class for binary classification
-                                        else:
-                                            shap_values_for_dep = shap_values
+                                for tab_idx, plot_type in enumerate(plot_types):
+                                    with plot_tabs[tab_idx]:
+                                        if plot_type == "summary":
+                                            st.markdown("**📈 Summary Plot:** Shows feature importance and impact")
+                                            try:
+                                                if explainer is not None:
+                                                    fig = generate_shap_summary_plot(explainer, sample_data, feature_names)
+                                                else:
+                                                    # Use cached SHAP values for summary plot
+                                                    debug_info.append(f"🔍 Debug: shap_values type: {type(shap_values)}, shape: {getattr(shap_values, 'shape', 'No shape')}")
+                                                    debug_info.append(f"🔍 Debug: sample_data type: {type(sample_data)}, shape: {getattr(sample_data, 'shape', 'No shape')}")
+                                                    fig = generate_shap_summary_plot_from_values(shap_values, sample_data, feature_names)
+                                                    debug_info.append(f"🔍 Debug: generate_shap_summary_plot_from_values returned: {type(fig)}")
+                                                if fig:
+                                                    debug_info.append(f"📊 Displaying {plot_type} plot for {model_name}")
+                                                    st.pyplot(fig)
+                                                else:
+                                                    debug_info.append(f"⚠️ Failed to generate {plot_type} plot for {model_name}")
+                                            except Exception as e:
+                                                debug_info.append(f"❌ Error generating {plot_type} plot for {model_name}: {e}")
                                         
-                                        # Calculate mean absolute SHAP values to find top features
-                                        mean_shap = np.mean(np.abs(shap_values_for_dep), axis=0)
-                                        top_features = np.argsort(mean_shap)[-3:][::-1]  # Top 3 features
+                                        elif plot_type == "bar":
+                                            st.markdown("**📊 Bar Plot:** Shows mean absolute SHAP values for each feature")
+                                            try:
+                                                if explainer is not None:
+                                                    fig = generate_shap_bar_plot(explainer, sample_data, feature_names)
+                                                else:
+                                                    # Use cached SHAP values for bar plot
+                                                    debug_info.append(f"🔍 Debug: shap_values type: {type(shap_values)}, shape: {getattr(shap_values, 'shape', 'No shape')}")
+                                                    debug_info.append(f"🔍 Debug: sample_data type: {type(sample_data)}, shape: {getattr(sample_data, 'shape', 'No shape')}")
+                                                    fig = generate_shap_bar_plot_from_values(shap_values, sample_data, feature_names)
+                                                    debug_info.append(f"🔍 Debug: generate_shap_bar_plot_from_values returned: {type(fig)}")
+                                                    if fig is None:
+                                                        debug_info.append(f"❌ generate_shap_bar_plot_from_values returned None - check error logs")
+                                                if fig:
+                                                    debug_info.append(f"📊 Displaying {plot_type} plot for {model_name}")
+                                                    st.pyplot(fig)
+                                                else:
+                                                    debug_info.append(f"⚠️ Failed to generate {plot_type} plot for {model_name}")
+                                            except Exception as e:
+                                                debug_info.append(f"❌ Error generating {plot_type} plot for {model_name}: {e}")
                                         
-                                        for feature_idx in top_features:
-                                            if explainer is not None:
-                                                fig = generate_shap_dependence_plot(
-                                                    explainer, sample_data, feature_names, 
-                                                    feature_index=feature_idx
-                                                )
+                                        elif plot_type == "dependence":
+                                            st.markdown("**🔗 Dependence Plots:** Shows how each feature affects the model's output")
+                                            # Generate dependence plots for top 3 features
+                                            if isinstance(shap_values, list):
+                                                shap_values_for_dep = shap_values[1]  # Use positive class for binary classification
                                             else:
-                                                # Use cached SHAP values for dependence plot
-                                                fig = generate_shap_dependence_plot_from_values(
-                                                    shap_values_for_dep, sample_data, feature_names, 
-                                                    feature_index=feature_idx
-                                                )
-                                            if fig:
-                                                st.pyplot(fig)
-                                    
-                                    elif plot_type == "waterfall":
-                                        # Generate waterfall plots for first 3 instances
-                                        for instance_idx in range(min(3, len(sample_data))):
-                                            if explainer is not None:
-                                                fig = plot_shap_waterfall(
-                                                    explainer, sample_data, 
-                                                    instance_index=instance_idx, 
-                                                    feature_names=feature_names
-                                                )
-                                            else:
-                                                # Use cached SHAP values for waterfall plot
-                                                fig = plot_shap_waterfall_from_values(
-                                                    shap_values, sample_data, 
-                                                    instance_index=instance_idx, 
-                                                    feature_names=feature_names
-                                                )
-                                            if fig:
-                                                st.pyplot(fig)
+                                                shap_values_for_dep = shap_values
+                                            
+                                            # Ensure shap_values_for_dep is a numpy array with correct shape
+                                            try:
+                                                import numpy as np
+                                                if not isinstance(shap_values_for_dep, np.ndarray):
+                                                    shap_values_for_dep = np.array(shap_values_for_dep)
+                                                
+                                                # Handle multi-class SHAP values (3D arrays)
+                                                if len(shap_values_for_dep.shape) == 3:
+                                                    if shap_values_for_dep.shape[0] == 2:  # (2, n_samples, n_features)
+                                                        shap_values_for_dep = shap_values_for_dep[1]
+                                                    elif shap_values_for_dep.shape[2] == 2:  # (n_samples, n_features, 2)
+                                                        shap_values_for_dep = shap_values_for_dep[:, :, 1]
+                                                    else:
+                                                        shap_values_for_dep = shap_values_for_dep[0]
+                                                
+                                                # Calculate mean absolute SHAP values to find top features
+                                                if len(shap_values_for_dep.shape) >= 2:
+                                                    mean_shap = np.mean(np.abs(shap_values_for_dep), axis=0)
+                                                    top_features = np.argsort(mean_shap)[-3:][::-1]  # Top 3 features
+                                                else:
+                                                    # If only 1D, use all features
+                                                    top_features = np.arange(min(3, len(shap_values_for_dep)))
+                                                
+                                            except Exception as e:
+                                                debug_info.append(f"❌ Error processing SHAP values for dependence plots: {e}")
+                                                continue
+                                            
+                                            # Create sub-tabs for top 3 features
+                                            if len(top_features) > 0:
+                                                dep_tabs = st.tabs([f"Feature {i+1}" for i in range(min(3, len(top_features)))])
+                                                
+                                                for feature_idx in top_features:
+                                                    tab_idx_dep = list(top_features).index(feature_idx)
+                                                    with dep_tabs[tab_idx_dep]:
+                                                        feature_name = feature_names[feature_idx] if feature_idx < len(feature_names) else f"Feature_{feature_idx}"
+                                                        st.markdown(f"**Feature: {feature_name}**")
+                                                        if explainer is not None:
+                                                            fig = generate_shap_dependence_plot(
+                                                                explainer, sample_data, feature_names, 
+                                                                feature_index=feature_idx
+                                                            )
+                                                        else:
+                                                            # Use cached SHAP values for dependence plot
+                                                            fig = generate_shap_dependence_plot_from_values(
+                                                                shap_values_for_dep, sample_data, feature_names, 
+                                                                feature_index=feature_idx
+                                                            )
+                                                        if fig:
+                                                            st.pyplot(fig)
+                                        
+                                        elif plot_type == "waterfall":
+                                            st.markdown("**🌊 Waterfall Plots:** Shows prediction explanation for individual instances")
+                                            # Generate waterfall plots for first 3 instances
+                                            try:
+                                                if len(sample_data) > 0:
+                                                    waterfall_tabs = st.tabs([f"Instance {i+1}" for i in range(min(3, len(sample_data)))])
+                                                    
+                                                    for instance_idx in range(min(3, len(sample_data))):
+                                                        with waterfall_tabs[instance_idx]:
+                                                            st.markdown(f"**Instance {instance_idx + 1}**")
+                                                            try:
+                                                                if explainer is not None:
+                                                                    fig = plot_shap_waterfall(
+                                                                        explainer, sample_data, 
+                                                                        instance_index=instance_idx, 
+                                                                        feature_names=feature_names
+                                                                    )
+                                                                else:
+                                                                    # Use cached SHAP values for waterfall plot
+                                                                    fig = plot_shap_waterfall_from_values(
+                                                                        shap_values, sample_data, 
+                                                                        instance_index=instance_idx, 
+                                                                        feature_names=feature_names
+                                                                    )
+                                                                if fig:
+                                                                    st.pyplot(fig)
+                                                                else:
+                                                                    debug_info.append(f"⚠️ Failed to generate waterfall plot for instance {instance_idx + 1}")
+                                                            except Exception as e:
+                                                                debug_info.append(f"❌ Error generating waterfall plot for instance {instance_idx + 1}: {e}")
+                                            except Exception as e:
+                                                debug_info.append(f"❌ Error processing waterfall plots: {e}")
+                                
+                                # Add separator between models
+                                st.markdown("---")
                                 
                                 # Count generated plots
                                 plot_count = len(plot_types)
@@ -5212,18 +4855,53 @@ def render_shap_analysis():
                                 if "waterfall" in plot_types:
                                     plot_count += 2  # +2 for first 3 instances (minus 1 for the base plot_type)
                                 
-                                st.success(f"✅ Generated {plot_count} SHAP plots for {model_name}")
+                                debug_info.append(f"✅ Generated {plot_count} SHAP plots for {model_name}")
                                 
                             except Exception as e:
                                 st.error(f"❌ Error generating SHAP plots for {model_name}: {str(e)}")
                                 continue
                         
-                        # Summary
-                        st.success("✅ SHAP analysis completed!")
-                        st.info("📊 **Summary:**")
-                        st.info(f"- Models processed: {len(cached_models)}")
-                        st.info(f"- SHAP cache files found: {len(cache_files)}")
-                        st.info("- Only cached SHAP data was used (no new training)")
+                        # Add final summary section with beautiful styling
+                        models_processed = len(cached_models) if 'cached_models' in locals() else 0
+                        cache_files_found = len(cache_files) if 'cache_files' in locals() else 0
+                        
+                        st.markdown("""
+                        <div style="
+                            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+                            padding: 1.5rem;
+                            border-radius: 15px;
+                            margin: 2rem 0;
+                            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+                        ">
+                            <h3 style="
+                                color: white;
+                                margin: 0 0 1rem 0;
+                                text-align: center;
+                                font-size: 1.3rem;
+                                font-weight: bold;
+                                text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+                            ">
+                                🎉 SHAP Analysis Summary
+                            </h3>
+                            <div style="
+                                background: rgba(255, 255, 255, 0.9);
+                                padding: 1rem;
+                                border-radius: 10px;
+                                color: #333;
+                            ">
+                                <p style="margin: 0.5rem 0;"><strong>✅ Models Processed:</strong> {models_processed}</p>
+                                <p style="margin: 0.5rem 0;"><strong>📊 SHAP Cache Files Found:</strong> {cache_files_found}</p>
+                                <p style="margin: 0.5rem 0;"><strong>💾 Data Source:</strong> Only cached SHAP data was used (no new training)</p>
+                            </div>
+                        </div>
+                        """.format(models_processed=models_processed, cache_files_found=cache_files_found), unsafe_allow_html=True)
+                        
+                        # Summary for debug info
+                        debug_info.append("✅ SHAP analysis completed!")
+                        debug_info.append("📊 **Summary:**")
+                        debug_info.append(f"- Models processed: {models_processed}")
+                        debug_info.append(f"- SHAP cache files found: {cache_files_found}")
+                        debug_info.append("- Only cached SHAP data was used (no new training)")
                         
                         # Save SHAP configuration
                         shap_config = {
@@ -5239,13 +4917,24 @@ def render_shap_analysis():
                         # Save to session
                         session_manager.set_step_data(5, {'shap_config': shap_config})
                         
+                        debug_info.append("🎉 SHAP analysis completed successfully!")
+                        
+                        # Display a brief success message
                         st.success("🎉 SHAP analysis completed successfully!")
+                        
+                        # Display debug info in a single container
+                        if debug_info:
+                            with st.expander("🔍 SHAP Cache Debug Info", expanded=False):
+                                for info in debug_info:
+                                    st.info(info)
                         
                     except Exception as e:
                         st.error(f"❌ Error during SHAP analysis: {str(e)}")
                         st.exception(e)
             else:
                 st.error("❌ Please select at least one model and one plot type")
+        
+        st.markdown("</div>", unsafe_allow_html=True)
     
     else:
         st.info("ℹ️ SHAP analysis is disabled.")

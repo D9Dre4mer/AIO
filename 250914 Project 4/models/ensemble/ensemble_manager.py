@@ -110,10 +110,10 @@ class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
         else:
             return check_array(X)
     
-    def _get_tags(self):
-        """Get tags for sklearn compatibility"""
-        from sklearn.utils._tags import _Tags
-        return _Tags(
+    def __sklearn_tags__(self):
+        """Get tags for sklearn 1.7.2+ compatibility"""
+        from sklearn.utils._tags import Tags
+        return Tags(
             estimator_type="classifier",
             target_tags=self._get_target_tags(),
             transformer_tags=None,
@@ -129,8 +129,8 @@ class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
     
     def _get_target_tags(self):
         """Get target tags"""
-        from sklearn.utils._tags import _TargetTags
-        return _TargetTags(
+        from sklearn.utils._tags import TargetTags
+        return TargetTags(
             required=True,
             one_d_labels=True,
             two_d_labels=False,
@@ -141,8 +141,8 @@ class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
     
     def _get_classifier_tags(self):
         """Get classifier tags"""
-        from sklearn.utils._tags import _ClassifierTags
-        return _ClassifierTags(
+        from sklearn.utils._tags import ClassifierTags
+        return ClassifierTags(
             poor_score=False,
             multi_class=True,
             multi_label=False
@@ -150,8 +150,8 @@ class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
     
     def _get_input_tags(self):
         """Get input tags"""
-        from sklearn.utils._tags import _InputTags
-        return _InputTags(
+        from sklearn.utils._tags import InputTags
+        return InputTags(
             one_d_array=False,
             two_d_array=True,
             three_d_array=False,

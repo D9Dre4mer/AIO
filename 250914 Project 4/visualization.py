@@ -216,9 +216,9 @@ def create_shap_explainer(model, X_sample, model_type="auto"):
                 print(f"Attempting TreeExplainer for {underlying_name}")
                 
                 # Memory safety check
-                if len(X_sample) > 30:  # Limit sample size to prevent memory issues
-                    print(f"Warning: Sample size {len(X_sample)} too large, using first 30 samples")
-                    X_sample = X_sample[:30]
+                if len(X_sample) > 100:  # Increase limit to prevent memory issues
+                    print(f"Warning: Sample size {len(X_sample)} too large, using first 100 samples")
+                    X_sample = X_sample[:100]
                 
                 explainer = shap.TreeExplainer(underlying_model)
                 
@@ -247,9 +247,9 @@ def create_shap_explainer(model, X_sample, model_type="auto"):
             print(f"Attempting Explainer with predict_proba for {underlying_name}")
             
             # Memory safety check
-            if len(X_sample) > 20:  # Limit sample size to prevent memory issues
-                print(f"Warning: Sample size {len(X_sample)} too large, using first 20 samples")
-                X_sample = X_sample[:20]
+            if len(X_sample) > 50:  # Increase limit to prevent memory issues
+                print(f"Warning: Sample size {len(X_sample)} too large, using first 50 samples")
+                X_sample = X_sample[:50]
             
             def predict_proba_wrapper(X):
                 return underlying_model.predict_proba(X)
@@ -612,10 +612,19 @@ def generate_shap_summary_plot_from_values(shap_values, X_sample, feature_names=
     try:
         import shap
         import matplotlib.pyplot as plt
+        import numpy as np
         
         # Handle multi-class SHAP values
         if isinstance(shap_values, list):
             shap_values = shap_values[1]  # Use positive class for binary classification
+        elif isinstance(shap_values, np.ndarray) and len(shap_values.shape) == 3:
+            # Handle numpy array with shape (n_classes, n_samples, n_features) or (n_samples, n_features, n_classes)
+            if shap_values.shape[0] == 2:  # Binary classification: (2, n_samples, n_features)
+                shap_values = shap_values[1]  # Use positive class
+            elif shap_values.shape[2] == 2:  # Binary classification: (n_samples, n_features, 2)
+                shap_values = shap_values[:, :, 1]  # Use positive class
+            else:
+                shap_values = shap_values[0]  # Use first class for multi-class
         
         plt.figure(figsize=(10, 8))
         shap.summary_plot(shap_values, X_sample, feature_names=feature_names, show=False)
@@ -632,13 +641,23 @@ def generate_shap_bar_plot_from_values(shap_values, X_sample, feature_names=None
     try:
         import shap
         import matplotlib.pyplot as plt
+        import numpy as np
         
         # Handle multi-class SHAP values
         if isinstance(shap_values, list):
             shap_values = shap_values[1]  # Use positive class for binary classification
+        elif isinstance(shap_values, np.ndarray) and len(shap_values.shape) == 3:
+            # Handle numpy array with shape (n_classes, n_samples, n_features) or (n_samples, n_features, n_classes)
+            if shap_values.shape[0] == 2:  # Binary classification: (2, n_samples, n_features)
+                shap_values = shap_values[1]  # Use positive class
+            elif shap_values.shape[2] == 2:  # Binary classification: (n_samples, n_features, 2)
+                shap_values = shap_values[:, :, 1]  # Use positive class
+            else:
+                shap_values = shap_values[0]  # Use first class for multi-class
         
         plt.figure(figsize=(10, 6))
-        shap.bar_plot(shap_values, feature_names=feature_names, show=False)
+        # Use summary_plot with plot_type="bar" instead of bar_plot
+        shap.summary_plot(shap_values, X_sample, feature_names=feature_names, plot_type="bar", show=False)
         plt.title("SHAP Bar Plot (from cache)")
         plt.tight_layout()
         return plt.gcf()
@@ -683,29 +702,58 @@ def plot_shap_waterfall_from_values(shap_values, X_sample, instance_index=0, fea
         # Handle multi-class SHAP values
         if isinstance(shap_values, list):
             shap_values = shap_values[1]  # Use positive class for binary classification
+        elif isinstance(shap_values, np.ndarray) and len(shap_values.shape) == 3:
+            # Handle numpy array with shape (n_classes, n_samples, n_features) or (n_samples, n_features, n_classes)
+            if shap_values.shape[0] == 2:  # Binary classification: (2, n_samples, n_features)
+                shap_values = shap_values[1]  # Use positive class
+            elif shap_values.shape[2] == 2:  # Binary classification: (n_samples, n_features, 2)
+                shap_values = shap_values[:, :, 1]  # Use positive class
+            else:
+                shap_values = shap_values[0]  # Use first class for multi-class
+        
+        # Ensure shap_values is numpy array
+        if not isinstance(shap_values, np.ndarray):
+            shap_values = np.array(shap_values)
         
         # Get SHAP values for single instance
-        instance_values = shap_values[instance_index]
+        if len(shap_values.shape) >= 2:
+            instance_values = shap_values[instance_index]
+        else:
+            instance_values = shap_values
         
         plt.figure(figsize=(12, 8))
         
         # Create Explanation object for waterfall plot
         try:
-            # Calculate expected value
-            expected_value = np.mean(shap_values)
+            # Calculate expected value (mean of all SHAP values)
+            if len(shap_values.shape) >= 2:
+                expected_value = np.mean(shap_values)
+            else:
+                expected_value = np.mean(shap_values)
+            
+            # Ensure instance_values is 1D
+            if len(instance_values.shape) > 1:
+                instance_values = instance_values.flatten()
             
             # Create Explanation object for waterfall plot
             explanation = shap.Explanation(
                 values=instance_values,
                 base_values=expected_value,
-                data=X_sample[instance_index],
+                data=X_sample[instance_index] if len(X_sample) > instance_index else X_sample[0],
                 feature_names=feature_names
             )
             shap.waterfall_plot(explanation, show=False)
         except Exception as wf_error:
             print(f"Warning: Waterfall plot failed, using bar plot instead: {wf_error}")
             # Fallback to bar plot
-            shap.bar_plot(instance_values, feature_names=feature_names, show=False)
+            try:
+                shap.bar_plot(instance_values, feature_names=feature_names, show=False)
+            except Exception as bar_error:
+                print(f"Warning: Bar plot also failed: {bar_error}")
+                # Final fallback to simple bar plot
+                plt.bar(range(len(instance_values)), instance_values)
+                if feature_names:
+                    plt.xticks(range(len(feature_names)), feature_names, rotation=45)
         
         plt.title(f"SHAP Waterfall Plot - Instance {instance_index} (from cache)")
         plt.tight_layout()
@@ -755,17 +803,29 @@ def plot_shap_waterfall(explainer, X_sample, instance_index=0, feature_names=Non
                 # For Explainer objects, calculate expected value
                 expected_value = np.mean(shap_values)
             
+            # Ensure instance_values is 1D
+            if len(instance_values.shape) > 1:
+                instance_values = instance_values.flatten()
+            
             # Create Explanation object for waterfall plot
             explanation = shap.Explanation(
-                values=shap_values[0],
+                values=instance_values,
                 base_values=expected_value,
-                data=X_sample[instance_index]
+                data=X_sample[instance_index] if len(X_sample) > instance_index else X_sample[0],
+                feature_names=feature_names
             )
-            shap.waterfall_plot(explanation)
+            shap.waterfall_plot(explanation, show=False)
         except Exception as wf_error:
             print(f"Warning: Waterfall plot failed, using bar plot instead: {wf_error}")
             # Fallback to bar plot
-            shap.bar_plot(shap_values[0], show=False)
+            try:
+                shap.bar_plot(instance_values, feature_names=feature_names, show=False)
+            except Exception as bar_error:
+                print(f"Warning: Bar plot also failed: {bar_error}")
+                # Final fallback to simple bar plot
+                plt.bar(range(len(instance_values)), instance_values)
+                if feature_names:
+                    plt.xticks(range(len(feature_names)), feature_names, rotation=45)
         
         plt.title(f"SHAP Waterfall Plot - Instance {instance_index}", fontsize=14, fontweight='bold')
         plt.tight_layout()

@@ -556,7 +556,9 @@ class CacheManager:
             # Load the saved model directly
             booster = lgb.Booster(model_file=str(file_path))
             
-            # Create a simple wrapper that uses the booster directly
+            # Create a sklearn-compatible wrapper using TrainedModelWrapper
+            from models.ensemble.ensemble_manager import TrainedModelWrapper
+            
             class LightGBMCacheWrapper:
                 def __init__(self, booster):
                     self.booster = booster
@@ -607,7 +609,9 @@ class CacheManager:
                         # Multi-class: predictions are already probabilities
                         return predictions
             
-            return LightGBMCacheWrapper(booster)
+            # Wrap the LightGBM wrapper with TrainedModelWrapper for sklearn compatibility
+            lgb_wrapper = LightGBMCacheWrapper(booster)
+            return TrainedModelWrapper(lgb_wrapper, model_name="LightGBM")
         elif model_key in ['catboost']:
             import catboost as cb
             model = cb.CatBoostClassifier()
