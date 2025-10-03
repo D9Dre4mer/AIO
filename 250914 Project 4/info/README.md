@@ -12,6 +12,7 @@ Thư mục này chứa tất cả tài liệu hướng dẫn và documentation c
 ### 📊 Tài liệu kỹ thuật
 - **[DUPLICATE_REMOVAL_TOGGLE_IMPLEMENTATION.md](./DUPLICATE_REMOVAL_TOGGLE_IMPLEMENTATION.md)** - Báo cáo implementation duplicate removal toggle
 - **[RECENT_CHANGES_SUMMARY.md](./RECENT_CHANGES_SUMMARY.md)** - Tóm tắt các thay đổi gần đây
+- **[CACHE_STRUCTURE_DOCUMENTATION.md](./CACHE_STRUCTURE_DOCUMENTATION.md)** - 🗂️ Cấu trúc Cache System chi tiết
 
 ### 🏗️ Kiến trúc hệ thống
 - **[CACHE_SYSTEM_SUMMARY.md](./CACHE_SYSTEM_SUMMARY.md)** - Tóm tắt Cache System (nếu có)

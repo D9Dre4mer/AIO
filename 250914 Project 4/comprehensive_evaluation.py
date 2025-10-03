@@ -249,10 +249,6 @@ class ComprehensiveEvaluator:
                 print(f"  ⚠️ Test data not found in cache for {embedding_type}, will use validation data for final evaluation")
         else:
             print(f"  ⚠️ No test data available for {embedding_type}, will use validation data for final evaluation")
-            print(f"     🔍 Debug: hasattr(self, 'embeddings') = {hasattr(self, 'embeddings')}")
-            if hasattr(self, 'embeddings'):
-                print(f"     🔍 Debug: embedding_type '{embedding_type}' in embeddings = {embedding_type in self.embeddings}")
-                print(f"     🔍 Debug: available embeddings = {list(self.embeddings.keys()) if self.embeddings else 'None'}")
         
         # Create folds using same strategy as precompute_cv_embeddings
         for fold, (train_idx, val_idx) in enumerate(kf.split(X_train, y_train), 1):
@@ -374,7 +370,6 @@ class ComprehensiveEvaluator:
             
             if len(valid_samples) == 0:
                 print("❌ ERROR: No valid samples found! All samples have empty text or categories.")
-                print("🔍 Debug: First few samples:")
                 for i, sample in enumerate(self.data_loader.samples[:3]):
                     print(f"   Sample {i}: text='{sample['abstract'][:50]}...', categories='{sample['categories']}'")
                 raise ValueError("No valid samples found. Check column mapping and data quality.")
@@ -459,9 +454,6 @@ class ComprehensiveEvaluator:
         # CRITICAL: Ensure we have samples before preprocessing
         if not self.data_loader.samples:
             print("❌ ERROR: No samples available for preprocessing!")
-            print(f"🔍 Debug: samples count = {len(self.data_loader.samples)}")
-            print(f"🔍 Debug: available_categories = {self.data_loader.available_categories}")
-            print(f"🔍 Debug: selected_categories = {self.data_loader.selected_categories}")
             raise ValueError("No samples available for preprocessing. Check data loading.")
         
         print(f"📊 Preprocessing {len(self.data_loader.samples):,} samples...")
@@ -473,7 +465,6 @@ class ComprehensiveEvaluator:
         
         if not self.data_loader.preprocessed_samples:
             print("❌ ERROR: No preprocessed samples available!")
-            print("🔍 Debug: Check if preprocessing was successful")
             raise ValueError("No preprocessed samples available for train/test split")
         
         # Prepare train/test data (no separate validation set)
@@ -979,9 +970,6 @@ class ComprehensiveEvaluator:
                 if test_labels is not None and isinstance(test_labels, list):
                     test_labels = np.array(test_labels)
                 
-                print(f"     🔍 Debug: test_data = {test_data.shape if test_data is not None and hasattr(test_data, 'shape') else f'list({len(test_data)})' if test_data is not None else 'None'}")
-                print(f"     🔍 Debug: test_labels = {test_labels.shape if test_labels is not None and hasattr(test_labels, 'shape') else f'list({len(test_labels)})' if test_labels is not None else 'None'}")
-                
                 cv_folds = self.create_cv_folds_for_sparse_embeddings(
                     X_train, y_train, embedding_name, 
                     X_test=test_data, 
@@ -994,10 +982,6 @@ class ComprehensiveEvaluator:
             else:
                 # For embeddings, use pre-computed CV embeddings for fair comparison
                 print(f"     🔧 CV using pre-computed {embedding_name} embeddings for {model_name} (fair comparison)")
-                
-                print(f"     🔍 Debug: cv_embeddings_cache exists = {hasattr(self, 'cv_embeddings_cache')}")
-                print(f"     🔍 Debug: cv_embeddings_cache content = {bool(self.cv_embeddings_cache)}")
-                print(f"     🔍 Debug: cv_embeddings_cache keys = {list(self.cv_embeddings_cache.keys()) if hasattr(self, 'cv_embeddings_cache') else 'N/A'}")
                 
                 if hasattr(self, 'cv_embeddings_cache') and self.cv_embeddings_cache:
                     # Use cached pre-computed embeddings
@@ -1626,9 +1610,9 @@ class ComprehensiveEvaluator:
             if 'embeddings' in embeddings:
                 embeddings_to_precompute = ['embeddings']
         
-        print(f"🔍 Debug: embeddings_to_precompute = {embeddings_to_precompute}")
-        print(f"🔍 Debug: embeddings keys = {list(embeddings.keys())}")
-        print(f"🔍 Debug: 'embeddings' in embeddings = {'embeddings' in embeddings}")
+        print(f"embeddings_to_precompute = {embeddings_to_precompute}")
+        print(f"embeddings keys = {list(embeddings.keys())}")
+        print(f"'embeddings' in embeddings = {'embeddings' in embeddings}")
         
         if embeddings_to_precompute and ('embeddings' in embeddings):
             # Check for stop signal
@@ -1786,8 +1770,8 @@ class ComprehensiveEvaluator:
                         
                         # Progress tracking removed - using overall testing progress
                         
-                        # Debug: Check data shapes
-                        print(f"     🔍 Debug - Data shapes:")
+                        # Check data shapes
+                        print(f"     Data shapes:")
                         print(f"       X_train: {embedding_data['X_train'].shape if hasattr(embedding_data['X_train'], 'shape') else len(embedding_data['X_train']) if embedding_data['X_train'] is not None else 'None'}")
                         print(f"       X_val: {embedding_data['X_val'].shape if hasattr(embedding_data['X_val'], 'shape') else len(embedding_data['X_val']) if embedding_data['X_val'] is not None else 'None'}")
                         print(f"       X_test: {embedding_data['X_test'].shape if hasattr(embedding_data['X_test'], 'shape') else len(embedding_data['X_test']) if embedding_data['X_test'] is not None else 'None'}")
@@ -2324,7 +2308,7 @@ class ComprehensiveEvaluator:
                     traceback.print_exc()
             
             # Debug: Show all available results
-            print(f"🔍 Debug: Available successful results:")
+            print(f"Available successful results:")
             for result in all_results:
                 if result['status'] == 'success':
                     print(f"   • {result['model_name']} with {result['embedding_name']}")
@@ -2334,8 +2318,8 @@ class ComprehensiveEvaluator:
             required_models_internal = {"knn", "decision_tree", "naive_bayes"}
             successful_models = {r['model_name'] for r in all_results if r['status'] == 'success'}
             
-            print(f"🔍 Debug: Required models (internal): {required_models_internal}")
-            print(f"🔍 Debug: Successful models: {successful_models}")
+            print(f"Required models (internal): {required_models_internal}")
+            print(f"Successful models: {successful_models}")
             
             if not required_models_internal.issubset(successful_models):
                 missing = required_models_internal - successful_models
@@ -2396,6 +2380,8 @@ class ComprehensiveEvaluator:
                 print(f"✅ Successfully created EnsembleManager instance")
             except Exception as e:
                 print(f"❌ Failed to create EnsembleManager instance: {e}")
+                import traceback
+                traceback.print_exc()
                 return None
             
             # Get already trained individual model instances from the results
@@ -2553,13 +2539,13 @@ class ComprehensiveEvaluator:
                         'test': {'y_true': y_test, 'y_pred': y_test, 'y_proba': np.array([])}
                     }
             
-            # Debug: Check ensemble_eval structure
-            print(f"🔍 Debug: ensemble_eval keys: {list(ensemble_eval.keys())}")
+            # Check ensemble_eval structure
+            print(f"ensemble_eval keys: {list(ensemble_eval.keys())}")
             if 'classification_report' in ensemble_eval:
                 # Extract metrics from classification report
                 pass  # Metrics already extracted above
             else:
-                print(f"🔍 Debug: No classification_report found in ensemble_eval")
+                print(f"No classification_report found in ensemble_eval")
             
             # Compare with individual models
             individual_results = {r['model_name']: r for r in all_results if r['status'] == 'success'}
@@ -2601,6 +2587,10 @@ class ComprehensiveEvaluator:
                 'status': 'success',
                 'validation_accuracy': ensemble_results.get('validation_accuracy', 0.0),
                 'test_accuracy': ensemble_eval.get('accuracy', 0.0),
+                
+                # Log accuracy calculation
+                'debug_accuracy_source': f"ensemble_eval.get('accuracy', 0.0) = {ensemble_eval.get('accuracy', 0.0)}",
+                'debug_ensemble_eval_keys': list(ensemble_eval.keys()) if isinstance(ensemble_eval, dict) else 'Not a dict',
                 
                 # Calculate overfitting score using CV vs test accuracy for ensemble (like individual models)
                 'overfitting_score': ensemble_cv_mean - ensemble_eval.get('accuracy', 0.0),
@@ -2659,9 +2649,12 @@ class ComprehensiveEvaluator:
                 try:
                     print(f"💾 Saving ensemble model cache...")
                     
-                    # Prepare ensemble model for caching
-                    ensemble_model_data = {
-                        'ensemble_manager': ensemble_manager,
+                    # FIXED: Only save the trained ensemble model, not the entire ensemble_manager
+                    # This prevents "Ran out of input" error when loading pickle
+                    ensemble_model_data = ensemble_manager.ensemble_model  # Only save the sklearn model
+                    
+                    # Store ensemble metadata separately in params
+                    ensemble_metadata = {
                         'base_models': required_models_internal,
                         'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
                         'cv_folds': ensemble_config.get('cv_folds', 5),
@@ -2701,6 +2694,16 @@ class ComprehensiveEvaluator:
                         y_test, ensemble_predictions['test']['y_pred'], ensemble_predictions['test']['y_proba']
                     )
                     
+                    # Check metrics content
+                    metrics_to_save = {
+                        'accuracy': ensemble_result['test_accuracy'],  # Use 'accuracy' key for consistency
+                        'validation_accuracy': ensemble_result['validation_accuracy'],
+                        'test_accuracy': ensemble_result['test_accuracy'],
+                        'test_metrics': ensemble_result['test_metrics'],
+                        'debug_accuracy_source': ensemble_result.get('debug_accuracy_source', 'Unknown'),
+                        'debug_ensemble_eval_keys': ensemble_result.get('debug_ensemble_eval_keys', 'Unknown')
+                    }
+                    
                     # Save ensemble cache
                     self.cache_manager.save_model_cache(
                         model_key=ensemble_model_key,
@@ -2709,22 +2712,13 @@ class ComprehensiveEvaluator:
                         dataset_fingerprint=dataset_fingerprint,
                         model=ensemble_model_data,
                         params={
-                            'base_models': list(required_models_internal),
-                            'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
-                            'cv_folds': ensemble_config.get('cv_folds', 5),
-                            'random_state': ensemble_config.get('random_state', 42),
+                            **ensemble_metadata,  # Use metadata dict instead of repeating
                             'embedding': best_embedding
                         },
-                        metrics={
-                            'validation_accuracy': ensemble_result['validation_accuracy'],
-                            'test_accuracy': ensemble_result['test_accuracy'],
-                            'test_metrics': ensemble_result['test_metrics']
-                        },
+                        metrics=metrics_to_save,
                         config={
                             'model_name': f"ensemble_{best_embedding}",
-                            'base_models': list(required_models_internal),
-                            'final_estimator': ensemble_config.get('final_estimator', 'logistic_regression'),
-                            'cv_folds': ensemble_config.get('cv_folds', 5),
+                            **ensemble_metadata,  # Use metadata dict instead of repeating
                             'embedding': best_embedding
                         },
                         eval_predictions=eval_predictions,

@@ -192,10 +192,11 @@ class StreamlitTrainingPipeline:
             preprocessing_config = self.preprocessing_config
             
             model_config = step3_data.get('data_split', {}) if step3_data and isinstance(step3_data, dict) else {}
-            selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
+            # FIXED: Extract selected_models from optuna_config
+            optuna_config = step3_data.get('optuna_config', {}) if step3_data and isinstance(step3_data, dict) else {}
+            selected_models = optuna_config.get('models', [])
             selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
             cv_config = step3_data.get('cross_validation', {}) if step3_data and isinstance(step3_data, dict) else {}
-            optuna_config = step3_data.get('optuna', {}) if step3_data and isinstance(step3_data, dict) else {}
             
             # Configure Optuna if provided
             if optuna_config:
@@ -268,7 +269,9 @@ class StreamlitTrainingPipeline:
         """Generate unique cache key based on configuration with human-readable naming"""
         # Extract key configuration details for naming
         sampling_config = step1_data.get('sampling_config', {})
-        selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
+        # FIXED: Extract selected_models from optuna_config
+        optuna_config = step3_data.get('optuna_config', {}) if step3_data and isinstance(step3_data, dict) else {}
+        selected_models = optuna_config.get('models', [])
         selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
         text_column = step2_data.get('text_column', 'text')
         label_column = step2_data.get('label_column', 'label')
@@ -767,6 +770,9 @@ class StreamlitTrainingPipeline:
             self.start_time = time.time()
             self.training_status = "training"
             self.models_completed = 0
+            
+            print(f"🕐 [TRAINING_PIPELINE] Training started at: {self.start_time}")
+            print(f"🕐 [TRAINING_PIPELINE] Start time set to: {self.start_time}")
 
             # Check if training was stopped before starting
             if self.is_training_stopped():
@@ -1130,7 +1136,9 @@ class StreamlitTrainingPipeline:
                     }
 
                 # Get selected models and vectorization methods from step 3
-                selected_models = step3_data.get('selected_models', []) if step3_data and isinstance(step3_data, dict) else []
+                # FIXED: Extract from optuna_config instead of direct step3_data
+                optuna_config = step3_data.get('optuna_config', {}) if step3_data and isinstance(step3_data, dict) else {}
+                selected_models = optuna_config.get('models', [])
                 selected_vectorization = step3_data.get('selected_vectorization', []) if step3_data and isinstance(step3_data, dict) else []
                 
                 # FIXED: Update step1_data with sampled dataframe to ensure consistency
@@ -1183,6 +1191,9 @@ class StreamlitTrainingPipeline:
                 else:
                     print(f"   • Voting Config: {step3_data.get('voting_config', {}).get('enabled', False) if step3_data else 'No step3_data'}")
                     print(f"   • Stacking Config: {step3_data.get('stacking_config', {}).get('enabled', False) if step3_data else 'No step3_data'}")
+                    print(f"   • step3_data keys: {list(step3_data.keys()) if step3_data else 'No step3_data'}")
+                    print(f"   • voting_config: {step3_data.get('voting_config', {}) if step3_data else 'No step3_data'}")
+                    print(f"   • stacking_config: {step3_data.get('stacking_config', {}) if step3_data else 'No step3_data'}")
                 
                 # Run comprehensive evaluation with selected models and embeddings
                 # FIXED: Pass the already sampled dataframe to evaluator
@@ -1238,17 +1249,28 @@ class StreamlitTrainingPipeline:
                 try:
                     # CRITICAL FIX: Return full results but save large data to separate files
                     # This prevents memory overload while keeping all data accessible
+                    
+                    # Calculate elapsed_time with fallback
+                    current_time = time.time()
+                    if self.start_time is not None:
+                        calculated_elapsed_time = current_time - self.start_time
+                        print(f"🕐 [TRAINING_PIPELINE] Elapsed time calculated: {current_time} - {self.start_time} = {calculated_elapsed_time:.2f}s")
+                    else:
+                        # Fallback: use evaluation_time if start_time is None
+                        calculated_elapsed_time = evaluation_results.get('evaluation_time', 0)
+                        print(f"⚠️ WARNING: start_time is None, using evaluation_time as fallback: {calculated_elapsed_time}")
+                    
                     cache_results = {
-                        'status': 'success',
-                        'message': 'Comprehensive evaluation completed successfully',
-                        'results': evaluation_results,
-                        'comprehensive_results': comprehensive_results,
-                        'successful_combinations': evaluation_results.get('successful_combinations', 0),
-                        'total_combinations': evaluation_results.get('total_combinations', 0),
-                        'best_combinations': evaluator.best_combinations if hasattr(evaluator, 'best_combinations') else {},
-                        'total_models': self.total_models,
-                        'models_completed': self.models_completed,
-                        'elapsed_time': time.time() - self.start_time,
+                    'status': 'success',
+                    'message': 'Comprehensive evaluation completed successfully',
+                    'results': evaluation_results,
+                    'comprehensive_results': comprehensive_results,
+                    'successful_combinations': evaluation_results.get('successful_combinations', 0),
+                    'total_combinations': evaluation_results.get('total_combinations', 0),
+                    'best_combinations': evaluator.best_combinations if hasattr(evaluator, 'best_combinations') else {},
+                    'total_models': self.total_models,
+                    'models_completed': self.models_completed,
+                        'elapsed_time': calculated_elapsed_time,
                         'evaluation_time': evaluation_results.get('evaluation_time', 0),
                         'data_info': evaluation_results.get('data_info', {}),
                         'embedding_info': evaluation_results.get('embedding_info', {}),
@@ -1287,10 +1309,20 @@ class StreamlitTrainingPipeline:
 
         except Exception as e:
             self.training_status = "error"
+            
+            # Calculate elapsed_time even on error
+            if self.start_time is not None:
+                error_elapsed_time = time.time() - self.start_time
+                print(f"🕐 [TRAINING_PIPELINE] Error occurred, elapsed time: {error_elapsed_time:.2f}s")
+            else:
+                error_elapsed_time = 0
+                print(f"⚠️ [TRAINING_PIPELINE] Error occurred but start_time is None")
+            
             return {
                 'status': 'error',
                 'message': f'Comprehensive evaluation failed: {str(e)}',
-                'error': str(e)
+                'error': str(e),
+                'elapsed_time': error_elapsed_time
             }
     
     def _apply_sampling(self, df: pd.DataFrame, sampling_config: Dict, label_column: str = None) -> pd.DataFrame:
@@ -1838,8 +1870,10 @@ class StreamlitTrainingPipeline:
                     vec_data, labels_dict, model, vec_method
                 )
                 
-                # Create SHAP sample for caching
+                # Create SHAP sample and explainer for caching
                 shap_sample = None
+                shap_explainer = None
+                shap_values = None
                 try:
                     # Use a subset of test data for SHAP sample
                     if eval_predictions is not None and len(eval_predictions) > 0:
@@ -1856,6 +1890,36 @@ class StreamlitTrainingPipeline:
                             shap_sample = test_data
                         
                         print(f"💾 Created SHAP sample for {model_name}: {len(shap_sample)} samples")
+                        
+                        # Create SHAP explainer and values
+                        try:
+                            import shap
+                            
+                            # Create appropriate explainer based on model type
+                            if hasattr(model, 'predict_proba'):
+                                # For models with predict_proba (most sklearn models)
+                                try:
+                                    shap_explainer = shap.TreeExplainer(model)
+                                    print(f"✅ Created TreeExplainer for {model_name}")
+                                except:
+                                    # Fallback to KernelExplainer for non-tree models
+                                    shap_explainer = shap.KernelExplainer(model.predict_proba, shap_sample.values[:100])
+                                    print(f"✅ Created KernelExplainer for {model_name}")
+                            else:
+                                # For models without predict_proba
+                                shap_explainer = shap.KernelExplainer(model.predict, shap_sample.values[:100])
+                                print(f"✅ Created KernelExplainer for {model_name}")
+                            
+                            # Generate SHAP values
+                            if shap_explainer is not None:
+                                shap_values = shap_explainer.shap_values(shap_sample.values)
+                                print(f"✅ Generated SHAP values for {model_name}: {type(shap_values)}")
+                                
+                        except Exception as shap_explainer_error:
+                            print(f"Warning: Failed to create SHAP explainer for {model_name}: {shap_explainer_error}")
+                            shap_explainer = None
+                            shap_values = None
+                            
                 except Exception as shap_error:
                     print(f"Warning: Failed to create SHAP sample for {model_name}: {shap_error}")
                 
@@ -1873,7 +1937,8 @@ class StreamlitTrainingPipeline:
                         'accuracy': accuracy,
                         'cv_scores': cv_scores.tolist() if 'cv_scores' in locals() else [],
                         'cv_mean': cv_scores.mean() if 'cv_scores' in locals() else 0,
-                        'cv_std': cv_scores.std() if 'cv_scores' in locals() else 0
+                        'cv_std': cv_scores.std() if 'cv_scores' in locals() else 0,
+                        'training_time': training_time
                     },
                     config={
                         'model_name': model_name,
@@ -1883,6 +1948,8 @@ class StreamlitTrainingPipeline:
                     },
                     eval_predictions=eval_predictions,
                     shap_sample=shap_sample,
+                    shap_explainer=shap_explainer,
+                    shap_values=shap_values,
                     step3_data=step3_data
                 )
                 
@@ -1985,6 +2052,8 @@ class StreamlitTrainingPipeline:
                          model, params: Dict, metrics: Dict, config: Dict,
                          eval_predictions: Optional[pd.DataFrame] = None,
                          shap_sample: Optional[pd.DataFrame] = None,
+                         shap_explainer: Optional[Any] = None,
+                         shap_values: Optional[Any] = None,
                          feature_names: Optional[List[str]] = None,
                          label_mapping: Optional[Dict] = None,
                          step3_data: Dict = None) -> str:
@@ -2008,6 +2077,8 @@ class StreamlitTrainingPipeline:
                 config=config,
                 eval_predictions=eval_predictions,
                 shap_sample=shap_sample,
+                shap_explainer=shap_explainer,
+                shap_values=shap_values,
                 feature_names=feature_names,
                 label_mapping=label_mapping
             )

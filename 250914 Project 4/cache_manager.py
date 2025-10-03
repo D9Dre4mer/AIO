@@ -220,6 +220,8 @@ class CacheManager:
                         metrics: Dict[str, Any], config: Dict[str, Any],
                         eval_predictions: Optional[pd.DataFrame] = None,
                         shap_sample: Optional[pd.DataFrame] = None,
+                        shap_explainer: Optional[Any] = None,
+                        shap_values: Optional[Any] = None,
                         feature_names: Optional[List[str]] = None,
                         label_mapping: Optional[Dict[str, Any]] = None) -> str:
         """Save model cache
@@ -242,14 +244,13 @@ class CacheManager:
             Cache path string
         """
         try:
-            print(f"DEBUG: Starting cache save for {model_key}")
+            print(f"Starting cache save for {model_key}")
             
             cache_path = self.get_cache_path(model_key, dataset_id, config_hash)
             
             # Create cache directory with error handling
             try:
                 cache_path.mkdir(parents=True, exist_ok=True)
-                print(f"DEBUG: Cache directory created: {cache_path}")
             except Exception as dir_error:
                 print(f"ERROR: Failed to create cache directory: {dir_error}")
                 raise dir_error
@@ -258,7 +259,6 @@ class CacheManager:
                 model_ext = self._get_model_extension(model_key)
                 model_file = cache_path / f"model.{model_ext}"
                 self._save_model_artifact(model, model_file, model_key)
-                print(f"DEBUG: Model artifact saved: {model_file}")
             except Exception as model_error:
                 print(f"ERROR: Failed to save model artifact: {model_error}")
                 raise model_error
@@ -282,7 +282,6 @@ class CacheManager:
                 params_file = cache_path / self.cache_structure['params']
                 with open(params_file, 'w') as f:
                     json.dump(params, f, indent=2, default=safe_json_serializer)
-                print(f"DEBUG: Params saved: {params_file}")
             except Exception as params_error:
                 print(f"ERROR: Failed to save params: {params_error}")
                 raise params_error
@@ -292,7 +291,6 @@ class CacheManager:
                 metrics_file = cache_path / self.cache_structure['metrics']
                 with open(metrics_file, 'w') as f:
                     json.dump(metrics, f, indent=2, default=safe_json_serializer)
-                print(f"DEBUG: Metrics saved: {metrics_file}")
             except Exception as metrics_error:
                 print(f"ERROR: Failed to save metrics: {metrics_error}")
                 raise metrics_error
@@ -302,7 +300,6 @@ class CacheManager:
                 config_file = cache_path / self.cache_structure['config']
                 with open(config_file, 'w') as f:
                     json.dump(config, f, indent=2, default=safe_json_serializer)
-                print(f"DEBUG: Config saved: {config_file}")
             except Exception as config_error:
                 print(f"ERROR: Failed to save config: {config_error}")
                 raise config_error
@@ -330,6 +327,28 @@ class CacheManager:
                 shap_file = cache_path / self.cache_structure['shap_sample']
                 shap_sample.to_parquet(shap_file, index=False)
             
+            # Save SHAP explainer and values if provided
+            if shap_explainer is not None and shap_values is not None:
+                try:
+                    import pickle
+                    
+                    # Save SHAP explainer
+                    shap_explainer_file = cache_path / 'shap_explainer.pkl'
+                    with open(shap_explainer_file, 'wb') as f:
+                        pickle.dump(shap_explainer, f)
+                    
+                    # Save SHAP values
+                    shap_values_file = cache_path / 'shap_values.pkl'
+                    with open(shap_values_file, 'wb') as f:
+                        pickle.dump(shap_values, f)
+                    
+                    logger.info(f"SHAP explainer and values saved for {model_key}")
+                    print(f"✅ SHAP explainer and values saved for {model_key}")
+                    
+                except Exception as shap_save_error:
+                    logger.warning(f"Failed to save SHAP explainer/values for {model_key}: {shap_save_error}")
+                    print(f"⚠️ Warning: Failed to save SHAP explainer/values for {model_key}: {shap_save_error}")
+            
             # Save feature names if provided
             if feature_names is not None:
                 feature_file = cache_path / self.cache_structure['feature_names']
@@ -348,7 +367,6 @@ class CacheManager:
             try:
                 import gc
                 gc.collect()
-                print(f"DEBUG: Garbage collection completed for {model_key}")
             except Exception as cleanup_error:
                 print(f"WARNING: Failed to cleanup: {cleanup_error}")
             
@@ -356,7 +374,6 @@ class CacheManager:
             try:
                 import gc
                 gc.collect()
-                print(f"DEBUG: Garbage collection completed for {model_key}")
             except Exception as gc_error:
                 print(f"WARNING: Garbage collection failed: {gc_error}")
             
@@ -420,6 +437,33 @@ class CacheManager:
             if shap_file.exists():
                 shap_sample = pd.read_parquet(shap_file)
             
+            # Load SHAP explainer and values if exist
+            shap_explainer = None
+            shap_values = None
+            shap_explainer_file = cache_path / 'shap_explainer.pkl'
+            shap_values_file = cache_path / 'shap_values.pkl'
+            
+            if shap_explainer_file.exists() and shap_values_file.exists():
+                try:
+                    import pickle
+                    
+                    # Load SHAP explainer
+                    with open(shap_explainer_file, 'rb') as f:
+                        shap_explainer = pickle.load(f)
+                    
+                    # Load SHAP values
+                    with open(shap_values_file, 'rb') as f:
+                        shap_values = pickle.load(f)
+                    
+                    logger.info(f"SHAP explainer and values loaded for {model_key}")
+                    print(f"✅ SHAP explainer and values loaded for {model_key}")
+                    
+                except Exception as shap_load_error:
+                    logger.warning(f"Failed to load SHAP explainer/values for {model_key}: {shap_load_error}")
+                    print(f"⚠️ Warning: Failed to load SHAP explainer/values for {model_key}: {shap_load_error}")
+                    shap_explainer = None
+                    shap_values = None
+            
             # Load feature names if exists
             feature_file = cache_path / self.cache_structure['feature_names']
             feature_names = None
@@ -441,6 +485,8 @@ class CacheManager:
                 'config': config,
                 'eval_predictions': eval_predictions,
                 'shap_sample': shap_sample,
+                'shap_explainer': shap_explainer,
+                'shap_values': shap_values,
                 'feature_names': feature_names,
                 'label_mapping': label_mapping,
                 'cache_path': str(cache_path)
@@ -520,9 +566,22 @@ class CacheManager:
                 with open(file_path, 'wb') as f:
                     pickle.dump(cb_model, f)
         elif model_key.startswith('stacking_ensemble_') or model_key.startswith('voting_ensemble_'):
-            # Save ensemble model data (contains ensemble_manager and metadata)
-            with open(file_path, 'wb') as f:
-                pickle.dump(model, f)
+            # Save ensemble model data (only the sklearn model, not the entire ensemble_manager)
+            try:
+                # Check model size before saving
+                import sys
+                model_size = sys.getsizeof(model)
+                
+                if model_size > 100 * 1024 * 1024:  # 100MB limit
+                    print(f"WARNING: Ensemble model is very large ({model_size} bytes)")
+                
+                with open(file_path, 'wb') as f:
+                    pickle.dump(model, f)
+            except Exception as e:
+                print(f"ERROR: Failed to save ensemble model: {e}")
+                print(f"ERROR: Model type: {type(model)}")
+                print(f"ERROR: Model size: {sys.getsizeof(model)} bytes")
+                raise e
         else:
             # For custom model classes, save the underlying sklearn model
             if hasattr(model, 'model'):
@@ -618,7 +677,7 @@ class CacheManager:
             model.load_model(str(file_path))
             return model
         elif model_key.startswith('stacking_ensemble_') or model_key.startswith('voting_ensemble_'):
-            # Load ensemble model data (contains ensemble_manager and metadata)
+            # Load ensemble model data (only the sklearn model, not the entire ensemble_manager)
             with open(file_path, 'rb') as f:
                 return pickle.load(f)
         else:

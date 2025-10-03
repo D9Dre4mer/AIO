@@ -798,7 +798,7 @@ def show_file_preview(df, file_extension):
         </div>
         """, unsafe_allow_html=True)
 
-def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, selected_models, optuna_config, scaler_name, log_container, input_columns=None):
+def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, selected_models, optuna_config, scaler_name, log_container, input_columns=None, training_progress_bar=None, training_status_text=None, current_task=0, total_tasks=1):
     """Train models with specific scaling method using proper train/val/test split and cache system"""
     try:
         from sklearn.model_selection import cross_val_score, StratifiedKFold
@@ -812,7 +812,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
         import pandas as pd
         
         with log_container:
-            st.info(f"🔍 DEBUG: Starting train_models_with_scaling for {scaler_name}")
+            st.info(f"Starting train_models_with_scaling for {scaler_name}")
         
         model_name_mapping = {
             'random_forest': 'random_forest',
@@ -837,7 +837,13 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
         with log_container:
             st.info(f"🤖 Training {len(selected_models)} models with {scaler_name} scaling")
         
-        for model_name in selected_models:
+        for model_idx, model_name in enumerate(selected_models):
+            # Update progress bar
+            if training_progress_bar and training_status_text:
+                progress = (current_task + model_idx) / total_tasks
+                training_progress_bar.progress(progress)
+                training_status_text.text(f"Training {model_name} with {scaler_name} ({current_task + model_idx + 1}/{total_tasks})")
+            
             try:
                 with log_container:
                     st.info(f"🔄 Training {model_name} with {scaler_name}...")
@@ -982,7 +988,8 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         'recall': recall,
                         'support': support,
                         'cv_mean': cv_mean,
-                        'cv_std': cv_std
+                        'cv_std': cv_std,
+                        'training_time': training_time
                     }
                     
                     cache_config = {
@@ -1001,8 +1008,8 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         feature_names = [f"feature_{i}" for i in range(X_train_scaled.shape[1])]
                     
                     with log_container:
-                        st.info(f"🔍 Debug: Using feature names: {feature_names[:5]}{'...' if len(feature_names) > 5 else ''}")
-                        st.info(f"🔍 Debug: Total features: {len(feature_names)}")
+                        st.info(f"Using feature names: {feature_names[:5]}{'...' if len(feature_names) > 5 else ''}")
+                        st.info(f"Total features: {len(feature_names)}")
                     
                     eval_predictions = pd.DataFrame(X_test_scaled, columns=feature_names)
                     eval_predictions['true_labels'] = y_test
@@ -1013,7 +1020,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                     shap_sample = pd.DataFrame(X_test_scaled[:shap_sample_size], columns=feature_names)
                     
                     with log_container:
-                        st.info(f"🔍 Debug: Created SHAP sample with {shap_sample_size} samples for caching")
+                        st.info(f"Created SHAP sample with {shap_sample_size} samples for caching")
                     
                     # Create label mapping with real labels from dataset
                     # Get unique labels from y_train and y_test
@@ -1031,7 +1038,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                             # Get original labels from dataset
                             original_labels = sorted(df[label_column].unique().tolist())
                             with log_container:
-                                st.info(f"🔍 Debug: Found original labels: {original_labels}")
+                                st.info(f"Found original labels: {original_labels}")
                     
                     # Create label mapping
                     if original_labels and len(original_labels) == len(unique_labels):
@@ -1065,21 +1072,21 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                     
                     # Generate and cache SHAP values for tree-based models (with comprehensive safety checks)
                     with log_container:
-                        st.info(f"🔍 Starting SHAP cache generation for {model_name} ({scaler_name})")
+                        st.info(f"Starting SHAP cache generation for {model_name} ({scaler_name})")
                     
                     try:
                         # Safety Check 1: Verify we're in a stable environment
                         import sys
                         if hasattr(sys, '_getframe'):
                             with log_container:
-                                st.info("🔍 Environment check: Python environment is stable")
+                                st.info("Environment check: Python environment is stable")
                         
                         # Safety Check 2: Check if SHAP is available
                         try:
                             import shap
                             shap_available = True
                             with log_container:
-                                st.info(f"🔍 SHAP version: {shap.__version__}")
+                                st.info(f"SHAP version: {shap.__version__}")
                         except ImportError as e:
                             shap_available = False
                             with log_container:
@@ -1091,28 +1098,28 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         if shap_available:
                             if hasattr(final_model, 'predict_proba'):
                                 with log_container:
-                                    st.info("🔍 Model check: Model has predict_proba method")
+                                    st.info("Model check: Model has predict_proba method")
                             else:
                                 with log_container:
                                     st.warning("⚠️ Model check: Model may not be compatible with SHAP")
                             
                             with log_container:
-                                st.info(f"🔍 SHAP is available, proceeding with cache generation")
+                                st.info(f"SHAP is available, proceeding with cache generation")
                         
                         if shap_available:
                             # Safety Check 4: Memory usage validation
                             memory_before = shap_cache_manager.get_memory_usage()
                             with log_container:
-                                st.info(f"🔍 Memory usage before SHAP: {memory_before:.1f} MB")
+                                st.info(f"Memory usage before SHAP: {memory_before:.1f} MB")
                         
                             # Safety Check 5: Sample data validation
                             if shap_sample is None or len(shap_sample) == 0:
                                 with log_container:
-                                    st.error("❌ SHAP sample is empty or None")
-                                return
+                                    st.warning("⚠️ SHAP sample is empty or None - cannot generate SHAP")
+                                shap_available = False
                             
                             with log_container:
-                                st.info(f"🔍 SHAP sample size: {len(shap_sample)} samples, {shap_sample.shape[1]} features")
+                                st.info(f"SHAP sample size: {len(shap_sample)} samples, {shap_sample.shape[1]} features")
                         
                             # Safety Check 6: Model type validation
                             tree_based_models = ['random_forest', 'xgboost', 'lightgbm', 'catboost', 'gradient_boosting', 'decision_tree']
@@ -1120,7 +1127,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                         
                             if is_tree_based:
                                 with log_container:
-                                    st.info(f"🔍 Model type check: {model_name} is tree-based - suitable for SHAP")
+                                    st.info(f"Model type check: {model_name} is tree-based - suitable for SHAP")
                             else:
                                 with log_container:
                                     st.info(f"ℹ️ Model type check: {model_name} is not tree-based - will try SHAP anyway")
@@ -1130,32 +1137,32 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                             try:
                                 from shap_cache_manager import shap_cache_manager
                                 with log_container:
-                                    st.info("🔍 SHAP cache manager imported successfully")
+                                    st.info("SHAP cache manager imported successfully")
                             except ImportError as e:
                                 with log_container:
-                                    st.error(f"❌ Failed to import SHAP cache manager: {e}")
-                                return
+                                    st.warning(f"⚠️ Failed to import SHAP cache manager: {e} - cannot generate SHAP")
+                                shap_available = False
                         
                             # Safety Check 8: Import visualization functions
                             try:
                                 from visualization import create_shap_explainer
                                 with log_container:
-                                    st.info("🔍 SHAP visualization functions imported successfully")
+                                    st.info("SHAP visualization functions imported successfully")
                             except ImportError as e:
                                 with log_container:
-                                    st.error(f"❌ Failed to import SHAP visualization functions: {e}")
-                                return
+                                    st.warning(f"⚠️ Failed to import SHAP visualization functions: {e} - cannot generate SHAP")
+                                shap_available = False
                         
                             # Proceed with SHAP cache generation
                             with log_container:
-                                st.info(f"🔍 Generating SHAP cache for model: {model_name}")
+                                st.info(f"Generating SHAP cache for model: {model_name}")
                             
                             # Create SHAP explainer with comprehensive error handling
                             try:
                                 with log_container:
-                                    st.info(f"🔍 Creating SHAP explainer for {model_name} ({scaler_name})")
-                                    st.info(f"🔍 Model type: {type(final_model)}")
-                                    st.info(f"🔍 Sample data shape: {shap_sample.values.shape}")
+                                    st.info(f"Creating SHAP explainer for {model_name} ({scaler_name})")
+                                    st.info(f"Model type: {type(final_model)}")
+                                    st.info(f"Sample data shape: {shap_sample.values.shape}")
                                 
                                 explainer = create_shap_explainer(final_model, shap_sample.values)
                                 
@@ -1166,7 +1173,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                                     # Generate SHAP values with timeout protection
                                     try:
                                         with log_container:
-                                            st.info(f"🔍 Generating SHAP values for {model_name}")
+                                            st.info(f"Generating SHAP values for {model_name}")
                                         
                                         shap_values = explainer.shap_values(shap_sample.values)
                                         
@@ -1175,10 +1182,10 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                                         
                                         # Save SHAP cache
                                         with log_container:
-                                            st.info(f"🔍 Attempting to save SHAP cache for {model_name} ({scaler_name})")
-                                            st.info(f"🔍 Feature names: {input_columns}")
-                                            st.info(f"🔍 Sample data shape: {shap_sample.values.shape}")
-                                            st.info(f"🔍 SHAP values type: {type(shap_values)}")
+                                            st.info(f"Attempting to save SHAP cache for {model_name} ({scaler_name})")
+                                            st.info(f"Feature names: {input_columns}")
+                                            st.info(f"Sample data shape: {shap_sample.values.shape}")
+                                            st.info(f"SHAP values type: {type(shap_values)}")
                                         
                                         shap_cache_file = shap_cache_manager.save_shap_cache(
                                             model=final_model,
@@ -1245,18 +1252,19 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 }
         
         with log_container:
-            st.info(f"🔍 DEBUG: train_models_with_scaling completed for {scaler_name}")
-            st.info(f"🔍 DEBUG: scaler_results count = {len(scaler_results)}")
-            st.info(f"🔍 DEBUG: scaler_results keys = {list(scaler_results.keys())}")
-            st.info(f"🔍 DEBUG: About to return results for {scaler_name}")
+            st.info(f"train_models_with_scaling completed for {scaler_name}")
+            st.info(f"scaler_results count = {len(scaler_results)}")
+            st.info(f"scaler_results keys = {list(scaler_results.keys())}")
+            st.info(f"About to return results for {scaler_name}")
         
         result = {
             'model_results': scaler_results,
-            'status': 'success'
+            'status': 'success',
+            'current_task': current_task + len(selected_models)  # Return updated current_task
         }
         
         with log_container:
-            st.info(f"🔍 DEBUG: Returning result for {scaler_name}: {result}")
+            st.info(f"Returning result for {scaler_name}: {result}")
         
         return result
     
@@ -1354,7 +1362,22 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         training_times = {}
         
         # Process each scaling method
-        for scaler_name in numeric_scalers:
+        total_scalers = len(numeric_scalers)
+        total_models = len(selected_models)
+        total_tasks = total_scalers * total_models  # Total number of model-scaler combinations
+        
+        # Create single progress bar for entire training process
+        training_progress_bar = st.progress(0)
+        training_status_text = st.empty()
+        
+        current_task = 0
+        
+        for scaler_idx, scaler_name in enumerate(numeric_scalers):
+            # Update progress bar
+            progress = current_task / total_tasks
+            training_progress_bar.progress(progress)
+            training_status_text.text(f"Processing scaling method: {scaler_name} ({scaler_idx + 1}/{total_scalers})")
+            
             with log_container:
                 st.info(f"🔧 Processing scaling method: {scaler_name}")
             
@@ -1388,7 +1411,8 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
             try:
                 scaling_result = train_models_with_scaling(
                     X_train_scaled, X_val_scaled, X_test_scaled, y_train, y_val, y_test, 
-                    selected_models, optuna_config, scaler_name, log_container, input_columns
+                    selected_models, optuna_config, scaler_name, log_container, input_columns,
+                    training_progress_bar, training_status_text, current_task, total_tasks
                 )
                 
                 # Extract scaler_results from the returned structure
@@ -1398,8 +1422,9 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     scaler_results = {}
                 else:
                     scaler_results = scaling_result.get('model_results', {})
+                    current_task = scaling_result.get('current_task', current_task)  # Update current_task
                     with log_container:
-                        st.info(f"🔍 DEBUG: {scaler_name} returned {len(scaler_results)} models")
+                        st.info(f"{scaler_name} returned {len(scaler_results)} models")
                 
                 # Merge results with scaling method prefix
                 for model_name, result in scaler_results.items():
@@ -1407,13 +1432,13 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     model_results[prefixed_name] = result
                     training_times[prefixed_name] = result.get('training_time', 0)
                 
-                # Debug: Show individual model results in Training Log
+                # Show individual model results in Training Log
                 with log_container:
-                    st.info(f"🔍 DEBUG: {scaler_name} - Individual models trained: {list(scaler_results.keys())}")
+                    st.info(f"{scaler_name} - Individual models trained: {list(scaler_results.keys())}")
                     for model_name, result in scaler_results.items():
                         status = result.get('status', 'unknown')
                         accuracy = result.get('validation_accuracy', 0)
-                        st.info(f"🔍 DEBUG: {model_name}_{scaler_name}: status={status}, accuracy={accuracy:.4f}")
+                        st.info(f"{model_name}_{scaler_name}: status={status}, accuracy={accuracy:.4f}")
                     
             except Exception as scaling_error:
                 st.error(f"❌ Scaling method {scaler_name} failed: {str(scaling_error)}")
@@ -1425,22 +1450,28 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         # Train ensemble models if enabled
         ensemble_results = {}
         
-        # Debug: Show ensemble training info in Training Log
+        # Show ensemble training info in Training Log
         with log_container:
-            st.info("🔍 DEBUG: Reached ensemble training logic!")
-            st.info(f"🔍 DEBUG: model_results keys = {list(model_results.keys())}")
-            st.info(f"🔍 DEBUG: model_results count = {len(model_results)}")
+            st.info("Reached ensemble training logic!")
+            st.info(f"model_results keys = {list(model_results.keys())}")
+            st.info(f"model_results count = {len(model_results)}")
             
-            # Debug: Check if model_results is empty
+            # Check if model_results is empty
             if not model_results:
-                st.error("❌ DEBUG: model_results is EMPTY! No individual models trained successfully!")
-                st.error("❌ DEBUG: This means ensemble training cannot proceed!")
+                st.error("❌ model_results is EMPTY! No individual models trained successfully!")
+                st.error("❌ This means ensemble training cannot proceed!")
                 return {
                     'status': 'failed',
                     'error': 'No individual models trained successfully',
                     'model_results': {},
                     'training_times': {}
                 }
+            
+            # Update progress bar for ensemble training
+            if training_progress_bar and training_status_text:
+                progress = current_task / total_tasks
+                training_progress_bar.progress(progress)
+                training_status_text.text(f"Training ensemble models ({current_task + 1}/{total_tasks})")
             
             # Debug: Show successful models
             successful_models = [k for k, v in model_results.items() if v.get('status') == 'success']
@@ -1496,13 +1527,60 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                 best_scaler = scaler_name
                     
                     if best_model is not None:
-                        # Extract the actual sklearn model from wrapper if needed
-                        actual_model = best_model
-                        if hasattr(best_model, 'model') and best_model.model is not None:
-                            actual_model = best_model.model
-                        
-                        voting_models.append((f"{model_name}_{best_scaler}", actual_model))
-                        voting_model_names.append(f"{model_name}_{best_scaler}")
+                        # Create fresh sklearn models from scratch to avoid pickle issues
+                        # But don't train them - just use the structure
+                        try:
+                            fresh_model = None
+                            
+                            if model_name == 'logistic_regression':
+                                from sklearn.linear_model import LogisticRegression
+                                fresh_model = LogisticRegression(random_state=42)
+                            elif model_name == 'decision_tree':
+                                from sklearn.tree import DecisionTreeClassifier
+                                fresh_model = DecisionTreeClassifier(random_state=42)
+                            elif model_name == 'random_forest':
+                                from sklearn.ensemble import RandomForestClassifier
+                                fresh_model = RandomForestClassifier(random_state=42)
+                            elif model_name == 'svm':
+                                from sklearn.svm import SVC
+                                fresh_model = SVC(random_state=42)
+                            elif model_name == 'knn':
+                                from sklearn.neighbors import KNeighborsClassifier
+                                fresh_model = KNeighborsClassifier()
+                            elif model_name == 'naive_bayes':
+                                from sklearn.naive_bayes import GaussianNB
+                                fresh_model = GaussianNB()
+                            elif model_name == 'gradient_boosting':
+                                from sklearn.ensemble import GradientBoostingClassifier
+                                fresh_model = GradientBoostingClassifier(random_state=42)
+                            elif model_name == 'adaboost':
+                                from sklearn.ensemble import AdaBoostClassifier
+                                fresh_model = AdaBoostClassifier(random_state=42)
+                            elif model_name == 'xgboost':
+                                from xgboost import XGBClassifier
+                                fresh_model = XGBClassifier(random_state=42)
+                            elif model_name == 'lightgbm':
+                                from lightgbm import LGBMClassifier
+                                fresh_model = LGBMClassifier(random_state=42)
+                            elif model_name == 'catboost':
+                                from catboost import CatBoostClassifier
+                                fresh_model = CatBoostClassifier(random_state=42, verbose=False)
+                            
+                            if fresh_model is not None:
+                                voting_models.append((f"{model_name}_{best_scaler}", fresh_model))
+                                voting_model_names.append(f"{model_name}_{best_scaler}")
+                                
+                                with log_container:
+                                    st.info(f"   ✅ Created fresh {model_name} for voting ensemble")
+                            else:
+                                with log_container:
+                                    st.warning(f"   ⚠️ Unknown model type: {model_name}")
+                                
+                        except Exception as create_error:
+                            with log_container:
+                                st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
+                            # Skip this model
+                            continue
                 
                 if voting_models:
                     # Create voting classifier
@@ -1699,13 +1777,60 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                 best_scaler = scaler_name
                     
                     if best_model is not None:
-                        # Extract the actual sklearn model from wrapper if needed
-                        actual_model = best_model
-                        if hasattr(best_model, 'model') and best_model.model is not None:
-                            actual_model = best_model.model
-                        
-                        stacking_models.append((f"{model_name}_{best_scaler}", actual_model))
-                        stacking_model_names.append(f"{model_name}_{best_scaler}")
+                        # Create fresh sklearn models from scratch to avoid pickle issues
+                        # But don't train them - just use the structure
+                        try:
+                            fresh_model = None
+                            
+                            if model_name == 'logistic_regression':
+                                from sklearn.linear_model import LogisticRegression
+                                fresh_model = LogisticRegression(random_state=42)
+                            elif model_name == 'decision_tree':
+                                from sklearn.tree import DecisionTreeClassifier
+                                fresh_model = DecisionTreeClassifier(random_state=42)
+                            elif model_name == 'random_forest':
+                                from sklearn.ensemble import RandomForestClassifier
+                                fresh_model = RandomForestClassifier(random_state=42)
+                            elif model_name == 'svm':
+                                from sklearn.svm import SVC
+                                fresh_model = SVC(random_state=42)
+                            elif model_name == 'knn':
+                                from sklearn.neighbors import KNeighborsClassifier
+                                fresh_model = KNeighborsClassifier()
+                            elif model_name == 'naive_bayes':
+                                from sklearn.naive_bayes import GaussianNB
+                                fresh_model = GaussianNB()
+                            elif model_name == 'gradient_boosting':
+                                from sklearn.ensemble import GradientBoostingClassifier
+                                fresh_model = GradientBoostingClassifier(random_state=42)
+                            elif model_name == 'adaboost':
+                                from sklearn.ensemble import AdaBoostClassifier
+                                fresh_model = AdaBoostClassifier(random_state=42)
+                            elif model_name == 'xgboost':
+                                from xgboost import XGBClassifier
+                                fresh_model = XGBClassifier(random_state=42)
+                            elif model_name == 'lightgbm':
+                                from lightgbm import LGBMClassifier
+                                fresh_model = LGBMClassifier(random_state=42)
+                            elif model_name == 'catboost':
+                                from catboost import CatBoostClassifier
+                                fresh_model = CatBoostClassifier(random_state=42, verbose=False)
+                            
+                            if fresh_model is not None:
+                                stacking_models.append((f"{model_name}_{best_scaler}", fresh_model))
+                                stacking_model_names.append(f"{model_name}_{best_scaler}")
+                                
+                                with log_container:
+                                    st.info(f"   ✅ Created fresh {model_name} for stacking ensemble")
+                            else:
+                                with log_container:
+                                    st.warning(f"   ⚠️ Unknown model type: {model_name}")
+                                
+                        except Exception as create_error:
+                            with log_container:
+                                st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
+                            # Skip this model
+                            continue
                 
                 if stacking_models:
                     # Create meta-learner
@@ -3306,6 +3431,8 @@ def render_optuna_configuration():
             # Merge with existing step data
             current_data = session_manager.get_step_data(3)
             current_data['optuna_config'] = optuna_config
+            # FIXED: Also save selected_models directly to step3_data for consistency
+            current_data['selected_models'] = selected_models
             session_manager.set_step_data(3, current_data)
             
             st.success(f"✅ Optuna configuration saved for {len(selected_models)} models")
@@ -3697,6 +3824,8 @@ def render_vectorization_configuration():
         # Merge with existing step data
         current_data = session_manager.get_step_data(3)
         current_data['vectorization_config'] = vectorization_config
+        # FIXED: Also save selected_vectorization directly to step3_data for consistency
+        current_data['selected_vectorization'] = selected_methods
         session_manager.set_step_data(3, current_data)
         
         st.success(f"✅ Vectorization configuration saved for {len(selected_methods)} methods")
@@ -3850,7 +3979,7 @@ def render_step4_wireframe():
         st.session_state.training_started = False
     
     # Create debug container for configuration details
-    config_debug_container = st.expander("🔍 Configuration Debug", expanded=False)
+    config_debug_container = st.expander("📋 Training Log", expanded=False)
     
     # Load configurations from Step 3 (always load, not just for display)
     optuna_config = step3_data.get('optuna_config', {})
@@ -3899,6 +4028,7 @@ def render_step4_wireframe():
             st.session_state.training_started = False
             st.session_state.training_in_progress = False
             st.session_state.training_completed = False
+            st.session_state.results_displayed = False
             st.rerun()
     
     if st.button("🚀 Start Training", type="primary"):
@@ -3916,6 +4046,7 @@ def render_step4_wireframe():
         st.session_state.training_in_progress = True
         st.session_state.training_started = True
         st.session_state.training_completed = False
+        st.session_state.results_displayed = False
         
         # Use try-finally to ensure cleanup
         try:
@@ -3940,7 +4071,7 @@ def render_step4_wireframe():
                 # Try to get from step2_data first (Multi Input)
                 column_config = step2_data.get('column_config', {})
                 # Create debug logging container for Step 4
-                debug_container = st.expander("🔍 Debug Log", expanded=False)
+                debug_container = config_debug_container
                 with debug_container:
                     st.info(f"🔍 Debug Step 4: step2_data keys = {list(step2_data.keys())}")
                     st.info(f"🔍 Debug Step 4: column_config = {column_config}")
@@ -4077,7 +4208,7 @@ def render_step4_wireframe():
                     
                     # Add progress indicator to prevent UI freezing
                     progress_placeholder = st.empty()
-                    progress_placeholder.info("🔄 Training in progress... Please wait.")
+                    progress_placeholder.toast("🔄 Training in progress... Please wait.")
                     
                     if data_type == 'multi_input':
                         # For numeric data: use direct sklearn training
@@ -4108,10 +4239,19 @@ def render_step4_wireframe():
                     # Clear progress indicator
                     progress_placeholder.empty()
                     
+                    # Clear progress bar and status text
+                    try:
+                        progress_bar.empty()
+                        status_text.empty()
+                    except:
+                        pass
+                    
                 except Exception as e:
                     # Clear progress indicator on error
                     try:
                         progress_placeholder.empty()
+                        progress_bar.empty()
+                        status_text.empty()
                     except:
                         pass
                     
@@ -4123,7 +4263,7 @@ def render_step4_wireframe():
                     results = {'status': 'failed', 'error': str(e)}
                     
                 # Process results (same format as auto_train.py)
-                results_debug_container = st.expander("🔍 Results Debug Log", expanded=False)
+                results_debug_container = config_debug_container
                 with results_debug_container:
                     st.info(f"🔍 Debug: results type = {type(results)}")
                     if isinstance(results, dict):
@@ -4248,23 +4388,53 @@ def render_step4_wireframe():
                         st.subheader("📋 Detailed Results")
                         st.dataframe(results_df, width='stretch')
                         
-                        # Save training results to cache with robust error handling
+                        # Save training results cache with summary information only
+                        # Individual models are already cached in cache/models/ during training
+                        # Training results cache contains only summary metadata
                         try:
                             from cache_manager import training_results_cache
                             
-                            # Generate session key from step data
+                            # Generate session key for Step 5 compatibility
                             session_key = training_results_cache.generate_session_key(
                                 step1_data, step2_data, step3_data
                             )
                             
-                            # Debug: Show session key
+                            # Create summary training results (no large files, only metadata)
+                            summary_results = {
+                                'status': results.get('status', 'success'),
+                                'total_models': results.get('total_models', 0),
+                                'successful_combinations': results.get('successful_combinations', 0),
+                                'total_combinations': results.get('total_combinations', 0),
+                                'elapsed_time': results.get('elapsed_time', 0),
+                                'session_key': session_key,
+                                'created_at': pd.Timestamp.now().isoformat(),
+                                'summary_stats': {
+                                    'best_accuracy': results_df['test_accuracy'].max() if len(successful_results) > 0 else 0,
+                                    'avg_accuracy': results_df['test_accuracy'].mean() if len(successful_results) > 0 else 0,
+                                    'avg_training_time': results_df['training_time'].mean() if len(successful_results) > 0 else 0,
+                                    'total_training_time': results_df['training_time'].sum() if len(successful_results) > 0 else 0
+                                },
+                                'model_summary': [
+                                    {
+                                        'model_name': row['model_name'],
+                                        'test_accuracy': row['test_accuracy'],
+                                        'training_time': row['training_time'],
+                                        'status': row.get('status', 'success')
+                                    }
+                                    for _, row in results_df.iterrows()
+                                ] if len(successful_results) > 0 else []
+                            }
+                            
+                            # Save training results cache (summary only)
+                            cache_path = training_results_cache.save_training_results(session_key, summary_results)
+                            
+                            # Debug: Show session key and cache path
                             with results_debug_container:
                                 st.info(f"🔍 Debug: Generated session key: {session_key}")
+                                st.info(f"💾 Training results cache saved: {cache_path}")
+                                st.info("📊 Summary metadata saved (no large files)")
                             
-                            # Save comprehensive results to cache
-                            cache_path = training_results_cache.save_training_results(session_key, results)
-                            
-                            # Save only minimal data to session state
+                            # Save data to session state
                             step4_data = {
                                 'session_key': session_key,
                                 'cache_path': cache_path,
@@ -4276,7 +4446,7 @@ def render_step4_wireframe():
                             }
                             session_manager.set_step_data(4, step4_data)
                             with results_debug_container:
-                                st.success("💾 Training results saved to cache successfully!")
+                                st.success("✅ Step 4 completed! Training results cache saved with summary metadata.")
                             
                         except Exception as cache_error:
                             st.warning(f"⚠️ Cache save failed: {str(cache_error)}")
@@ -4387,6 +4557,10 @@ def render_step4_wireframe():
             else:
                 # Training was successful, keep completed state
                 st.session_state.training_completed = True
+                
+                # NO RERUN - Keep the results displayed without refreshing
+                # This prevents rerun after displaying detailed results
+                pass
     
     # Navigation buttons
     render_navigation_buttons()
@@ -4455,7 +4629,9 @@ def render_step5_wireframe():
             st.rerun()
         return
     
-    # Get training results from step 4 - now using cache
+    # Load both training results cache and model cache
+    # Training results cache contains summary metadata
+    # Model cache contains individual model data
     session_key = step4_data.get('session_key')
     cache_path = step4_data.get('cache_path')
     
@@ -4466,19 +4642,49 @@ def render_step5_wireframe():
             st.rerun()
         return
     
-    # Load training results from cache
-    try:
-        from cache_manager import training_results_cache
-        training_results = training_results_cache.load_training_results(session_key)
-    except Exception as e:
-        st.error(f"❌ Failed to load training results from cache: {e}")
-        if st.button("← Go to Step 4"):
-            session_manager.set_current_step(4)
-            st.rerun()
-        return
+    # Load training results cache (summary metadata)
+    training_summary = None
+    if cache_path:
+        try:
+            from cache_manager import training_results_cache
+            training_summary = training_results_cache.load_training_results(session_key)
+            st.info(f"📊 Training summary loaded: {len(training_summary.get('model_summary', []))} models")
+        except Exception as e:
+            st.warning(f"⚠️ Could not load training summary: {e}")
     
-    if not training_results or training_results.get('status') != 'success':
-        st.error("❌ No valid training results found. Please complete Step 4 first.")
+    # Load model cache (individual model data)
+    try:
+        from cache_manager import cache_manager
+        
+        # List all cached models to get available models for Step 5
+        cached_models = cache_manager.list_cached_models()
+        
+        if not cached_models:
+            st.error("❌ No cached models found. Please complete Step 4 first.")
+            if st.button("← Go to Step 4"):
+                session_manager.set_current_step(4)
+                st.rerun()
+            return
+            
+        st.success(f"✅ Found {len(cached_models)} cached models ready for analysis!")
+        
+        # Show training summary if available
+        if training_summary:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📊 Total Models", training_summary.get('total_models', 0))
+            with col2:
+                st.metric("✅ Successful", training_summary.get('successful_combinations', 0))
+            with col3:
+                elapsed_time = training_summary.get('elapsed_time', 0)
+                try:
+                    elapsed_time_float = float(elapsed_time)
+                    st.metric("⏱️ Total Time", f"{elapsed_time_float:.1f}s")
+                except (ValueError, TypeError):
+                    st.metric("⏱️ Total Time", f"{elapsed_time}s")
+        
+    except Exception as e:
+        st.error(f"❌ Failed to load model cache: {e}")
         if st.button("← Go to Step 4"):
             session_manager.set_current_step(4)
             st.rerun()
@@ -4519,58 +4725,10 @@ def render_shap_analysis():
     </div>
     """, unsafe_allow_html=True)
     
-    # Information card
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        margin: 1rem 0;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    ">
-        <h4 style="
-            color: white;
-            margin: 0 0 0.5rem 0;
-            font-size: 1.2rem;
-            font-weight: bold;
-        ">
-            📝 What is SHAP?
-        </h4>
-        <p style="
-            color: rgba(255, 255, 255, 0.9);
-            margin: 0;
-            line-height: 1.5;
-        ">
-            SHAP explains individual predictions by computing the contribution of each feature to the model's output. 
-            Best suited for tree-based models like Random Forest, XGBoost, LightGBM, and CatBoost.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
-    
     # Enable/Disable SHAP
     enable_shap = st.checkbox("Enable SHAP Analysis", value=True, help="Enable SHAP visualization for tree-based models")
     
     if enable_shap:
-        # Configuration section with beautiful styling
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        ">
-            <h4 style="
-                color: #333;
-                margin: 0 0 1rem 0;
-                font-size: 1.2rem;
-                font-weight: bold;
-                text-align: center;
-            ">
-                ⚙️ Configuration Settings
-            </h4>
-        </div>
-        """, unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
@@ -4606,27 +4764,6 @@ def render_shap_analysis():
                 default=available_models,  # Default to all available models
                 help="Choose tree-based models for SHAP analysis"
             )
-        
-        # SHAP plot types with beautiful styling
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
-            padding: 1.5rem;
-            border-radius: 10px;
-            margin: 1rem 0;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        ">
-            <h4 style="
-                color: #333;
-                margin: 0 0 1rem 0;
-                font-size: 1.2rem;
-                font-weight: bold;
-                text-align: center;
-            ">
-                📊 SHAP Plot Types
-            </h4>
-        </div>
-        """, unsafe_allow_html=True)
         
         plot_types = st.multiselect(
             "Select Plot Types:",
@@ -5160,7 +5297,7 @@ def render_shap_analysis():
                         
                         # Display debug info in a single container
                         if debug_info:
-                            with st.expander("🔍 SHAP Cache Debug Info", expanded=False):
+                            with st.expander("📋 Training Log", expanded=False):
                                 for info in debug_info:
                                     st.info(info)
                         
@@ -5206,12 +5343,6 @@ def render_confusion_matrix():
             "Show Metrics",
             value=True,
             help="Display classification metrics"
-        )
-        
-        labels_order = st.text_input(
-            "Labels Order (optional):",
-            placeholder="e.g., 0,1,2 or class_a,class_b,class_c",
-            help="Specify the order of class labels (comma-separated)"
         )
     
     # Available models (check from cache)
@@ -5260,9 +5391,10 @@ def render_confusion_matrix():
                     from confusion_matrix_cache import ConfusionMatrixCache
                     cm_cache = ConfusionMatrixCache()
                     
-                    # Parse labels order if provided
+                    # Parse labels order if provided (use default empty string)
+                    labels_order = ""  # Default empty string
                     labels_list = None
-                    if labels_order.strip():
+                    if labels_order and labels_order.strip():
                         labels_list = [label.strip() for label in labels_order.split(',')]
                     
                     # Generate confusion matrix from cache
@@ -5321,19 +5453,36 @@ def render_confusion_matrix():
                     
                     col1, col2, col3, col4 = st.columns(4)
                     with col1:
-                        st.metric("Accuracy", f"{metrics.get('accuracy', 0):.4f}")
+                        accuracy = metrics.get('accuracy', 0)
+                        try:
+                            accuracy_float = float(accuracy)
+                            st.metric("Accuracy", f"{accuracy_float:.4f}")
+                        except (ValueError, TypeError):
+                            st.metric("Accuracy", f"{accuracy}")
                     with col2:
                         # Use macro_precision as default, fallback to precision
                         precision = metrics.get('macro_precision', metrics.get('precision', 0))
-                        st.metric("Precision", f"{precision:.4f}")
+                        try:
+                            precision_float = float(precision)
+                            st.metric("Precision", f"{precision_float:.4f}")
+                        except (ValueError, TypeError):
+                            st.metric("Precision", f"{precision}")
                     with col3:
                         # Use macro_recall as default, fallback to recall
                         recall = metrics.get('macro_recall', metrics.get('recall', 0))
-                        st.metric("Recall", f"{recall:.4f}")
+                        try:
+                            recall_float = float(recall)
+                            st.metric("Recall", f"{recall_float:.4f}")
+                        except (ValueError, TypeError):
+                            st.metric("Recall", f"{recall}")
                     with col4:
                         # Use macro_f1 as default, fallback to f1_score
                         f1_score = metrics.get('macro_f1', metrics.get('f1_score', 0))
-                        st.metric("F1-Score", f"{f1_score:.4f}")
+                        try:
+                            f1_score_float = float(f1_score)
+                            st.metric("F1-Score", f"{f1_score_float:.4f}")
+                        except (ValueError, TypeError):
+                            st.metric("F1-Score", f"{f1_score}")
                     
                     # Show additional metrics if available
                     if metrics.get('class_metrics'):
@@ -5451,198 +5600,131 @@ def render_model_comparison():
     
     if st.button("📈 Load Model Metrics"):
         try:
-            # Get training results from Step 4 cache
-            step4_data = session_manager.get_step_data(4)
-            session_key = step4_data.get('session_key')
+            # OPTIMIZED: Load metrics directly from model cache
+            from cache_manager import cache_manager
             
-            if not session_key:
-                st.error("❌ No session key found. Please complete Step 4 first.")
+            # Get all cached models
+            cached_models = cache_manager.list_cached_models()
+            
+            if not cached_models:
+                st.error("❌ No cached models found. Please complete Step 4 first.")
                 return
             
-            # Load training results from cache
-            from cache_manager import training_results_cache
-            training_results = training_results_cache.load_training_results(session_key)
+            # Load metrics from each cached model
+            model_metrics = []
+            for model_info in cached_models:
+                try:
+                    # Load model cache
+                    cache_data = cache_manager.load_model_cache(
+                        model_info['model_key'],
+                        model_info['dataset_id'],
+                        model_info['config_hash']
+                    )
+                    
+                    # Extract metrics
+                    metrics = cache_data.get('metrics', {})
+                    config = cache_data.get('config', {})
+                    
+                    # Log metrics for ensemble models
+                    if 'ensemble' in model_info['model_key']:
+                        st.info(f"Ensemble Metrics for {model_info['model_key']}:")
+                        st.info(f"   • metrics keys: {list(metrics.keys())}")
+                        st.info(f"   • accuracy: {metrics.get('accuracy', 'Not found')}")
+                        st.info(f"   • test_accuracy: {metrics.get('test_accuracy', 'Not found')}")
+                        st.info(f"   • debug_accuracy_source: {metrics.get('debug_accuracy_source', 'Not found')}")
+                    
+                    model_metrics.append({
+                        'model_name': model_info['model_key'],
+                        'dataset_id': model_info['dataset_id'],
+                        'config_hash': model_info['config_hash'][:8] + '...',
+                        'accuracy': metrics.get('accuracy', metrics.get('test_accuracy', 0)),  # Fallback to test_accuracy
+                        'f1_score': metrics.get('f1_score', 0),
+                        'precision': metrics.get('precision', 0),
+                        'recall': metrics.get('recall', 0),
+                        'training_time': metrics.get('training_time', 0),
+                        'status': 'success',
+                        'cached': True
+                    })
+                    
+                except Exception as e:
+                    st.warning(f"⚠️ Could not load metrics for {model_info['model_key']}: {e}")
             
-            if not training_results or training_results.get('status') != 'success':
-                st.error("❌ No valid training results found. Please complete Step 4 first.")
+            if not model_metrics:
+                st.error("❌ No valid model metrics found.")
                 return
             
-            # Extract results from cache - data is directly in training_results, not in a 'results' key
-            comprehensive_results = training_results.get('comprehensive_results', [])
-            model_results = training_results.get('model_results', {})
-            
-            # Debug: Show all debug information in one container
-            debug_container = st.expander("🔍 Log", expanded=False)
-            
-            # Handle both formats: comprehensive_results (text) and model_results (numeric)
+            # Convert model_metrics to metrics_data format
             metrics_data = []
+            for model_metric in model_metrics:
+                row_data = {'Model': model_metric['model_name']}
+                
+                if show_accuracy:
+                    accuracy = model_metric['accuracy']
+                    try:
+                        accuracy_float = float(accuracy)
+                        row_data['Accuracy'] = f"{accuracy_float:.4f}"
+                    except (ValueError, TypeError):
+                        row_data['Accuracy'] = f"{accuracy}"
+                if show_f1_score:
+                    f1_score = model_metric['f1_score']
+                    try:
+                        f1_score_float = float(f1_score)
+                        row_data['F1-Score'] = f"{f1_score_float:.4f}"
+                    except (ValueError, TypeError):
+                        row_data['F1-Score'] = f"{f1_score}"
+                if show_precision:
+                    precision = model_metric['precision']
+                    try:
+                        precision_float = float(precision)
+                        row_data['Precision'] = f"{precision_float:.4f}"
+                    except (ValueError, TypeError):
+                        row_data['Precision'] = f"{precision}"
+                if show_recall:
+                    recall = model_metric['recall']
+                    try:
+                        recall_float = float(recall)
+                        row_data['Recall'] = f"{recall_float:.4f}"
+                    except (ValueError, TypeError):
+                        row_data['Recall'] = f"{recall}"
+                if show_training_time:
+                    training_time = model_metric['training_time']
+                    try:
+                        training_time_float = float(training_time)
+                        row_data['Training Time'] = f"{training_time_float:.1f}s"
+                    except (ValueError, TypeError):
+                        row_data['Training Time'] = f"{training_time}s"
+                if show_status:
+                    row_data['Status'] = model_metric['status']
+                if show_cached:
+                    row_data['Cached'] = "Yes" if model_metric['cached'] else "No"
+                
+                metrics_data.append(row_data)
             
-            if comprehensive_results:
-                st.info("📊 Loading metrics from comprehensive_results (text data)...")
-                
-                with debug_container:
-                    st.markdown("**Cache Data:**")
-                    st.json({
-                        'session_key': session_key,
-                        'training_results_keys': list(training_results.keys()) if training_results else 'None',
-                        'training_results_status': training_results.get('status') if training_results else 'None'
-                    })
-                    
-                    st.markdown("**Extracted Data:**")
-                    st.json({
-                        'comprehensive_results_count': len(comprehensive_results) if comprehensive_results else 0,
-                        'model_results_keys': list(model_results.keys()) if model_results else 'None',
-                        'model_results_count': len(model_results) if model_results else 0
-                    })
-                
-                for result in comprehensive_results:
-                    if result.get('status') == 'success':
-                        row_data = {'Model': f"{result.get('model_name', 'Unknown')} + {result.get('embedding_name', 'Unknown')}"}
-                        
-                        if show_accuracy:
-                            row_data['Accuracy'] = f"{result.get('test_accuracy', 0):.4f}"
-                        if show_f1_score:
-                            row_data['F1-Score'] = f"{result.get('f1_score', 0):.4f}"
-                        if show_precision:
-                            row_data['Precision'] = f"{result.get('precision', 0):.4f}"
-                        if show_recall:
-                            row_data['Recall'] = f"{result.get('recall', 0):.4f}"
-                        if show_training_time:
-                            row_data['Training Time'] = f"{result.get('training_time', 0):.1f}s"
-                        if show_validation_acc:
-                            row_data['Validation Accuracy'] = f"{result.get('validation_accuracy', 0):.4f}"
-                        if show_cv_mean:
-                            row_data['CV Mean'] = f"{result.get('cv_mean', 0):.4f}"
-                        if show_cv_std:
-                            row_data['CV Std'] = f"{result.get('cv_std', 0):.4f}"
-                        if show_support:
-                            row_data['Support'] = result.get('support', 0)
-                        if show_params:
-                            params = result.get('params', {})
-                            row_data['Parameters'] = f"{len(params)} params" if params else "Default"
-                        if show_status:
-                            row_data['Status'] = result.get('status', 'Unknown')
-                        if show_cached:
-                            row_data['Cached'] = "Yes" if result.get('cached', False) else "No"
-                        
-                        metrics_data.append(row_data)
-            
-            elif model_results:
-                st.toast("📊 Loading metrics from model_results (numeric data)...")
-                
-                with debug_container:
-                    st.markdown("**Cache Data:**")
-                    st.json({
-                        'session_key': session_key,
-                        'training_results_keys': list(training_results.keys()) if training_results else 'None',
-                        'training_results_status': training_results.get('status') if training_results else 'None'
-                    })
-                    
-                    st.markdown("**Extracted Data:**")
-                    st.json({
-                        'comprehensive_results_count': len(comprehensive_results) if comprehensive_results else 0,
-                        'model_results_keys': list(model_results.keys()) if model_results else 'None',
-                        'model_results_count': len(model_results) if model_results else 0
-                    })
-                    
-                    st.markdown("**Model Results Details:**")
-                    for model_name, model_data in list(model_results.items())[:3]:  # Show first 3 models
-                        st.json({
-                            'model_name': model_name,
-                            'model_data_keys': list(model_data.keys()) if isinstance(model_data, dict) else 'Not dict',
-                            'model_status': model_data.get('status') if isinstance(model_data, dict) else 'No status',
-                            'model_accuracy': model_data.get('accuracy') if isinstance(model_data, dict) else 'No accuracy'
-                        })
-                
-                for model_name, model_data in model_results.items():
-                    if isinstance(model_data, dict) and model_data.get('status') == 'success':
-                        # Convert string values to float for proper formatting
-                        accuracy = float(model_data.get('accuracy', 0))
-                        f1_score = float(model_data.get('f1_score', 0))
-                        precision = float(model_data.get('precision', 0))
-                        recall = float(model_data.get('recall', 0))
-                        training_time = float(model_data.get('training_time', 0))
-                        validation_acc = float(model_data.get('validation_accuracy', 0))
-                        cv_mean = float(model_data.get('cv_mean', 0))
-                        cv_std = float(model_data.get('cv_std', 0))
-                        support = int(model_data.get('support', 0))
-                        
-                        row_data = {'Model': model_name}
-                        
-                        if show_accuracy:
-                            row_data['Accuracy'] = f"{accuracy:.4f}"
-                        if show_f1_score:
-                            row_data['F1-Score'] = f"{f1_score:.4f}"
-                        if show_precision:
-                            row_data['Precision'] = f"{precision:.4f}"
-                        if show_recall:
-                            row_data['Recall'] = f"{recall:.4f}"
-                        if show_training_time:
-                            row_data['Training Time'] = f"{training_time:.1f}s"
-                        if show_validation_acc:
-                            row_data['Validation Accuracy'] = f"{validation_acc:.4f}"
-                        if show_cv_mean:
-                            row_data['CV Mean'] = f"{cv_mean:.4f}"
-                        if show_cv_std:
-                            row_data['CV Std'] = f"{cv_std:.4f}"
-                        if show_support:
-                            row_data['Support'] = support
-                        if show_params:
-                            params = model_data.get('params', {})
-                            row_data['Parameters'] = f"{len(params)} params" if params else "Default"
-                        if show_status:
-                            row_data['Status'] = model_data.get('status', 'Unknown')
-                        if show_cached:
-                            row_data['Cached'] = "Yes" if model_data.get('cached', False) else "No"
-                        
-                        metrics_data.append(row_data)
-            
+            # Display metrics data
             if metrics_data:
                 import pandas as pd
                 metrics_df = pd.DataFrame(metrics_data)
                 st.dataframe(metrics_df, width='stretch')
                 
                 # Find best model
-                if comprehensive_results:
-                    best_result = max(comprehensive_results, key=lambda x: x.get('f1_score', 0))
-                    best_model = f"{best_result.get('model_name', 'Unknown')} + {best_result.get('embedding_name', 'Unknown')}"
-                    best_f1 = best_result.get('f1_score', 0)
-                elif model_results:
-                    # Find best model by F1-score, handling string values
-                    best_model = None
-                    best_f1 = 0
-                    for model_name, model_data in model_results.items():
-                        if isinstance(model_data, dict) and model_data.get('status') == 'success':
-                            f1_score = float(model_data.get('f1_score', 0))
-                            if f1_score > best_f1:
-                                best_f1 = f1_score
-                                best_model = model_name
+                best_model = None
+                best_f1 = 0
+                for model_metric in model_metrics:
+                    if model_metric['f1_score'] > best_f1:
+                        best_f1 = model_metric['f1_score']
+                        best_model = model_metric['model_name']
                 
-                st.success(f"🏆 **Best Model:** {best_model} (F1-Score: {best_f1:.4f})")
-            else:
-                st.warning("⚠️ No successful training results found.")
+                if best_model:
+                    try:
+                        best_f1_float = float(best_f1)
+                        st.success(f"🏆 **Best Model:** {best_model} (F1-Score: {best_f1_float:.4f})")
+                    except (ValueError, TypeError):
+                        st.success(f"🏆 **Best Model:** {best_model} (F1-Score: {best_f1})")
+                else:
+                    st.warning("⚠️ No successful training results found.")
                 
-                with debug_container:
-                    st.markdown("**Why No Metrics Data:**")
-                    st.json({
-                        'comprehensive_results_found': bool(comprehensive_results),
-                        'model_results_found': bool(model_results),
-                        'comprehensive_results_length': len(comprehensive_results) if comprehensive_results else 0,
-                        'model_results_length': len(model_results) if model_results else 0,
-                        'metrics_data_length': len(metrics_data)
-                    })
-                    
-                    if model_results:
-                        st.write("**Model Results Status Check:**")
-                        for model_name, model_data in list(model_results.items())[:5]:
-                            if isinstance(model_data, dict):
-                                st.write(f"- {model_name}: status='{model_data.get('status')}', accuracy={model_data.get('accuracy')}")
-                            else:
-                                st.write(f"- {model_name}: Not a dict, type={type(model_data)}")
-            
         except Exception as e:
-            st.error(f"❌ Error loading metrics: {str(e)}")
-            st.info("💡 Please complete Step 4 training first to see actual metrics.")
+            st.error(f"❌ Failed to load model metrics: {e}")
     
     # Export options
     st.markdown("**💾 Export Options:**")

@@ -566,7 +566,7 @@ class KNNModel(BaseModel):
         print(f"🎯 Determining optimal K for KNN with {cv_folds}-fold CV...")
         print(f"🚀 Using device: {device_info}")
         
-        # DEBUG: Check input data
+        # Check input data
         
         # Define parameter grid focused on K values with cosine metric
         param_grid = {

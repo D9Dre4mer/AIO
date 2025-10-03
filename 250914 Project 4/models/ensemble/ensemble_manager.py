@@ -350,14 +350,14 @@ class EnsembleManager:
         """
         # Prepare base estimators
         base_estimators = []
-        print(f"🔍 Debug: Processing {len(model_instances)} model instances")
-        print(f"🔍 Debug: Required base models: {self.base_models}")
+        print(f"Processing {len(model_instances)} model instances")
+        print(f"Required base models: {self.base_models}")
         
         for model_name in self.base_models:
             if model_name in model_instances:
                 # Get the underlying scikit-learn model
                 base_model = model_instances[model_name]
-                print(f"🔍 Debug: Processing {model_name}: type={type(base_model)}")
+                print(f"Processing {model_name}: type={type(base_model)}")
                 
                 if base_model is None:
                     print(f"❌ Error: Model '{model_name}' is None - skipping from ensemble")
@@ -368,11 +368,11 @@ class EnsembleManager:
                 if hasattr(base_model, 'model') and base_model.model is not None:
                     # Get the underlying sklearn model
                     sklearn_model = base_model.model
-                    print(f"🔍 Debug: Using base_model.model for {model_name}")
+                    print(f"Using base_model.model for {model_name}")
                 else:
                     # Use the model directly if it's already a sklearn model
                     sklearn_model = base_model
-                    print(f"🔍 Debug: Using base_model directly for {model_name}")
+                    print(f"Using base_model directly for {model_name}")
                     
                 # Validate that we have a proper sklearn model
                 if sklearn_model is None:
@@ -408,7 +408,7 @@ class EnsembleManager:
         if len(base_estimators) < 2:
             error_msg = f"Need at least 2 base models for ensemble learning, got {len(base_estimators)}"
             print(f"❌ {error_msg}")
-            print(f"🔍 Debug: Available base_estimators: {[name for name, _ in base_estimators]}")
+            print(f"Available base_estimators: {[name for name, _ in base_estimators]}")
             raise ValueError(error_msg)
         
         # Create ensemble model based on final_estimator type
@@ -903,12 +903,12 @@ class EnsembleManager:
         Returns:
             Trained model instance or None
         """
-        print(f"🔍 Debug: Looking for model '{model_name}' with embedding '{target_embedding}' in {len(individual_results)} results")
+        print(f"Looking for model '{model_name}' with embedding '{target_embedding}' in {len(individual_results)} results")
         
         for i, result in enumerate(individual_results):
             result_model_name = result.get('model_name')
             result_embedding = result.get('embedding_name')
-            print(f"🔍 Debug: Result {i}: status={result.get('status')}, model_name={result_model_name}, embedding={result_embedding}, has_trained_model={'trained_model' in result}")
+            print(f"Result {i}: status={result.get('status')}, model_name={result_model_name}, embedding={result_embedding}, has_trained_model={'trained_model' in result}")
             
             # Check if model name matches
             if result.get('status') == 'success' and result_model_name == model_name and 'trained_model' in result:
