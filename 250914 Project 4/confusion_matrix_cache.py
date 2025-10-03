@@ -102,7 +102,7 @@ class ConfusionMatrixCache:
             sns.heatmap(cm_normalized, 
                        annot=True, 
                        fmt='.3f' if normalize else 'd',
-                       cmap='Blues',
+                       cmap='Greens',
                        xticklabels=list(label_mapping.values()),
                        yticklabels=list(label_mapping.values()),
                        ax=ax)

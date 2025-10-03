@@ -2722,7 +2722,7 @@ class StreamlitTrainingPipeline:
                     annotations[i, j] = str(cm[i, j])
             
             # Plot heatmap with text labels (same as main.py approach)
-            sns.heatmap(cm, annot=annotations, fmt="", cmap="Blues",
+            sns.heatmap(cm, annot=annotations, fmt="", cmap="Greens",
                        xticklabels=class_names, yticklabels=class_names,
                        cbar=True, linewidths=1, linecolor='black')
             
@@ -2886,7 +2886,7 @@ class StreamlitTrainingPipeline:
                     annotations[i, j] = str(cm[i, j])
             
             # Vẽ heatmap với text labels
-            sns.heatmap(cm, annot=annotations, fmt="", cmap="Blues",
+            sns.heatmap(cm, annot=annotations, fmt="", cmap="Greens",
                        xticklabels=class_names, yticklabels=class_names,
                        cbar=True, linewidths=1, linecolor='black')
             

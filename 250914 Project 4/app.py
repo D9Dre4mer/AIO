@@ -890,7 +890,7 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                             'support': cached_metrics.get('support', 0),
                             'cv_mean': cached_metrics.get('cv_mean', 0.0),
                             'cv_std': cached_metrics.get('cv_std', 0.0),
-                            'training_time': 0.0,  # Cached, no training time
+                            'training_time': cached_metrics.get('training_time', 0.0),  # Load from cache
                             'params': full_cache_data.get('params', {}),
                             'status': 'success',
                             'cached': True
@@ -1156,6 +1156,9 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                             # Proceed with SHAP cache generation
                             with log_container:
                                 st.info(f"Generating SHAP cache for model: {model_name}")
+                                st.info(f"🔍 Debug: shap_available = {shap_available}")
+                                st.info(f"🔍 Debug: model_name = {model_name}")
+                                st.info(f"🔍 Debug: scaler_name = {scaler_name}")
                             
                             # Create SHAP explainer with comprehensive error handling
                             try:
@@ -1165,6 +1168,11 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                                     st.info(f"Sample data shape: {shap_sample.values.shape}")
                                 
                                 explainer = create_shap_explainer(final_model, shap_sample.values)
+                                
+                                with log_container:
+                                    st.info(f"🔍 Debug: explainer created = {explainer is not None}")
+                                    if explainer is not None:
+                                        st.info(f"🔍 Debug: explainer type = {type(explainer)}")
                                 
                                 if explainer is not None:
                                     with log_container:
@@ -1208,14 +1216,14 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                                 else:
                                     with log_container:
                                         st.warning(f"⚠️ Failed to create SHAP explainer for {model_name}")
+                                        st.info("💡 This could be due to model type incompatibility or memory issues")
                                 
                             except Exception as explainer_error:
                                 with log_container:
                                     st.warning(f"⚠️ SHAP explainer creation failed for {model_name}: {explainer_error}")
                         else:
                             with log_container:
-                                st.error("❌ SHAP not available - skipping SHAP cache generation")
-                                st.error("❌ This is why no SHAP cache is being created!")
+                                st.warning("⚠️ SHAP not available - skipping SHAP cache generation")
                                 st.info("💡 Please install SHAP: pip install shap")
                                 st.info("💡 Or use conda environment: conda activate PJ3.1")
                     
@@ -1488,99 +1496,87 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                 'training_times': training_times
             }
         
-        # Debug: Show ensemble configuration
-        with log_container:
-            st.info(f"🔍 Debug: voting_config = {voting_config}")
-            st.info(f"🔍 Debug: stacking_config = {stacking_config}")
-            st.info(f"🔍 Debug: voting_config.get('enabled') = {voting_config.get('enabled', False)}")
-            st.info(f"🔍 Debug: stacking_config.get('enabled') = {stacking_config.get('enabled', False)}")
-            st.info(f"🔍 Debug: voting_config.get('models') = {voting_config.get('models', [])}")
-            st.info(f"🔍 Debug: stacking_config.get('base_models') = {stacking_config.get('base_models', [])}")
-            st.info(f"🔍 Debug: len(voting_config.get('models', [])) = {len(voting_config.get('models', []))}")
-            st.info(f"🔍 Debug: len(stacking_config.get('base_models', [])) = {len(stacking_config.get('base_models', []))}")
-        
-        # Voting Ensemble
+        # Voting Ensemble - Create for each scaler
         if voting_config.get('enabled', False) and voting_config.get('models'):
             with log_container:
-                st.info(f"🗳️ Training Voting Ensemble ({voting_config.get('voting_method', 'hard')} voting)")
+                st.info(f"🗳️ Training Voting Ensemble ({voting_config.get('voting_method', 'hard')} voting) for all scalers")
+                st.info(f"🔍 Debug: model_results keys = {list(model_results.keys())}")
+                st.info(f"🔍 Debug: numeric_scalers = {numeric_scalers}")
             
             try:
                 from sklearn.ensemble import VotingClassifier
                 
-                # Prepare base models for voting
-                voting_models = []
-                voting_model_names = []
-                
-                for model_name in voting_config.get('models', []):
-                    # Find the best performing model for this base model across all scalers
-                    best_model = None
-                    best_score = 0
-                    best_scaler = None
+                # Create voting ensemble for each scaler
+                for scaler_name in numeric_scalers:
+                    with log_container:
+                        st.info(f"🗳️ Creating Voting Ensemble for {scaler_name}")
                     
-                    for scaler_name in numeric_scalers:
+                    # Prepare base models for voting with this scaler
+                    voting_models = []
+                    voting_model_names = []
+                    
+                    for model_name in voting_config.get('models', []):
+                        # Use model from this specific scaler
                         prefixed_name = f"{model_name}_{scaler_name}"
                         if prefixed_name in model_results and model_results[prefixed_name].get('status') == 'success':
-                            score = model_results[prefixed_name].get('validation_accuracy', 0)
-                            if score > best_score:
-                                best_score = score
-                                best_model = model_results[prefixed_name].get('model')
-                                best_scaler = scaler_name
-                    
-                    if best_model is not None:
-                        # Create fresh sklearn models from scratch to avoid pickle issues
-                        # But don't train them - just use the structure
-                        try:
-                            fresh_model = None
+                            best_model = model_results[prefixed_name].get('model')
+                            best_scaler = scaler_name
                             
-                            if model_name == 'logistic_regression':
-                                from sklearn.linear_model import LogisticRegression
-                                fresh_model = LogisticRegression(random_state=42)
-                            elif model_name == 'decision_tree':
-                                from sklearn.tree import DecisionTreeClassifier
-                                fresh_model = DecisionTreeClassifier(random_state=42)
-                            elif model_name == 'random_forest':
-                                from sklearn.ensemble import RandomForestClassifier
-                                fresh_model = RandomForestClassifier(random_state=42)
-                            elif model_name == 'svm':
-                                from sklearn.svm import SVC
-                                fresh_model = SVC(random_state=42)
-                            elif model_name == 'knn':
-                                from sklearn.neighbors import KNeighborsClassifier
-                                fresh_model = KNeighborsClassifier()
-                            elif model_name == 'naive_bayes':
-                                from sklearn.naive_bayes import GaussianNB
-                                fresh_model = GaussianNB()
-                            elif model_name == 'gradient_boosting':
-                                from sklearn.ensemble import GradientBoostingClassifier
-                                fresh_model = GradientBoostingClassifier(random_state=42)
-                            elif model_name == 'adaboost':
-                                from sklearn.ensemble import AdaBoostClassifier
-                                fresh_model = AdaBoostClassifier(random_state=42)
-                            elif model_name == 'xgboost':
-                                from xgboost import XGBClassifier
-                                fresh_model = XGBClassifier(random_state=42)
-                            elif model_name == 'lightgbm':
-                                from lightgbm import LGBMClassifier
-                                fresh_model = LGBMClassifier(random_state=42)
-                            elif model_name == 'catboost':
-                                from catboost import CatBoostClassifier
-                                fresh_model = CatBoostClassifier(random_state=42, verbose=False)
-                            
-                            if fresh_model is not None:
-                                voting_models.append((f"{model_name}_{best_scaler}", fresh_model))
-                                voting_model_names.append(f"{model_name}_{best_scaler}")
-                                
-                                with log_container:
-                                    st.info(f"   ✅ Created fresh {model_name} for voting ensemble")
-                            else:
-                                with log_container:
-                                    st.warning(f"   ⚠️ Unknown model type: {model_name}")
-                                
-                        except Exception as create_error:
-                            with log_container:
-                                st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
-                            # Skip this model
-                            continue
+                            if best_model is not None:
+                                # Create fresh sklearn models from scratch to avoid pickle issues
+                                # But don't train them - just use the structure
+                                try:
+                                    fresh_model = None
+                                    
+                                    if model_name == 'logistic_regression':
+                                        from sklearn.linear_model import LogisticRegression
+                                        fresh_model = LogisticRegression(random_state=42)
+                                    elif model_name == 'decision_tree':
+                                        from sklearn.tree import DecisionTreeClassifier
+                                        fresh_model = DecisionTreeClassifier(random_state=42)
+                                    elif model_name == 'random_forest':
+                                        from sklearn.ensemble import RandomForestClassifier
+                                        fresh_model = RandomForestClassifier(random_state=42)
+                                    elif model_name == 'svm':
+                                        from sklearn.svm import SVC
+                                        fresh_model = SVC(random_state=42)
+                                    elif model_name == 'knn':
+                                        from sklearn.neighbors import KNeighborsClassifier
+                                        fresh_model = KNeighborsClassifier()
+                                    elif model_name == 'naive_bayes':
+                                        from sklearn.naive_bayes import GaussianNB
+                                        fresh_model = GaussianNB()
+                                    elif model_name == 'gradient_boosting':
+                                        from sklearn.ensemble import GradientBoostingClassifier
+                                        fresh_model = GradientBoostingClassifier(random_state=42)
+                                    elif model_name == 'adaboost':
+                                        from sklearn.ensemble import AdaBoostClassifier
+                                        fresh_model = AdaBoostClassifier(random_state=42)
+                                    elif model_name == 'xgboost':
+                                        from xgboost import XGBClassifier
+                                        fresh_model = XGBClassifier(random_state=42)
+                                    elif model_name == 'lightgbm':
+                                        from lightgbm import LGBMClassifier
+                                        fresh_model = LGBMClassifier(random_state=42)
+                                    elif model_name == 'catboost':
+                                        from catboost import CatBoostClassifier
+                                        fresh_model = CatBoostClassifier(random_state=42, verbose=False)
+                                    
+                                    if fresh_model is not None:
+                                        voting_models.append((f"{model_name}_{best_scaler}", fresh_model))
+                                        voting_model_names.append(f"{model_name}_{best_scaler}")
+                                        
+                                        with log_container:
+                                            st.info(f"   ✅ Created fresh {model_name} for voting ensemble")
+                                    else:
+                                        with log_container:
+                                            st.warning(f"   ⚠️ Unknown model type: {model_name}")
+                                            
+                                except Exception as create_error:
+                                    with log_container:
+                                        st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
+                                    # Skip this model
+                                    continue
                 
                 if voting_models:
                     # Create voting classifier
@@ -1604,7 +1600,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     
                     # Create descriptive name for voting ensemble
                     voting_method = voting_config.get('voting_method', 'hard')
-                    voting_ensemble_name = f"Voting Ensemble ({voting_method.title()})"
+                    voting_ensemble_name = f"Voting Ensemble ({voting_method.title()}) - {scaler_name}"
                     
                     ensemble_results[voting_ensemble_name] = {
                         'model': voting_clf,
@@ -1629,7 +1625,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         cache_manager = CacheManager()
                         
                         # Generate cache identifiers for ensemble
-                        ensemble_model_key = f"voting_ensemble_{voting_method}"
+                        ensemble_model_key = f"voting_ensemble_{voting_method}_{scaler_name}"
                         dataset_id = f"numeric_dataset_{scaler_name}"
                         config_hash = cache_manager.generate_config_hash({
                             'model': ensemble_model_key,
@@ -1722,17 +1718,17 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             st.warning(f"⚠️ Failed to cache voting ensemble: {str(cache_error)}")
                     
                     with log_container:
-                        st.success(f"✅ Voting Ensemble trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
+                        st.success(f"✅ Voting Ensemble ({scaler_name}) trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
                 else:
                     with log_container:
-                        st.warning("⚠️ No successful base models found for voting ensemble")
+                        st.warning(f"⚠️ No successful base models found for voting ensemble ({scaler_name})")
                         
             except Exception as e:
                 with log_container:
-                    st.error(f"❌ Voting ensemble training failed: {str(e)}")
+                    st.error(f"❌ Voting ensemble ({scaler_name}) training failed: {str(e)}")
                 # Create descriptive name for failed voting ensemble
                 voting_method = voting_config.get('voting_method', 'hard')
-                voting_ensemble_name = f"Voting Ensemble ({voting_method.title()})"
+                voting_ensemble_name = f"Voting Ensemble ({voting_method.title()}) - {scaler_name}"
                 
                 ensemble_results[voting_ensemble_name] = {
                     'status': 'failed',
@@ -1746,10 +1742,10 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     st.warning("⚠️ Voting ensemble disabled - voting_config.get('models') is empty")
                 st.info("🔍 Debug: Skipping voting ensemble training")
         
-        # Stacking Ensemble
+        # Stacking Ensemble - Create for each scaler
         if stacking_config.get('enabled', False) and stacking_config.get('base_models'):
             with log_container:
-                st.info(f"📚 Training Stacking Ensemble (meta-learner: {stacking_config.get('meta_learner', 'logistic_regression')})")
+                st.info(f"📚 Training Stacking Ensemble (meta-learner: {stacking_config.get('meta_learner', 'logistic_regression')}) for all scalers")
             
             try:
                 from sklearn.ensemble import StackingClassifier
@@ -1757,80 +1753,77 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                 from sklearn.ensemble import RandomForestClassifier
                 import xgboost as xgb
                 
-                # Prepare base models for stacking
-                stacking_models = []
-                stacking_model_names = []
-                
-                for model_name in stacking_config.get('base_models', []):
-                    # Find the best performing model for this base model across all scalers
-                    best_model = None
-                    best_score = 0
-                    best_scaler = None
+                # Create stacking ensemble for each scaler
+                for scaler_name in numeric_scalers:
+                    with log_container:
+                        st.info(f"📚 Creating Stacking Ensemble for {scaler_name}")
                     
-                    for scaler_name in numeric_scalers:
+                    # Prepare base models for stacking with this scaler
+                    stacking_models = []
+                    stacking_model_names = []
+                    
+                    for model_name in stacking_config.get('base_models', []):
+                        # Use model from this specific scaler
                         prefixed_name = f"{model_name}_{scaler_name}"
                         if prefixed_name in model_results and model_results[prefixed_name].get('status') == 'success':
-                            score = model_results[prefixed_name].get('validation_accuracy', 0)
-                            if score > best_score:
-                                best_score = score
-                                best_model = model_results[prefixed_name].get('model')
-                                best_scaler = scaler_name
-                    
-                    if best_model is not None:
-                        # Create fresh sklearn models from scratch to avoid pickle issues
-                        # But don't train them - just use the structure
-                        try:
-                            fresh_model = None
+                            best_model = model_results[prefixed_name].get('model')
+                            best_scaler = scaler_name
                             
-                            if model_name == 'logistic_regression':
-                                from sklearn.linear_model import LogisticRegression
-                                fresh_model = LogisticRegression(random_state=42)
-                            elif model_name == 'decision_tree':
-                                from sklearn.tree import DecisionTreeClassifier
-                                fresh_model = DecisionTreeClassifier(random_state=42)
-                            elif model_name == 'random_forest':
-                                from sklearn.ensemble import RandomForestClassifier
-                                fresh_model = RandomForestClassifier(random_state=42)
-                            elif model_name == 'svm':
-                                from sklearn.svm import SVC
-                                fresh_model = SVC(random_state=42)
-                            elif model_name == 'knn':
-                                from sklearn.neighbors import KNeighborsClassifier
-                                fresh_model = KNeighborsClassifier()
-                            elif model_name == 'naive_bayes':
-                                from sklearn.naive_bayes import GaussianNB
-                                fresh_model = GaussianNB()
-                            elif model_name == 'gradient_boosting':
-                                from sklearn.ensemble import GradientBoostingClassifier
-                                fresh_model = GradientBoostingClassifier(random_state=42)
-                            elif model_name == 'adaboost':
-                                from sklearn.ensemble import AdaBoostClassifier
-                                fresh_model = AdaBoostClassifier(random_state=42)
-                            elif model_name == 'xgboost':
-                                from xgboost import XGBClassifier
-                                fresh_model = XGBClassifier(random_state=42)
-                            elif model_name == 'lightgbm':
-                                from lightgbm import LGBMClassifier
-                                fresh_model = LGBMClassifier(random_state=42)
-                            elif model_name == 'catboost':
-                                from catboost import CatBoostClassifier
-                                fresh_model = CatBoostClassifier(random_state=42, verbose=False)
-                            
-                            if fresh_model is not None:
-                                stacking_models.append((f"{model_name}_{best_scaler}", fresh_model))
-                                stacking_model_names.append(f"{model_name}_{best_scaler}")
-                                
-                                with log_container:
-                                    st.info(f"   ✅ Created fresh {model_name} for stacking ensemble")
-                            else:
-                                with log_container:
-                                    st.warning(f"   ⚠️ Unknown model type: {model_name}")
-                                
-                        except Exception as create_error:
-                            with log_container:
-                                st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
-                            # Skip this model
-                            continue
+                            if best_model is not None:
+                                # Create fresh sklearn models from scratch to avoid pickle issues
+                                # But don't train them - just use the structure
+                                try:
+                                    fresh_model = None
+                                    
+                                    if model_name == 'logistic_regression':
+                                        from sklearn.linear_model import LogisticRegression
+                                        fresh_model = LogisticRegression(random_state=42)
+                                    elif model_name == 'decision_tree':
+                                        from sklearn.tree import DecisionTreeClassifier
+                                        fresh_model = DecisionTreeClassifier(random_state=42)
+                                    elif model_name == 'random_forest':
+                                        from sklearn.ensemble import RandomForestClassifier
+                                        fresh_model = RandomForestClassifier(random_state=42)
+                                    elif model_name == 'svm':
+                                        from sklearn.svm import SVC
+                                        fresh_model = SVC(random_state=42)
+                                    elif model_name == 'knn':
+                                        from sklearn.neighbors import KNeighborsClassifier
+                                        fresh_model = KNeighborsClassifier()
+                                    elif model_name == 'naive_bayes':
+                                        from sklearn.naive_bayes import GaussianNB
+                                        fresh_model = GaussianNB()
+                                    elif model_name == 'gradient_boosting':
+                                        from sklearn.ensemble import GradientBoostingClassifier
+                                        fresh_model = GradientBoostingClassifier(random_state=42)
+                                    elif model_name == 'adaboost':
+                                        from sklearn.ensemble import AdaBoostClassifier
+                                        fresh_model = AdaBoostClassifier(random_state=42)
+                                    elif model_name == 'xgboost':
+                                        from xgboost import XGBClassifier
+                                        fresh_model = XGBClassifier(random_state=42)
+                                    elif model_name == 'lightgbm':
+                                        from lightgbm import LGBMClassifier
+                                        fresh_model = LGBMClassifier(random_state=42)
+                                    elif model_name == 'catboost':
+                                        from catboost import CatBoostClassifier
+                                        fresh_model = CatBoostClassifier(random_state=42, verbose=False)
+                                    
+                                    if fresh_model is not None:
+                                        stacking_models.append((f"{model_name}_{best_scaler}", fresh_model))
+                                        stacking_model_names.append(f"{model_name}_{best_scaler}")
+                                        
+                                        with log_container:
+                                            st.info(f"   ✅ Created fresh {model_name} for stacking ensemble")
+                                    else:
+                                        with log_container:
+                                            st.warning(f"   ⚠️ Unknown model type: {model_name}")
+                                            
+                                except Exception as create_error:
+                                    with log_container:
+                                        st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
+                                    # Skip this model
+                                    continue
                 
                 if stacking_models:
                     # Create meta-learner
@@ -1865,7 +1858,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                     
                     # Create descriptive name for stacking ensemble
                     meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
-                    stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()})"
+                    stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()}) - {scaler_name}"
                     
                     ensemble_results[stacking_ensemble_name] = {
                         'model': stacking_clf,
@@ -1890,7 +1883,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         cache_manager = CacheManager()
                         
                         # Generate cache identifiers for ensemble
-                        ensemble_model_key = f"stacking_ensemble_{meta_learner_name}"
+                        ensemble_model_key = f"stacking_ensemble_{meta_learner_name}_{scaler_name}"
                         dataset_id = f"numeric_dataset_{scaler_name}"
                         config_hash = cache_manager.generate_config_hash({
                             'model': ensemble_model_key,
@@ -1983,17 +1976,17 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             st.warning(f"⚠️ Failed to cache stacking ensemble: {str(cache_error)}")
                     
                     with log_container:
-                        st.success(f"✅ Stacking Ensemble trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
+                        st.success(f"✅ Stacking Ensemble ({scaler_name}) trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
                 else:
                     with log_container:
-                        st.warning("⚠️ No successful base models found for stacking ensemble")
+                        st.warning(f"⚠️ No successful base models found for stacking ensemble ({scaler_name})")
                         
             except Exception as e:
                 with log_container:
-                    st.error(f"❌ Stacking ensemble training failed: {str(e)}")
+                    st.error(f"❌ Stacking ensemble ({scaler_name}) training failed: {str(e)}")
                 # Create descriptive name for failed stacking ensemble
                 meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
-                stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()})"
+                stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()}) - {scaler_name}"
                 
                 ensemble_results[stacking_ensemble_name] = {
                     'status': 'failed',
@@ -4134,7 +4127,7 @@ def render_step4_wireframe():
                     
                     # Get multi_input_config for scaling methods
                     multi_input_config = step2_data.get('multi_input_config', {})
-                    numeric_scalers = multi_input_config.get('numeric_scaler', ['StandardScaler'])
+                    numeric_scalers = multi_input_config.get('numeric_scaler', ['StandardScaler', 'MinMaxScaler', 'RobustScaler'])
                     
                     # Handle single scaler (convert to list)
                     if isinstance(numeric_scalers, str):
@@ -4184,19 +4177,42 @@ def render_step4_wireframe():
                     'multi_input_config': step2_data.get('multi_input_config', {})
                 }
                 
+                # Create preprocessing config based on data type
+                if data_type == 'multi_input':
+                    # For multi-input data, use the numeric_scalers from step2 config
+                    preprocessing_selected_methods = []
+                    for scaler in numeric_scalers:
+                        if scaler == 'StandardScaler':
+                            preprocessing_selected_methods.append('StandardScaler')
+                        elif scaler == 'MinMaxScaler':
+                            preprocessing_selected_methods.append('MinMaxScaler')
+                        elif scaler == 'RobustScaler':
+                            preprocessing_selected_methods.append('RobustScaler')
+                        elif scaler == 'None':
+                            preprocessing_selected_methods.append('NoScaling')
+                    
+                    # Fallback if no valid scalers found
+                    if not preprocessing_selected_methods:
+                        preprocessing_selected_methods = ['StandardScaler', 'MinMaxScaler', 'NoScaling']
+                else:
+                    # For text data, use default methods
+                    preprocessing_selected_methods = ['StandardScaler', 'MinMaxScaler', 'NoScaling']
+                
                 enhanced_step3_config = {
                     'optuna_config': optuna_config,
                     'voting_config': voting_config,
                     'stacking_config': stacking_config,
                     'selected_models': selected_models,
                     'preprocessing_config': {
-                        'selected_methods': ['StandardScaler', 'MinMaxScaler', 'NoScaling']
+                        'selected_methods': preprocessing_selected_methods
                     }
                 }
                 
                 # Use different approaches based on data type with timeout protection
                 with debug_container:
                     st.info(f"🔍 Debug: About to check data_type = '{data_type}' for training approach")
+                    st.info(f"🔍 Debug: Using preprocessing_selected_methods = {preprocessing_selected_methods}")
+                    st.info(f"🔍 Debug: Original numeric_scalers from step2 = {numeric_scalers}")
                 
                 # Initialize results variable to avoid UnboundLocalError
                 results = None
@@ -5624,14 +5640,6 @@ def render_model_comparison():
                     # Extract metrics
                     metrics = cache_data.get('metrics', {})
                     config = cache_data.get('config', {})
-                    
-                    # Log metrics for ensemble models
-                    if 'ensemble' in model_info['model_key']:
-                        st.info(f"Ensemble Metrics for {model_info['model_key']}:")
-                        st.info(f"   • metrics keys: {list(metrics.keys())}")
-                        st.info(f"   • accuracy: {metrics.get('accuracy', 'Not found')}")
-                        st.info(f"   • test_accuracy: {metrics.get('test_accuracy', 'Not found')}")
-                        st.info(f"   • debug_accuracy_source: {metrics.get('debug_accuracy_source', 'Not found')}")
                     
                     model_metrics.append({
                         'model_name': model_info['model_key'],

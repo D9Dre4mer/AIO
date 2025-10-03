@@ -54,7 +54,7 @@ def plot_confusion_matrix(
         cm, 
         annot=annotations, 
         fmt="", 
-        cmap="Blues",
+        cmap="Greens",
         xticklabels=class_names, 
         yticklabels=class_names,
         cbar=False, 
