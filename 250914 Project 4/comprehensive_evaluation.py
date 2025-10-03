@@ -841,6 +841,18 @@ class ComprehensiveEvaluator:
                 else:
                     print(f"     ⚠️ Cannot prepare eval predictions: X_test={X_test is not None}, y_test={y_test is not None}")
                 
+                # Create SHAP sample for caching (first 30 samples to prevent memory issues)
+                shap_sample = None
+                if X_test is not None and len(X_test) > 0:
+                    try:
+                        import pandas as pd
+                        shap_sample_size = min(30, len(X_test))  # Reduced from 100 to 30
+                        shap_sample = pd.DataFrame(X_test[:shap_sample_size])
+                        print(f"💾 Created SHAP sample with {shap_sample_size} samples for caching")
+                    except Exception as e:
+                        print(f"Warning: Failed to create SHAP sample: {e}")
+                        shap_sample = None
+                
                 self._save_model_cache(
                     model_name=model_name,
                     X_train=X_train_for_cache,
@@ -860,10 +872,102 @@ class ComprehensiveEvaluator:
                         'random_state': self.random_state
                     },
                     eval_predictions=eval_predictions,
+                    shap_sample=shap_sample,
                     step3_data=step3_data,
                     selected_embeddings=selected_embeddings,
                     feature_dimensions=feature_dimensions
                 )
+                
+                # Generate and cache SHAP values for tree-based models (with comprehensive safety checks)
+                if shap_sample is not None:
+                    try:
+                        # Safety Check 1: Check if SHAP is available
+                        try:
+                            import shap
+                            shap_available = True
+                            print(f"     🔍 SHAP version: {shap.__version__}")
+                        except ImportError as e:
+                            shap_available = False
+                            print(f"     ❌ SHAP not available: {e}")
+                        
+                        # Safety Check 2: Verify model is ready for SHAP
+                        if shap_available:
+                            if hasattr(model, 'predict_proba'):
+                                print(f"     ✅ Model check: Model has predict_proba method")
+                            else:
+                                print(f"     ⚠️ Model check: Model may not be compatible with SHAP")
+                            
+                            # Safety Check 3: Model type validation
+                            tree_based_models = ['random_forest', 'xgboost', 'lightgbm', 'catboost', 'gradient_boosting', 'decision_tree']
+                            is_tree_based = any(tree_model in model_name.lower() for tree_model in tree_based_models)
+                            
+                            if is_tree_based:
+                                print(f"     ✅ Model type check: {model_name} is tree-based - suitable for SHAP")
+                            else:
+                                print(f"     ℹ️ Model type check: {model_name} is not tree-based - will try SHAP anyway")
+                            
+                            # Safety Check 4: Import SHAP cache manager
+                            try:
+                                from shap_cache_manager import shap_cache_manager
+                                from visualization import create_shap_explainer
+                                print(f"     ✅ SHAP cache manager imported successfully")
+                            except ImportError as e:
+                                print(f"     ⚠️ Failed to import SHAP cache manager: {e} - cannot generate SHAP")
+                                shap_available = False
+                        
+                        if shap_available:
+                            print(f"     🔍 Generating SHAP cache for {model_name}")
+                            
+                            # Create SHAP explainer with comprehensive error handling
+                            try:
+                                print(f"     🔍 Creating SHAP explainer for {model_name}")
+                                print(f"     🔍 Model type: {type(model)}")
+                                print(f"     🔍 Sample data shape: {shap_sample.values.shape}")
+                                
+                                explainer = create_shap_explainer(model, shap_sample.values)
+                                
+                                if explainer is not None:
+                                    print(f"     ✅ SHAP explainer created successfully for {model_name}")
+                                    
+                                    # Generate SHAP values with timeout protection
+                                    try:
+                                        print(f"     🔍 Generating SHAP values for {model_name}")
+                                        
+                                        shap_values = explainer.shap_values(shap_sample.values)
+                                        
+                                        print(f"     ✅ SHAP values generated successfully for {model_name}")
+                                        
+                                        # Save SHAP cache
+                                        print(f"     🔍 Attempting to save SHAP cache for {model_name}")
+                                        
+                                        shap_cache_file = shap_cache_manager.save_shap_cache(
+                                            model=model,
+                                            sample_data=shap_sample.values,
+                                            explainer=explainer,
+                                            shap_values=shap_values,
+                                            model_name=model_name,
+                                            feature_names=None  # Will be handled by SHAP cache manager
+                                        )
+                                        
+                                        if shap_cache_file:
+                                            print(f"     ✅ SHAP cache saved successfully: {shap_cache_file}")
+                                        else:
+                                            print(f"     ❌ SHAP cache save failed for {model_name}")
+                                            
+                                    except Exception as shap_values_error:
+                                        print(f"     ⚠️ Failed to generate SHAP values for {model_name}: {shap_values_error}")
+                                else:
+                                    print(f"     ⚠️ Failed to create SHAP explainer for {model_name}")
+                                    
+                            except Exception as explainer_error:
+                                print(f"     ⚠️ SHAP explainer creation failed for {model_name}: {explainer_error}")
+                        else:
+                            print(f"     ⚠️ SHAP not available - skipping SHAP cache generation")
+                    
+                    except Exception as shap_error:
+                        print(f"     ❌ SHAP cache generation failed for {model_name}: {shap_error}")
+                        print(f"     ℹ️ Continuing with training without SHAP cache...")
+                
             training_time = time.time() - start_time
             
             # Clear GPU cache after training

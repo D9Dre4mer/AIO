@@ -39,7 +39,17 @@ class TrainedModelWrapper(BaseEstimator, ClassifierMixin):
             self.n_features_in_ = trained_model.n_features_in_
     
     def fit(self, X, y):
-        """No-op since model is already trained"""
+        """Fit the underlying trained model with new data"""
+        # For ensemble methods like StackingClassifier, we need to fit the underlying model
+        # with the new data provided
+        self.trained_model.fit(X, y)
+        
+        # Update attributes
+        if hasattr(self.trained_model, 'classes_'):
+            self.classes_ = self.trained_model.classes_
+        if hasattr(self.trained_model, 'n_features_in_'):
+            self.n_features_in_ = self.trained_model.n_features_in_
+            
         return self
         
     def predict(self, X):

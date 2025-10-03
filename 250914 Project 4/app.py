@@ -1372,7 +1372,15 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         # Process each scaling method
         total_scalers = len(numeric_scalers)
         total_models = len(selected_models)
-        total_tasks = total_scalers * total_models  # Total number of model-scaler combinations
+        
+        # Calculate ensemble models count
+        ensemble_count = 0
+        if voting_config.get('enabled', False) and voting_config.get('models'):
+            ensemble_count += total_scalers  # Voting ensemble for each scaler
+        if stacking_config.get('enabled', False) and stacking_config.get('base_models'):
+            ensemble_count += total_scalers  # Stacking ensemble for each scaler
+        
+        total_tasks = (total_scalers * total_models) + ensemble_count  # Individual models + ensemble models
         
         # Create single progress bar for entire training process
         training_progress_bar = st.progress(0)
@@ -1520,215 +1528,249 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         prefixed_name = f"{model_name}_{scaler_name}"
                         if prefixed_name in model_results and model_results[prefixed_name].get('status') == 'success':
                             best_model = model_results[prefixed_name].get('model')
-                            best_scaler = scaler_name
                             
                             if best_model is not None:
-                                # Create fresh sklearn models from scratch to avoid pickle issues
-                                # But don't train them - just use the structure
-                                try:
-                                    fresh_model = None
+                                # Extract the sklearn model from the custom model wrapper
+                                sklearn_model = best_model.model if hasattr(best_model, 'model') else best_model
+                                
+                                if sklearn_model is not None:
+                                    voting_models.append((f"{model_name}_{scaler_name}", sklearn_model))
+                                    voting_model_names.append(f"{model_name}_{scaler_name}")
                                     
-                                    if model_name == 'logistic_regression':
-                                        from sklearn.linear_model import LogisticRegression
-                                        fresh_model = LogisticRegression(random_state=42)
-                                    elif model_name == 'decision_tree':
-                                        from sklearn.tree import DecisionTreeClassifier
-                                        fresh_model = DecisionTreeClassifier(random_state=42)
-                                    elif model_name == 'random_forest':
-                                        from sklearn.ensemble import RandomForestClassifier
-                                        fresh_model = RandomForestClassifier(random_state=42)
-                                    elif model_name == 'svm':
-                                        from sklearn.svm import SVC
-                                        fresh_model = SVC(random_state=42)
-                                    elif model_name == 'knn':
-                                        from sklearn.neighbors import KNeighborsClassifier
-                                        fresh_model = KNeighborsClassifier()
-                                    elif model_name == 'naive_bayes':
-                                        from sklearn.naive_bayes import GaussianNB
-                                        fresh_model = GaussianNB()
-                                    elif model_name == 'gradient_boosting':
-                                        from sklearn.ensemble import GradientBoostingClassifier
-                                        fresh_model = GradientBoostingClassifier(random_state=42)
-                                    elif model_name == 'adaboost':
-                                        from sklearn.ensemble import AdaBoostClassifier
-                                        fresh_model = AdaBoostClassifier(random_state=42)
-                                    elif model_name == 'xgboost':
-                                        from xgboost import XGBClassifier
-                                        fresh_model = XGBClassifier(random_state=42)
-                                    elif model_name == 'lightgbm':
-                                        from lightgbm import LGBMClassifier
-                                        fresh_model = LGBMClassifier(random_state=42)
-                                    elif model_name == 'catboost':
-                                        from catboost import CatBoostClassifier
-                                        fresh_model = CatBoostClassifier(random_state=42, verbose=False)
-                                    
-                                    if fresh_model is not None:
-                                        voting_models.append((f"{model_name}_{best_scaler}", fresh_model))
-                                        voting_model_names.append(f"{model_name}_{best_scaler}")
-                                        
-                                        with log_container:
-                                            st.info(f"   ✅ Created fresh {model_name} for voting ensemble")
-                                    else:
-                                        with log_container:
-                                            st.warning(f"   ⚠️ Unknown model type: {model_name}")
-                                            
-                                except Exception as create_error:
                                     with log_container:
-                                        st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
-                                    # Skip this model
-                                    continue
+                                        st.info(f"   ✅ Added sklearn {model_name} from {scaler_name} to voting ensemble")
+                                else:
+                                    with log_container:
+                                        st.warning(f"   ⚠️ No sklearn model found in {model_name} from {scaler_name}")
+                            else:
+                                with log_container:
+                                    st.warning(f"   ⚠️ Model {model_name} from {scaler_name} is None")
+                        else:
+                            with log_container:
+                                st.warning(f"   ⚠️ Model {model_name} from {scaler_name} not found or failed")
                 
-                if voting_models:
-                    # Create voting classifier
-                    voting_method = voting_config.get('voting_method', 'hard')
-                    voting_clf = VotingClassifier(
-                        estimators=voting_models,
-                        voting=voting_method
-                    )
-                    
-                    # Train voting ensemble
-                    start_time = time.time()
-                    voting_clf.fit(X_train, y_train)
-                    training_time = time.time() - start_time
-                    
-                    # Evaluate voting ensemble
-                    y_pred = voting_clf.predict(X_test)
-                    accuracy = accuracy_score(y_test, y_pred)
-                    f1 = f1_score(y_test, y_pred, average='weighted')
-                    precision = precision_score(y_test, y_pred, average='weighted')
-                    recall = recall_score(y_test, y_pred, average='weighted')
-                    
-                    # Create descriptive name for voting ensemble
-                    voting_method = voting_config.get('voting_method', 'hard')
-                    voting_ensemble_name = f"Voting Ensemble ({voting_method.title()}) - {scaler_name}"
-                    
-                    ensemble_results[voting_ensemble_name] = {
-                        'model': voting_clf,
-                        'accuracy': accuracy,
-                        'validation_accuracy': accuracy,  # Use test accuracy as validation
-                        'f1_score': f1,
-                        'precision': precision,
-                        'recall': recall,
-                        'support': len(y_test),
-                        'training_time': training_time,
-                        'params': {
-                            'voting_method': voting_method,
-                            'base_models': voting_model_names
-                        },
-                        'status': 'success',
-                        'cached': False
-                    }
-                    
-                    # Cache voting ensemble model
-                    try:
+                    if voting_models:
+                        with log_container:
+                            st.info(f"🔍 Debug: Found {len(voting_models)} voting models: {[name for name, _ in voting_models]}")
+                        
+                        # Generate cache identifiers (same pattern as individual models)
+                        voting_method = voting_config.get('voting_method', 'hard')
+                        model_key = f"voting_ensemble_{voting_method}"
+                        dataset_id = f"numeric_dataset_{scaler_name}"
                         from cache_manager import CacheManager
                         cache_manager = CacheManager()
-                        
-                        # Generate cache identifiers for ensemble
-                        ensemble_model_key = f"voting_ensemble_{voting_method}_{scaler_name}"
-                        dataset_id = f"numeric_dataset_{scaler_name}"
                         config_hash = cache_manager.generate_config_hash({
-                            'model': ensemble_model_key,
+                            'model': f"voting_ensemble_{voting_method}",
                             'preprocessing': scaler_name,
-                            'voting_method': voting_method,
                             'base_models': voting_model_names,
                             'random_state': 42
                         })
                         dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
                             dataset_path="numeric_data_in_memory",
-                            dataset_size=len(X_train_scaled),
-                            num_rows=len(X_train_scaled)
+                            dataset_size=len(X_train),
+                            num_rows=len(X_train)
                         )
                         
-                        # Create eval_predictions DataFrame
-                        eval_predictions = pd.DataFrame({
-                            'true_labels': y_test,
-                            'predictions': voting_clf.predict(X_test_scaled)
-                        })
-                        
-                        # Add probability columns if available
-                        if hasattr(voting_clf, 'predict_proba'):
-                            proba = voting_clf.predict_proba(X_test_scaled)
-                            for i in range(proba.shape[1]):
-                                eval_predictions[f'proba_class_{i}'] = proba[:, i]
-                        
-                        # Create label mapping with real labels from dataset
-                        unique_labels = sorted(set(y_train) | set(y_test))
-                        
-                        # Try to get original labels from session data
-                        step1_data = session_manager.get_step_data(1) or {}
-                        step2_data = session_manager.get_step_data(2) or {}
-                        
-                        original_labels = None
-                        if step1_data.get('dataframe') is not None:
-                            df = step1_data['dataframe']
-                            label_column = step2_data.get('column_config', {}).get('label_column')
-                            if label_column and label_column in df.columns:
-                                # Get original labels from dataset
-                                original_labels = sorted(df[label_column].unique().tolist())
-                        
-                        # Create label mapping
-                        if original_labels and len(original_labels) == len(unique_labels):
-                            # Use original labels if available and count matches
-                            label_mapping = {i: original_labels[i] for i in range(len(unique_labels))}
-                        else:
-                            # Fallback to generic labels
-                            label_mapping = {i: f"Class_{i}" for i in range(len(unique_labels))}
-                        
-                        # Save ensemble cache
-                        cache_manager.save_model_cache(
-                            model_key=ensemble_model_key,
-                            dataset_id=dataset_id,
-                            config_hash=config_hash,
-                            dataset_fingerprint=dataset_fingerprint,
-                            model=voting_clf,
-                            params={
-                                'voting_method': voting_method,
-                                'base_models': voting_model_names,
-                                'random_state': 42
-                            },
-                            metrics={
-                                'validation_accuracy': accuracy,
-                                'test_accuracy': accuracy,
-                                'f1_score': f1,
-                                'precision': precision,
-                                'recall': recall,
-                                'training_time': training_time
-                            },
-                            config={
-                                'model_name': ensemble_model_key,
-                                'voting_method': voting_method,
-                                'base_models': voting_model_names,
-                                'preprocessing': scaler_name
-                            },
-                            eval_predictions=eval_predictions,
-                            shap_sample=None,  # Ensemble doesn't support SHAP directly
-                            feature_names=input_columns,
-                            label_mapping=label_mapping
+                        # Check cache first (same pattern as individual models)
+                        cache_exists, cached_data = cache_manager.check_cache_exists(
+                            model_key, dataset_id, config_hash, dataset_fingerprint
                         )
                         
-                        # Update cached status
-                        ensemble_results[voting_ensemble_name]['cached'] = True
+                        # Create descriptive name for voting ensemble
+                        voting_method = voting_config.get('voting_method', 'hard')
+                        voting_ensemble_name = f"Voting Ensemble ({voting_method.title()}) - {scaler_name}"
                         
-                        with log_container:
-                            st.success(f"💾 Voting ensemble cached successfully!")
+                        if cache_exists:
+                            with log_container:
+                                st.info(f"✅ Cache HIT for voting_ensemble_{voting_method} ({scaler_name})")
                             
-                    except Exception as cache_error:
-                        with log_container:
-                            st.warning(f"⚠️ Failed to cache voting ensemble: {str(cache_error)}")
+                            # Load cached ensemble model
+                            cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                            
+                            # Add to ensemble results
+                            ensemble_results[voting_ensemble_name] = {
+                                'status': 'success',
+                                'accuracy': cache_data['metrics'].get('test_accuracy', 0),
+                                'f1_score': cache_data['metrics'].get('f1_score', 0),
+                                'precision': cache_data['metrics'].get('precision', 0),
+                                'recall': cache_data['metrics'].get('recall', 0),
+                                'training_time': cache_data['metrics'].get('training_time', 0),
+                                'model': cache_data['model'],
+                                'cached': True,
+                                'cache_path': cache_data['cache_path']
+                            }
+                            
+                            with log_container:
+                                st.success(f"✅ Voting Ensemble ({scaler_name}) loaded from cache: {cache_data['metrics'].get('test_accuracy', 0):.4f} accuracy")
+                            
+                            # Skip training for this scaler - cache hit
+                            continue
+                        else:
+                            with log_container:
+                                st.info(f"❌ Cache MISS for voting_ensemble_{voting_method} ({scaler_name}) - Training new ensemble")
+                        
+                        # Create voting classifier
+                        voting_clf = VotingClassifier(
+                            estimators=voting_models,
+                            voting=voting_method
+                        )
+                        
+                        # Get scaled data for this scaler
+                        if scaler_name == 'StandardScaler':
+                            scaler = StandardScaler()
+                        elif scaler_name == 'MinMaxScaler':
+                            scaler = MinMaxScaler()
+                        elif scaler_name == 'RobustScaler':
+                            scaler = RobustScaler()
+                        elif scaler_name == 'None':
+                            scaler = None
+                        else:
+                            scaler = StandardScaler()
+                        
+                        if scaler is not None:
+                            X_train_scaled = scaler.fit_transform(X_train)
+                            X_test_scaled = scaler.transform(X_test)
+                        else:
+                            X_train_scaled = X_train
+                            X_test_scaled = X_test
+                        
+                        # Train voting ensemble
+                        start_time = time.time()
+                        voting_clf.fit(X_train_scaled, y_train)
+                        training_time = time.time() - start_time
+                        
+                        # Evaluate voting ensemble
+                        y_pred = voting_clf.predict(X_test_scaled)
+                        accuracy = accuracy_score(y_test, y_pred)
+                        f1 = f1_score(y_test, y_pred, average='weighted')
+                        precision = precision_score(y_test, y_pred, average='weighted')
+                        recall = recall_score(y_test, y_pred, average='weighted')
                     
-                    with log_container:
-                        st.success(f"✅ Voting Ensemble ({scaler_name}) trained: {accuracy:.4f} accuracy, {training_time:.2f}s")
-                else:
-                    with log_container:
-                        st.warning(f"⚠️ No successful base models found for voting ensemble ({scaler_name})")
+                        ensemble_results[voting_ensemble_name] = {
+                            'model': voting_clf,
+                            'accuracy': accuracy,
+                            'validation_accuracy': accuracy,  # Use test accuracy as validation
+                            'f1_score': f1,
+                            'precision': precision,
+                            'recall': recall,
+                            'support': len(y_test),
+                            'training_time': training_time,
+                            'params': {
+                                'voting_method': voting_method,
+                                'base_models': voting_model_names
+                            },
+                            'status': 'success',
+                            'cached': False
+                        }
+                        
+                        with log_container:
+                            st.success(f"✅ Voting Ensemble ({voting_method.title()}) - {scaler_name}: Accuracy={accuracy:.4f}, F1={f1:.4f}")
+                        
+                        # Cache voting ensemble model (use same identifiers as above)
+                        try:
+                            with log_container:
+                                st.info(f"🔍 Debug: Saving cache for voting ensemble ({scaler_name})...")
+                            
+                            with log_container:
+                                st.info(f"🔍 Debug: Cache key: {model_key}")
+                                st.info(f"🔍 Debug: Dataset ID: {dataset_id}")
+                                st.info(f"🔍 Debug: Config hash: {config_hash[:8]}...")
+                            
+                            # Create eval_predictions DataFrame
+                            eval_predictions = pd.DataFrame({
+                                'true_labels': y_test,
+                                'predictions': voting_clf.predict(X_test_scaled)
+                            })
+                        
+                            # Add probability columns if available
+                            if hasattr(voting_clf, 'predict_proba'):
+                                proba = voting_clf.predict_proba(X_test_scaled)
+                                for i in range(proba.shape[1]):
+                                    eval_predictions[f'proba_class_{i}'] = proba[:, i]
+                            
+                            # Create label mapping with real labels from dataset
+                            unique_labels = sorted(set(y_train) | set(y_test))
+                            
+                            # Try to get original labels from session data
+                            step1_data = session_manager.get_step_data(1) or {}
+                            step2_data = session_manager.get_step_data(2) or {}
+                            
+                            original_labels = None
+                            if step1_data.get('dataframe') is not None:
+                                df = step1_data['dataframe']
+                                label_column = step2_data.get('column_config', {}).get('label_column')
+                                if label_column and label_column in df.columns:
+                                    # Get original labels from dataset
+                                    original_labels = sorted(df[label_column].unique().tolist())
+                            
+                            # Create label mapping
+                            if original_labels and len(original_labels) == len(unique_labels):
+                                # Use original labels if available and count matches
+                                label_mapping = {i: original_labels[i] for i in range(len(unique_labels))}
+                            else:
+                                # Fallback to generic labels
+                                label_mapping = {i: f"Class_{i}" for i in range(len(unique_labels))}
+                            
+                            # Save ensemble cache
+                            with log_container:
+                                st.info(f"🔍 Debug: Saving cache for {model_key}...")
+                            
+                            cache_path = cache_manager.save_model_cache(
+                                model_key=model_key,
+                                dataset_id=dataset_id,
+                                config_hash=config_hash,
+                                dataset_fingerprint=dataset_fingerprint,
+                                model=voting_clf,
+                                params={
+                                    'voting_method': voting_method,
+                                    'base_models': voting_model_names,
+                                    'random_state': 42
+                                },
+                                metrics={
+                                    'validation_accuracy': accuracy,
+                                    'test_accuracy': accuracy,
+                                    'f1_score': f1,
+                                    'precision': precision,
+                                    'recall': recall,
+                                    'training_time': training_time
+                                },
+                                config={
+                                    'model_name': model_key,
+                                    'voting_method': voting_method,
+                                    'base_models': voting_model_names,
+                                    'preprocessing': scaler_name
+                                },
+                                eval_predictions=eval_predictions,
+                                shap_sample=None,  # Ensemble doesn't support SHAP directly
+                                feature_names=input_columns,
+                                label_mapping=label_mapping
+                            )
+                            
+                            with log_container:
+                                if cache_path is None:
+                                    st.error(f"❌ Cache failed for {model_key} - cache_manager returned None")
+                                else:
+                                    st.info(f"🔍 Debug: Cache saved to: {cache_path}")
+                                
+                                # Update cached status
+                                ensemble_results[voting_ensemble_name]['cached'] = True
+                                
+                                with log_container:
+                                    st.success(f"💾 Voting ensemble cached successfully!")
+                                
+                        except Exception as cache_error:
+                            with log_container:
+                                st.warning(f"⚠️ Failed to cache voting ensemble: {str(cache_error)}")
+                    else:
+                        with log_container:
+                            st.warning(f"⚠️ No voting models available for {scaler_name}")
                         
             except Exception as e:
                 with log_container:
-                    st.error(f"❌ Voting ensemble ({scaler_name}) training failed: {str(e)}")
+                    st.error(f"❌ Voting ensemble training failed: {str(e)}")
                 # Create descriptive name for failed voting ensemble
                 voting_method = voting_config.get('voting_method', 'hard')
-                voting_ensemble_name = f"Voting Ensemble ({voting_method.title()}) - {scaler_name}"
+                voting_ensemble_name = f"Voting Ensemble ({voting_method.title()})"
                 
                 ensemble_results[voting_ensemble_name] = {
                     'status': 'failed',
@@ -1770,64 +1812,85 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             best_scaler = scaler_name
                             
                             if best_model is not None:
-                                # Create fresh sklearn models from scratch to avoid pickle issues
-                                # But don't train them - just use the structure
-                                try:
-                                    fresh_model = None
+                                # Extract the sklearn model from the custom model wrapper
+                                sklearn_model = best_model.model if hasattr(best_model, 'model') else best_model
+                                
+                                if sklearn_model is not None:
+                                    stacking_models.append((f"{model_name}_{scaler_name}", sklearn_model))
+                                    stacking_model_names.append(f"{model_name}_{scaler_name}")
                                     
-                                    if model_name == 'logistic_regression':
-                                        from sklearn.linear_model import LogisticRegression
-                                        fresh_model = LogisticRegression(random_state=42)
-                                    elif model_name == 'decision_tree':
-                                        from sklearn.tree import DecisionTreeClassifier
-                                        fresh_model = DecisionTreeClassifier(random_state=42)
-                                    elif model_name == 'random_forest':
-                                        from sklearn.ensemble import RandomForestClassifier
-                                        fresh_model = RandomForestClassifier(random_state=42)
-                                    elif model_name == 'svm':
-                                        from sklearn.svm import SVC
-                                        fresh_model = SVC(random_state=42)
-                                    elif model_name == 'knn':
-                                        from sklearn.neighbors import KNeighborsClassifier
-                                        fresh_model = KNeighborsClassifier()
-                                    elif model_name == 'naive_bayes':
-                                        from sklearn.naive_bayes import GaussianNB
-                                        fresh_model = GaussianNB()
-                                    elif model_name == 'gradient_boosting':
-                                        from sklearn.ensemble import GradientBoostingClassifier
-                                        fresh_model = GradientBoostingClassifier(random_state=42)
-                                    elif model_name == 'adaboost':
-                                        from sklearn.ensemble import AdaBoostClassifier
-                                        fresh_model = AdaBoostClassifier(random_state=42)
-                                    elif model_name == 'xgboost':
-                                        from xgboost import XGBClassifier
-                                        fresh_model = XGBClassifier(random_state=42)
-                                    elif model_name == 'lightgbm':
-                                        from lightgbm import LGBMClassifier
-                                        fresh_model = LGBMClassifier(random_state=42)
-                                    elif model_name == 'catboost':
-                                        from catboost import CatBoostClassifier
-                                        fresh_model = CatBoostClassifier(random_state=42, verbose=False)
-                                    
-                                    if fresh_model is not None:
-                                        stacking_models.append((f"{model_name}_{best_scaler}", fresh_model))
-                                        stacking_model_names.append(f"{model_name}_{best_scaler}")
-                                        
-                                        with log_container:
-                                            st.info(f"   ✅ Created fresh {model_name} for stacking ensemble")
-                                    else:
-                                        with log_container:
-                                            st.warning(f"   ⚠️ Unknown model type: {model_name}")
-                                            
-                                except Exception as create_error:
                                     with log_container:
-                                        st.warning(f"   ⚠️ Could not create fresh {model_name}: {create_error}")
-                                    # Skip this model
-                                    continue
+                                        st.info(f"   ✅ Added sklearn {model_name} from {scaler_name} to stacking ensemble")
+                                else:
+                                    with log_container:
+                                        st.warning(f"   ⚠️ No sklearn model found in {model_name} from {scaler_name}")
+                            else:
+                                with log_container:
+                                    st.warning(f"   ⚠️ Model {model_name} from {scaler_name} is None")
+                        else:
+                            with log_container:
+                                st.warning(f"   ⚠️ Model {model_name} from {scaler_name} not found or failed")
                 
-                if stacking_models:
-                    # Create meta-learner
+                    if stacking_models:
+                        with log_container:
+                            st.info(f"🔍 Debug: Found {len(stacking_models)} stacking models: {[name for name, _ in stacking_models]}")
+                    
+                    # Generate cache identifiers (same pattern as individual models)
                     meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
+                    model_key = f"stacking_ensemble_{meta_learner_name}"
+                    dataset_id = f"numeric_dataset_{scaler_name}"
+                    config_hash = cache_manager.generate_config_hash({
+                        'model': f"stacking_ensemble_{meta_learner_name}",
+                        'preprocessing': scaler_name,
+                        'base_models': stacking_model_names,
+                        'meta_learner': meta_learner_name,
+                        'random_state': 42
+                    })
+                    dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
+                        dataset_path="numeric_data_in_memory",
+                        dataset_size=len(X_train),
+                        num_rows=len(X_train)
+                    )
+                    
+                    # Create descriptive name for stacking ensemble
+                    meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
+                    stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()}) - {scaler_name}"
+                    
+                    # Check cache first (same pattern as individual models)
+                    cache_exists, cached_data = cache_manager.check_cache_exists(
+                        model_key, dataset_id, config_hash, dataset_fingerprint
+                    )
+                    
+                    if cache_exists:
+                        with log_container:
+                            st.info(f"✅ Cache HIT for stacking_ensemble_{meta_learner_name} ({scaler_name})")
+                        
+                        # Load cached ensemble model
+                        cache_data = cache_manager.load_model_cache(model_key, dataset_id, config_hash)
+                        
+                        # Add to ensemble results
+                        ensemble_results[stacking_ensemble_name] = {
+                            'status': 'success',
+                            'accuracy': cache_data['metrics'].get('test_accuracy', 0),
+                            'f1_score': cache_data['metrics'].get('f1_score', 0),
+                            'precision': cache_data['metrics'].get('precision', 0),
+                            'recall': cache_data['metrics'].get('recall', 0),
+                            'training_time': cache_data['metrics'].get('training_time', 0),
+                            'model': cache_data['model'],
+                            'cached': True,
+                            'cache_path': cache_data['cache_path']
+                        }
+                        
+                        with log_container:
+                            st.success(f"✅ Stacking Ensemble ({scaler_name}) loaded from cache: {cache_data['metrics'].get('test_accuracy', 0):.4f} accuracy")
+                        
+                        # Skip training for this scaler - cache hit
+                        continue
+                    else:
+                        with log_container:
+                            st.info(f"❌ Cache MISS for stacking_ensemble_{meta_learner_name} ({scaler_name}) - Training new ensemble")
+                    
+                    # Create meta-learner
                     if meta_learner_name == 'logistic_regression':
                         meta_learner = LogisticRegression(random_state=42)
                     elif meta_learner_name == 'random_forest':
@@ -1844,21 +1907,48 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         cv=3  # Use 3-fold CV for meta-features
                     )
                     
+                    # Get scaled data for this scaler
+                    if scaler_name == 'StandardScaler':
+                        scaler = StandardScaler()
+                    elif scaler_name == 'MinMaxScaler':
+                        scaler = MinMaxScaler()
+                    elif scaler_name == 'RobustScaler':
+                        scaler = RobustScaler()
+                    elif scaler_name == 'None':
+                        scaler = None
+                    else:
+                        scaler = StandardScaler()
+                    
+                    if scaler is not None:
+                        X_train_scaled = scaler.fit_transform(X_train)
+                        X_test_scaled = scaler.transform(X_test)
+                    else:
+                        X_train_scaled = X_train
+                        X_test_scaled = X_test
+                    
                     # Train stacking ensemble
+                    with log_container:
+                        st.info(f"🔍 Debug: Training stacking ensemble for {scaler_name}...")
+                    
                     start_time = time.time()
-                    stacking_clf.fit(X_train, y_train)
+                    stacking_clf.fit(X_train_scaled, y_train)
                     training_time = time.time() - start_time
                     
+                    with log_container:
+                        st.info(f"🔍 Debug: Stacking ensemble training completed in {training_time:.2f}s")
+                    
                     # Evaluate stacking ensemble
-                    y_pred = stacking_clf.predict(X_test)
+                    with log_container:
+                        st.info(f"🔍 Debug: Evaluating stacking ensemble for {scaler_name}...")
+                    
+                    y_pred = stacking_clf.predict(X_test_scaled)
                     accuracy = accuracy_score(y_test, y_pred)
                     f1 = f1_score(y_test, y_pred, average='weighted')
                     precision = precision_score(y_test, y_pred, average='weighted')
                     recall = recall_score(y_test, y_pred, average='weighted')
                     
-                    # Create descriptive name for stacking ensemble
-                    meta_learner_name = stacking_config.get('meta_learner', 'logistic_regression')
-                    stacking_ensemble_name = f"Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()}) - {scaler_name}"
+                    with log_container:
+                        st.info(f"🔍 Debug: Stacking ensemble evaluation completed - Accuracy: {accuracy:.4f}, F1: {f1:.4f}")
                     
                     ensemble_results[stacking_ensemble_name] = {
                         'model': stacking_clf,
@@ -1877,26 +1967,18 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         'cached': False
                     }
                     
-                    # Cache stacking ensemble model
+                    with log_container:
+                        st.success(f"✅ Stacking Ensemble ({meta_learner_name.replace('_', ' ').title()}) - {scaler_name}: Accuracy={accuracy:.4f}, F1={f1:.4f}")
+                    
+                    # Cache stacking ensemble model (use same identifiers as above)
                     try:
-                        from cache_manager import CacheManager
-                        cache_manager = CacheManager()
+                        with log_container:
+                            st.info(f"🔍 Debug: Saving cache for stacking ensemble ({scaler_name})...")
                         
-                        # Generate cache identifiers for ensemble
-                        ensemble_model_key = f"stacking_ensemble_{meta_learner_name}_{scaler_name}"
-                        dataset_id = f"numeric_dataset_{scaler_name}"
-                        config_hash = cache_manager.generate_config_hash({
-                            'model': ensemble_model_key,
-                            'preprocessing': scaler_name,
-                            'meta_learner': meta_learner_name,
-                            'base_models': stacking_model_names,
-                            'random_state': 42
-                        })
-                        dataset_fingerprint = cache_manager.generate_dataset_fingerprint(
-                            dataset_path="numeric_data_in_memory",
-                            dataset_size=len(X_train_scaled),
-                            num_rows=len(X_train_scaled)
-                        )
+                        with log_container:
+                            st.info(f"🔍 Debug: Cache key: {model_key}")
+                            st.info(f"🔍 Debug: Dataset ID: {dataset_id}")
+                            st.info(f"🔍 Debug: Config hash: {config_hash[:8]}...")
                         
                         # Create eval_predictions DataFrame
                         eval_predictions = pd.DataFrame({
@@ -1934,8 +2016,11 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             label_mapping = {i: f"Class_{i}" for i in range(len(unique_labels))}
                         
                         # Save ensemble cache
-                        cache_manager.save_model_cache(
-                            model_key=ensemble_model_key,
+                        with log_container:
+                            st.info(f"🔍 Debug: Saving cache for {model_key}...")
+                        
+                        cache_path = cache_manager.save_model_cache(
+                            model_key=model_key,
                             dataset_id=dataset_id,
                             config_hash=config_hash,
                             dataset_fingerprint=dataset_fingerprint,
@@ -1954,7 +2039,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                 'training_time': training_time
                             },
                             config={
-                                'model_name': ensemble_model_key,
+                                'model_name': model_key,
                                 'meta_learner': meta_learner_name,
                                 'base_models': stacking_model_names,
                                 'preprocessing': scaler_name
@@ -1964,6 +2049,12 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             feature_names=input_columns,
                             label_mapping=label_mapping
                         )
+                        
+                        with log_container:
+                            if cache_path is None:
+                                st.error(f"❌ Cache failed for {model_key} - cache_manager returned None")
+                            else:
+                                st.info(f"🔍 Debug: Cache saved to: {cache_path}")
                         
                         # Update cached status
                         ensemble_results[stacking_ensemble_name]['cached'] = True
@@ -2003,11 +2094,22 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         # Merge ensemble results with individual model results
         model_results.update(ensemble_results)
         
+        # Update current_task to reflect ensemble models training
+        ensemble_models_trained = len(ensemble_results)
+        current_task += ensemble_models_trained
+        
+        # Update progress bar to show completion
+        if training_progress_bar and training_status_text:
+            progress = current_task / total_tasks
+            training_progress_bar.progress(progress)
+            training_status_text.text(f"Training completed ({current_task}/{total_tasks})")
+        
         # Return results in the same format as original function
         return {
             'status': 'success',
             'model_results': model_results,
             'training_times': training_times,
+            'current_task': current_task,
             'data_info': {
                 'original_size': original_size,
                 'clean_size': clean_size,
@@ -2031,265 +2133,6 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
         }
 
 
-def render_step3_wireframe():
-    """Render Step 3 - Optuna Optimization & Ensemble Configuration"""
-    
-    # Step title
-    st.markdown("""
-    <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 3/5: Optuna Optimization & Ensemble Configuration
-    </h2>
-    """, unsafe_allow_html=True)
-    
-    # Get data from previous steps
-    step1_data = session_manager.get_step_data(1)
-    step2_data = session_manager.get_step_data(2)
-    
-    if not step1_data or 'dataframe' not in step1_data:
-        st.error("❌ No dataset found. Please complete Step 1 first.")
-        return
-    
-    if not step2_data or not step2_data.get('completed', False):
-        st.error("❌ Column selection not completed. Please complete Step 2 first.")
-        return
-    
-    # Check if we have text data to determine if vectorization tab should be shown
-    has_text_data = _check_for_text_data()
-    
-    # Create tabs based on data type
-    if has_text_data:
-        tab1, tab2, tab3 = st.tabs([
-            "🎯 Optuna Optimization", 
-            "📊 Vectorization Methods", 
-            "🤝 Ensemble Learning"
-        ])
-    else:
-        tab1, tab2 = st.tabs([
-            "🎯 Optuna Optimization", 
-            "🤝 Ensemble Learning"
-        ])
-    
-    # Tab 1: Optuna Optimization
-    with tab1:
-        st.markdown("**🎯 Optuna Hyperparameter Optimization**")
-        
-        # Optuna configuration
-        optuna_enabled = st.checkbox(
-            "Enable Optuna Optimization", 
-            value=True,
-            help="Use Optuna for automatic hyperparameter tuning"
-        )
-        
-        # Initialize default values
-        n_trials = 50
-        timeout = 1800
-        
-        if optuna_enabled:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                n_trials = st.number_input(
-                    "Number of Trials", 
-                    min_value=10, 
-                    max_value=200, 
-                    value=50,
-                    help="Number of optimization trials"
-                )
-            
-            with col2:
-                timeout = st.number_input(
-                    "Timeout (seconds)", 
-                    min_value=60, 
-                    max_value=3600, 
-                    value=1800,
-                    help="Maximum time for optimization"
-                )
-        
-        # Model selection
-        st.markdown("**🤖 Select Models to Optimize**")
-        
-        # Get available models
-        from models import model_registry
-        available_models = model_registry.list_models()
-        classification_models = [m for m in available_models if m != 'kmeans']
-        
-        # Create checkboxes for each model
-        selected_models = []
-        cols = st.columns(3)
-        
-        for i, model_name in enumerate(classification_models):
-            with cols[i % 3]:
-                if st.checkbox(model_name.replace('_', ' ').title(), value=True, key=f"model_{model_name}"):
-                    selected_models.append(model_name)
-        
-        # If no models selected, default to all models
-        if not selected_models:
-            selected_models = classification_models.copy()
-            st.info("ℹ️ All models selected by default")
-        
-        # Save Optuna configuration
-        optuna_config = {
-            'enabled': optuna_enabled,
-            'trials': n_trials if optuna_enabled else 0,  # Changed from 'n_trials' to 'trials'
-            'timeout': timeout if optuna_enabled else 0,
-            'models': selected_models
-        }
-    
-    # Tab 2: Vectorization Methods (only for text data)
-    if has_text_data:
-        with tab2:
-            st.markdown("**📊 Text Vectorization Methods**")
-            
-            # Vectorization configuration
-            vectorization_methods = st.multiselect(
-                "Select Vectorization Methods",
-                ["BoW", "TF-IDF", "Word Embeddings"],
-                default=["BoW", "TF-IDF"],
-                help="Choose text vectorization methods"
-            )
-            
-            # Save vectorization configuration
-            vectorization_config = {
-                'selected_methods': vectorization_methods
-            }
-    else:
-        vectorization_config = {'selected_methods': []}
-    
-    # Tab 3/2: Ensemble Learning
-    ensemble_tab = tab3 if has_text_data else tab2
-    
-    with ensemble_tab:
-        st.markdown("**🤝 Ensemble Learning**")
-        
-        # Voting Ensemble
-        st.markdown("**🗳️ Voting Ensemble**")
-        voting_enabled = st.checkbox("Enable Voting Ensemble", value=False)
-        
-        if voting_enabled:
-            voting_method = st.selectbox(
-                "Voting Method",
-                ["hard", "soft"],
-                help="Hard voting uses majority class, soft voting uses predicted probabilities"
-            )
-            
-            # Select base models for voting
-            st.markdown("**Select Base Models for Voting:**")
-            voting_models = st.multiselect(
-                "Voting Base Models",
-                selected_models,
-                default=selected_models,  # Select all models by default
-                help="Select models to include in voting ensemble"
-            )
-        
-        # Stacking Ensemble
-        st.markdown("**📚 Stacking Ensemble**")
-        stacking_enabled = st.checkbox("Enable Stacking Ensemble", value=False)
-        
-        if stacking_enabled:
-            meta_learner = st.selectbox(
-                "Meta-Learner",
-                ["logistic_regression", "random_forest", "xgboost"],
-                help="Final estimator for stacking"
-            )
-            
-            # Select base models for stacking
-            st.markdown("**Select Base Models for Stacking:**")
-            stacking_models = st.multiselect(
-                "Stacking Base Models",
-                selected_models,
-                default=selected_models,  # Select all models by default
-                help="Select models to include in stacking ensemble"
-            )
-        
-        # Save ensemble configurations
-        voting_config = {
-            'enabled': voting_enabled,
-            'voting_method': voting_method if voting_enabled else 'hard',
-            'models': voting_models if voting_enabled else []
-        }
-        
-        stacking_config = {
-            'enabled': stacking_enabled,
-            'meta_learner': meta_learner if stacking_enabled else 'logistic_regression',
-            'base_models': stacking_models if stacking_enabled else []
-        }
-        
-        # Debug: Show current configuration
-        st.markdown("---")
-        st.subheader("🔍 Current Configuration Preview")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**🗳️ Voting Ensemble:**")
-            if voting_enabled:
-                st.success(f"✅ Enabled: {voting_method} voting")
-                st.info(f"📋 Models: {', '.join(voting_models) if voting_models else 'None'}")
-            else:
-                st.warning("⚠️ Disabled")
-        
-        with col2:
-            st.markdown("**📚 Stacking Ensemble:**")
-            if stacking_enabled:
-                st.success(f"✅ Enabled: {meta_learner} meta-learner")
-                st.info(f"📋 Base Models: {', '.join(stacking_models) if stacking_models else 'None'}")
-            else:
-                st.warning("⚠️ Disabled")
-        
-        # Auto-save configuration when user makes changes
-        if st.button("💾 Auto-Save Configuration", help="Save current configuration without completing Step 3"):
-            # Save current configuration
-            current_step3_data = session_manager.get_step_data(3) or {}
-            current_step3_data.update({
-                'optuna_config': optuna_config,
-                'vectorization_config': vectorization_config,
-                'voting_config': voting_config,
-                'stacking_config': stacking_config
-            })
-            session_manager.set_step_data(3, current_step3_data)
-            
-            # Also save directly to session state as backup
-            st.session_state['step3_backup'] = {
-                'optuna_config': optuna_config,
-                'vectorization_config': vectorization_config,
-                'voting_config': voting_config,
-                'stacking_config': stacking_config,
-                'timestamp': str(datetime.now())
-            }
-            
-            st.success("✅ Configuration auto-saved!")
-            st.info(f"🔍 Debug: Auto-saved voting_config = {voting_config}")
-            st.info(f"🔍 Debug: Auto-saved stacking_config = {stacking_config}")
-            
-            # Debug: Check session state directly
-            st.info(f"🔍 Debug: Session state step3 = {st.session_state.get('step3', 'NOT_FOUND')}")
-            st.info(f"🔍 Debug: Session state step3_backup = {st.session_state.get('step3_backup', 'NOT_FOUND')}")
-            
-            # Force rerun to show updated state
-            st.rerun()
-    
-    # Complete Step 3 button
-    st.markdown("---")
-    
-    if st.button("✅ Complete Step 3", type="primary"):
-        # Save all configurations
-        step3_data = {
-            'optuna_config': optuna_config,
-            'vectorization_config': vectorization_config,
-            'voting_config': voting_config,
-            'stacking_config': stacking_config,
-            'completed': True
-        }
-        
-        session_manager.set_step_data(3, step3_data)
-        
-        # Debug: Show what was saved
-        st.success("✅ Step 3 configuration saved!")
-        st.info(f"🔍 Debug: Saved voting_config = {voting_config}")
-        st.info(f"🔍 Debug: Saved stacking_config = {stacking_config}")
-        st.info("💡 Click 'Next ▶' button to proceed to Step 4.")
-    
-    # Navigation buttons
-    render_navigation_buttons()
 
 
 def _check_for_text_data():
@@ -3366,11 +3209,29 @@ def render_step3_wireframe():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("✅ Complete Step 3", width='stretch', key="complete_step3"):
-            # Mark step 3 as completed
-            current_data = session_manager.get_step_data(3)
-            current_data['completed'] = True
-            session_manager.set_step_data(3, current_data)
-            st.success("✅ Step 3 completed! You can now proceed to Step 4.")
+            # Get all configurations from tabs
+            step3_data = session_manager.get_step_data(3) or {}
+            optuna_config = step3_data.get('optuna_config', {})
+            vectorization_config = step3_data.get('vectorization_config', {})
+            voting_config = step3_data.get('voting_config', {})
+            stacking_config = step3_data.get('stacking_config', {})
+            
+            # Save all configurations
+            step3_data = {
+                'optuna_config': optuna_config,
+                'vectorization_config': vectorization_config,
+                'voting_config': voting_config,
+                'stacking_config': stacking_config,
+                'completed': True
+            }
+            
+            session_manager.set_step_data(3, step3_data)
+            
+            # Debug: Show what was saved
+            st.success("✅ Step 3 configuration saved!")
+            st.info(f"🔍 Debug: Saved voting_config = {voting_config}")
+            st.info(f"🔍 Debug: Saved stacking_config = {stacking_config}")
+            st.info("💡 Click 'Next ▶' button to proceed to Step 4.")
             st.rerun()
     
     # Navigation buttons
@@ -3505,7 +3366,7 @@ def render_voting_weight_ensemble():
             }
             
             # Merge with existing step data
-            current_data = session_manager.get_step_data(3)
+            current_data = session_manager.get_step_data(3) or {}
             current_data['voting_config'] = voting_config
             session_manager.set_step_data(3, current_data)
         else:
@@ -3518,7 +3379,7 @@ def render_voting_weight_ensemble():
             }
             
             # Merge with existing step data
-            current_data = session_manager.get_step_data(3)
+            current_data = session_manager.get_step_data(3) or {}
             current_data['voting_config'] = voting_config
             session_manager.set_step_data(3, current_data)
             
@@ -3587,7 +3448,7 @@ def render_stacking_configuration():
             }
             
             # Merge with existing step data
-            current_data = session_manager.get_step_data(3)
+            current_data = session_manager.get_step_data(3) or {}
             current_data['stacking_config'] = stacking_config
             session_manager.set_step_data(3, current_data)
             
