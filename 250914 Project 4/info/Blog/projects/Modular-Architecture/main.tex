@@ -1,0 +1,989 @@
+\section{Kiến trúc Modular}\label{sec:modular-architecture}
+
+\noindent
+Hệ thống AIO Classifier được thiết kế với kiến trúc mô-đun thông minh, đảm bảo khả năng mở rộng, tính dễ bảo trì và linh hoạt trong phát triển. Kiến trúc này áp dụng các phương pháp tốt nhất trong công nghệ phần mềm để hỗ trợ các quy trình học máy phức tạp với 13 thuật toán khác nhau (11 base algorithms + 2 ensemble methods), các đường dẫn xử lý dữ liệu tiên tiến và khung đánh giá toàn diện.
+
+\subsection{Tổng quan Kiến trúc}\label{subsec:architecture-overview}
+
+\subsubsection{Kiến trúc Tổng thể}\label{subsec:overall-architecture}
+
+Nền tảng được tổ chức theo kiến trúc mô-đun với tách biệt rõ ràng về trách nhiệm:
+
+\begin{itemize}
+    \item \textbf{Lớp Mô hình}: Bộ sưu tập toàn diện của 13 thuật toán ML với các giao diện được chuẩn hóa (11 thuật toán base + 2 phương pháp ensemble)
+    \item \textbf{Lớp Xử lý Dữ liệu}: Tiền xử lý tiên tiến với phát hiện đặc trưng thông minh và nhiều chiến lược phân chia  
+    \item \textbf{Lớp Giao diện}: Giao diện wizard dựa trên Streamlit với quản lý phiên và xử lý lỗi toàn diện
+    \item \textbf{Lớp Cache}: Hệ thống cache thông minh đa cấp với tính điểm tương thích và quản lý bộ nhớ
+    \item \textbf{Lớp Đánh giá}: Đánh giá toàn diện với cross-validation, phân tích SHAP và khả năng giải thích mô hình
+    \item \textbf{Lớp Tiện ích}: Các mô-đun hỗ trợ cho cấu hình, phát hiện GPU và giám sát hiệu suất
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+% Define colors - Green and Orange theme
+\definecolor{darkgreen}{RGB}{34,139,34}    % Forest green
+\definecolor{greencolor}{RGB}{50,205,50}   % Lime green
+\definecolor{darkorange}{RGB}{255,140,0}   % Dark orange
+\definecolor{orange}{RGB}{255,165,0}        % Orange
+\definecolor{lightgreen}{RGB}{144,238,144}  % Light green
+\definecolor{corallgreen}{RGB}{127,255,212} % Aquamarine
+
+% Define consistent node style with better spacing
+\tikzset{
+    archlayer/.style={
+        rectangle, 
+        minimum width=5cm, 
+        minimum height=2.5cm, 
+        text width=4.5cm, 
+        align=center, 
+        font=\footnotesize,
+        inner sep=4pt
+    }
+}
+
+% Models Layer (top)
+\node[archlayer, draw=darkgreen, fill=darkgreen!15] (models) at (0,13) {
+    \textbf{Models Layer}\\
+    Random Forest, LightGBM, CatBoost\\
+    XGBoost, Decision Tree, Logistic Reg\\
+    SVM, KNN, Naive Bayes\\
+    AdaBoost, Gradient Boost, Ensemble
+};
+
+% Data Processing Layer  
+\node[archlayer, draw=greencolor, fill=greencolor!15] (data) at (0,9) {
+    \textbf{Data Processing Layer}\\
+    DataLoader, TextVectorizer\\
+    Feature Detection, Scaling\\
+    Standard/MinMax/Robust Scaler\\
+    CrossValidation
+};
+
+% Interface Layer
+\node[archlayer, draw=darkorange, fill=darkorange!15] (interface) at (0,5.5) {
+    \textbf{Wizard Interface Layer}\\
+    Streamlit UI, Session Manager\\
+    5-Step Workflow\\
+    Progress Tracking\\
+    Error Recovery
+};
+
+% Caching Layer
+\node[archlayer, draw=orange, fill=orange!15] (cache) at (0,2.5) {
+    \textbf{Intelligent Caching Layer}\\
+    Model Cache, SHAP Cache\\
+    Training Results Cache\\
+    Tính điểm Tương thích\\
+    Quản lý Bộ nhớ
+};
+
+% Evaluation Layer
+\node[archlayer, draw=lightgreen, fill=lightgreen!15] (eval) at (0,-0.5) {
+    \textbf{Evaluation \& Analysis Layer}\\
+    AIO Classifier Evaluator\\
+    SHAP Analysis\\
+    Confusion Matrices\\
+    Performance Metrics
+};
+
+% Utilities Layer (bottom)
+\node[archlayer, draw=corallgreen, fill=corallgreen!15] (utils) at (0,-3.5) {
+    \textbf{Utilities Layer}\\
+    GPU Detection\\
+    Configuration Management\\
+    Progress Tracking\\
+    Error Handling
+};
+
+% Arrows showing dependencies with colors
+\draw[->, thick, darkgreen] (models.south) -- (data.north);
+\draw[->, thick, greencolor] (data.south) -- (interface.north);
+\draw[->, thick, darkorange] (interface.south) -- (cache.north);
+\draw[->, thick, orange] (cache.south) -- (eval.north);
+\draw[->, thick, lightgreen] (eval.south) -- (utils.north);
+
+% Labels for flow with matching colors
+\node[text=darkgreen,font=\tiny] at (0,10.7) {Data Flow};
+\node[text=greencolor,font=\tiny] at (0,7.1) {Processing Pipeline};
+\node[text=darkorange,font=\tiny] at (0,4.1) {User Interface};
+\node[text=orange,font=\tiny] at (0,1.1) {Performance Cache};
+\node[text=lightgreen,font=\tiny] at (0,-1.9) {Analysis \& Results};
+\end{tikzpicture}
+\caption{Modular Architecture Overview của AIO Classifier ML AIO Classifier}
+\label{fig:architecture_overview}
+\end{figure}
+
+\subsection{Models Layer Architecture}\label{subsec:models-layer}
+
+\subsubsection{Base Classes và Interfaces}
+
+Kiến trúc mô hình được thiết kế theo mẫu lớp cơ sở trừu tượng để đảm bảo tính nhất quán:
+
+\textbf{BaseModel Abstract Class}:
+\begin{itemize}
+    \item \textbf{Abstract Methods}: \texttt{fit()}, \texttt{predict()}, \texttt{predict\_proba()}
+    \item \textbf{Common Properties}: \texttt{is\_fitted}, \texttt{model\_params}, \texttt{training\_history}
+    \item \textbf{Hỗ trợ Xác thực}: Khung xác thực tích hợp với xử lý lỗi chuẩn hóa
+    \item \textbf{Tính Nhất quán Giao diện}: Tất cả mô hình implement cùng giao diện để thay thế liền mạch
+\end{itemize}
+
+\textbf{BaseModel Abstract class Implementation}:
+
+\begin{minted}{python}
+class BaseModel:
+    """Abstract base class cho tất cả ML models"""
+    
+    def __init__(self, **kwargs):
+        self.model = None
+        self.is_fitted = False
+        self.training_history = []
+        self.model_params = {}
+        
+    def fit(self, X, y):
+        """Abstract method - phải implement trong subclass"""
+        pass
+        
+    def predict(self, X):
+        """Abstract method - phải implement trong subclass"""
+        pass
+        
+    def score(self, X, y):
+        """Calculate model score"""
+        pass
+        
+    def validate(self, X, y):
+        """Validate model performance"""
+        pass
+\end{minted}
+
+\textbf{Model Registry System Implementation}:
+
+\begin{minted}{python}
+# models/register_models.py
+def register_all_models(registry):
+    """Register tất cả available models trong registry"""
+    
+    # Classification models  
+    registry.register_model('knn', KNNModel, {...})
+    registry.register_model('decision_tree', DecisionTreeModel, {...})
+    registry.register_model('naive_bayes', NaiveBayesModel, {...})
+    registry.register_model('svm', SVMModel, {...})
+    registry.register_model('logistic_regression', LogisticRegressionModel, {...})
+    registry.register_model('random_forest', RandomForestModel, {...})
+    registry.register_model('adaboost', AdaBoostModel, {...})
+    registry.register_model('gradient_boost', GradientBoostingModel, {...})
+    registry.register_model('lr_numeric', LogisticRegressionNumericModel, {...})
+    registry.register_model('lr_text', LogisticRegressionTextModel, {...})
+\end{minted}
+
+\textbf{Giao diện Mô hình}:
+        \begin{itemize}
+    \item \textbf{Hợp đồng Chuẩn hóa}: Định nghĩa các phương thức bắt buộc cho tất cả lớp triển khai mô hình
+    \item \textbf{Khả năng Mở rộng}: Dễ dàng thêm các mô hình mới mà không làm hỏng mã hiện có
+    \item \textbf{Tính An toàn Kiểu}: Kiểu dữ liệu mạnh để phát hiện lỗi tại thời điểm biên dịch
+    \item \textbf{Tài liệu}: Tài liệu đầy đủ cho mỗi phương thức và tham số
+        \end{itemize}
+
+\subsubsection{Các Danh mục Mô hình}
+
+\textbf{Các Mô hình Phân loại (12 mô hình)}:
+\begin{itemize}
+    \item \textbf{Dựa trên Cây}: Random Forest, Decision Tree, Gradient Boosting, AdaBoost
+    \item \textbf{Boosting}: XGBoost, LightGBM, CatBoost với tối ưu hóa cho dữ liệu quy mô lớn
+    \item \textbf{Tuyến tính}: Hồi quy Logistic với hỗ trợ đa lớp và các bộ giải tho số tiến tiến
+    \item \textbf{Kernel}: SVM với nhiều kernel và triển khai hiệu quả
+    \item \textbf{Dựa trên Khoảng cách}: KNN với tính toán khoảng cách được tối ưu hóa
+    \item \textbf{Xác suất}: Naive Bayes với các giả định phân phối khác nhau
+\end{itemize}
+
+\textbf{Các Mô hình Ensemble}:
+\begin{itemize}
+    \item \textbf{Các Ensemble Biểu quyết}: Biểu quyết cứng và mềm với lựa chọn mô hình tự động
+    \item \textbf{Các Ensemble Chồng lớp}: Học meta với các bộ ước lượng cơ sở linh hoạt và các meta-learner
+    \item \textbf{Trình Quản lý Ensemble}: Quản lý tập trung các cấu hình ensemble và đánh giá
+\end{itemize}
+
+\subsubsection{Mẫu Factory và Registry}
+
+\textbf{Implementation ModelFactory}:
+        \begin{itemize}
+    \item \textbf{Tạo động}: Mẫu \texttt{create\_model(model\_name, **kwargs)} để tạo mô hình
+    \item \textbf{Xác thực Tham số}: Xác thực tự động các tham số mô hình với giá trị mặc định
+    \item \textbf{Xử lý Lỗi}: Thông báo lỗi rõ ràng cho các cấu hình không hợp lệ
+    \item \textbf{Hỗ trợ cấu hình}: Hệ thống cấu hình linh hoạt cho các trường hợp sử dụng khác nhau
+        \end{itemize}
+
+\textbf{Hệ thống ModelRegistry}:
+\begin{itemize}
+    \item \textbf{Đăng ký Tập trung}: Tất cả mô hình được đăng ký với siêu dữ liệu toàn diện
+    \item \textbf{Quản lý Cấu hình}: Các cấu hình mặc định và dải tham số cho mỗi mô hình
+    \item \textbf{Tự động Khám phá}: Khám phá tự động các mô hình có sẵn với phát hiện khả năng
+    \item \textbf{Hỗ trợ Mở rộng}: Dễ dàng thêm các mô hình mới với ít thay đổi mã nguồn
+\end{itemize}
+
+\subsection{Lớp Xử lý Dữ liệu}\label{subsec:data-processing}
+
+\subsubsection{Kiến trúc DataLoader}\label{subsec:dataloader-architecture}
+
+\textbf{Tải Dữ liệu Tiên tiến}:
+\begin{itemize}
+    \item \textbf{Phát hiện Danh mục Động}: Phát hiện thông minh các loại dữ liệu và danh mục
+    \item \textbf{Tối ưu Bộ nhớ}: Tải hiệu quả cho các bộ dữ liệu lớn với xử lý theo khối  
+    \item \textbf{Hỗ trợ Đầu vào Đa dạng}: Hỗ trợ cho cả xử lý dữ liệu văn bản và số học
+    \item \textbf{Lấy mẫu Thông minh}: Lấy mẫu nhận biết danh mục để đảm bảo cân bằng bộ dữ liệu
+\end{itemize}
+
+\textbf{Pipeline Tiền xử lý}:
+        \begin{itemize}
+    \item \textbf{Phát hiện Loại Đặc trưng}: Phát hiện tự động các đặc trưng số học, phân loại, và văn bản
+    \item \textbf{Xử lý Giá trị Thiếu}: Nhiều chiến lược với phép tính chèn giá trị thông minh
+    \item \textbf{Phát hiện Ngoại lai}: Phát hiện ngoại lai tiên tiến với quy tắc đặc thù miền
+    \item \textbf{Xác thực Dữ liệu}: Các pipeline xác thực để bắt các vấn đề chất lượng dữ liệu
+\end{itemize}
+
+\subsubsection{Hệ thống TextVectorizer}
+
+\textbf{Các Phương thức Vectorization}:
+\begin{itemize}
+    \item \textbf{Bag of Words}: Traditional BoW với vocabulary limiting và sparse matrix optimization
+    \item \textbf{TF-IDF}: Advanced TF-IDF với dynamic parameter optimization
+    \item \textbf{Sentence Transformers}: GPU-accelerated embeddings với progress tracking
+    \item \textbf{SVD Optimization}: Dimensionality reduction với variance preservation analysis
+\end{itemize}
+
+\textbf{Tối ưu bộ nhớ}:
+\begin{itemize}
+    \item \textbf{Hỗ trợ Sparse Matrix}: Thao tác sparse matrix hiệu quả để giảm việc sử dụng bộ nhớ
+    \item \textbf{Batch Processing}: Xử lý theo khối cho các bộ dữ liệu lớn với quản lý bộ nhớ
+    \item \textbf{Garbage Collection}: Thu gom rác chiến lược để ngăn ngừa memory leaks
+    \item \textbf{Tích hợp Cache}: Embeddings được tính trước và cache để tăng tốc xử lý lặp lại
+\end{itemize}
+
+\subsection{Kiến trúc Giao diện Wizard}\label{subsec:wizard-integration}
+
+\subsubsection{Hệ thống Quản lý Phiên}\label{subsec:session-management-system}
+
+\textbf{Quản lý trạng thái phiên:}
+\begin{itemize}
+    \item \textbf{Duy trì trạng thái}: Lưu tự động và khôi phục các user sessions
+    \item \textbf{Theo dõi tiến trình}: Theo dõi chi tiết tiến trình của người dùng qua các wizard steps
+    \item \textbf{Quản lý cấu hình}: Lưu trữ tập trung các user configurations và preferences
+    \item \textbf{Khôi phục lỗi}: Xử lý lỗi AIO Classifier với recovery suggestions và state restoration
+\end{itemize}
+
+\textbf{Quản lý bước:}
+\begin{itemize}
+    \item \textbf{Quản lý trạng thái}: Theo dõi trạng thái rõ ràng cho mỗi wizard step với validation
+    \item \textbf{Kiểm tra phụ thuộc}: Validation các step dependencies trước khi cho phép progression
+    \item \textbf{Xác thực dữ liệu}: Xác thực real-time các user inputs với immediate feedback
+    \item \textbf{Điều khiển điều hướng}: Điều hướng thông minh với context-aware step enablement
+        \end{itemize}
+
+\subsubsection{Kiến trúc Component}
+
+\textbf{Các component modular:}
+\begin{itemize}
+    \item \textbf{Component xem trước dataset}: Kiểm tra dataset tương tác với automatic column detection
+    \item \textbf{Component tải file}: Upload file mạnh mẽ với validation và error handling
+    \item \textbf{Component lựa chọn mô hình}: Lựa chọn mô hình động với configuration options
+    \item \textbf{Các component tiến trình}: Theo dõi tiến trình real-time với detailed status updates
+\end{itemize}
+
+\subsection{Kiến trúc Cache Thông minh}\label{subsec:caching-architecture}
+
+\subsubsection{Hệ thống Cache Đa cấp}\label{subsec:multi-level-caching-system}
+
+\textbf{Cấp bậc cache:}
+\begin{itemize}
+    \item \textbf{Memory Cache}: Cache trong bộ nhớ cho frequently accessed data với LRU eviction
+    \item \textbf{Disk Cache}: Cache bền vững cho models, results và SHAP analysis với compression
+    \item \textbf{Cache chuyên biệt cho mô hình}: Chiến lược cache chuyên biệt cho different model types
+    \item \textbf{Cache kết quả}: Cache AIO Classifier các evaluation results với metadata tracking
+\end{itemize}
+
+\textbf{Quản lý cache:}
+\begin{itemize}
+    \item \textbf{Tính điểm tương thích}: Sử dụng thuật toán hiện đại để xác định cache compatibility với cấu hình mới
+    \item \textbf{Vô hiệu hóa thông minh}: Thực hiện smart cache invalidation khi dữ liệu nền tảng hoặc models thay đổi
+    \item \textbf{Quản lý bộ nhớ}: Tự động cleanup các cache entries không còn sử dụng để duy trì hiệu năng
+    \item \textbf{Analytics cache}: Theo dõi chi tiết các chỉ số cache hit/miss rates và tác động đến hiệu suất
+\end{itemize}
+
+\subsubsection{Quản lý Cache SHAP}
+
+\textbf{Cache SHAP an toàn bộ nhớ}:
+\begin{itemize}
+    \item \textbf{Bảo vệ Memory Leak}: Áp dụng context managers và aggressive garbage collection để phòng tránh memory issues
+    \item \textbf{Tính an toàn thread}: Đảm bảo thread-safe operations với locking mechanisms để tránh race conditions
+    \item \textbf{Giới hạn kích thước mẫu}: Tự động giới hạn sample sizes để ngăn ngừa memory overflow
+    \item \textbf{Lưu trữ hiệu quả}: Áp dụng chiến lược lưu trữ tối ưu cho SHAP values với compression
+\end{itemize}
+
+\subsection{Kiến trúc Lớp Đánh giá}\label{subsec:evaluation-architecture}
+
+\subsubsection{Framework Đánh giá AIO Classifier}\label{subsec:evaluation-framework}
+
+\textbf{Đánh giá đa chỉ số:}
+\begin{itemize}
+    \item \textbf{Standard Metrics}: Đánh giá Accuracy, precision, recall, F1-score với phân tích từng lớp (per-class analysis)
+    \item \textbf{Advanced Metrics}: Đánh giá AUC, confusion matrices, ROC curves cùng kiểm định thống kê
+    \item \textbf{Performance Timings}: Theo dõi chi tiết thời gian training và inference
+    \item \textbf{Cross-validation Support}: Hỗ trợ cross-validation mạnh mẽ với pre-computed embeddings
+\end{itemize}
+
+\textbf{Tích hợp Model Interpretability:}
+\begin{itemize}
+    \item \textbf{SHAP Integration}: Phân tích SHAP cho AIO Classifier với nhiều loại explainer
+    \item \textbf{Feature Importance Analysis}: Phân tích chi tiết feature importance kèm kiểm tra tính nhất quán
+    \item \textbf{Visualization Support}: Hỗ trợ vẽ biểu đồ nâng cao với chất lượng công bố
+    \item \textbf{Clinical Validation}: Kết hợp tri thức chuyên ngành để kiểm chứng kết quả
+\end{itemize}
+
+\subsection{Utilities Layer Architecture}
+
+\subsubsection{System Management Utilities}
+
+\textbf{GPU Detection và Management:}
+\begin{itemize}
+    \item \textbf{CUDA Detection}: Tự động phát hiện CUDA availability và kiểm tra version
+    \item \textbf{Device Management}: Lựa chọn thiết bị thông minh để đạt hiệu năng tối ưu
+    \item \textbf{Memory Monitoring}: Theo dõi real-time GPU memory usage
+    \item \textbf{Fallback Mechanisms}: Tự động chuyển sang CPU khi GPU không khả dụng
+\end{itemize}
+
+\textbf{Configuration Management:}
+\begin{itemize}
+    \item \textbf{Centralized Configuration}: Quản lý tập trung tất cả platform settings
+    \item \textbf{Environment Awareness}: Tự động cấu hình dựa trên phát hiện môi trường
+    \item \textbf{Validation Framework}: Kiểm tra hợp lệ các configuration parameters cho AIO Classifier
+    \item \textbf{Hot Reloading}: Có thể reload configuration mà không cần khởi động lại
+\end{itemize}
+
+\subsection{Design Patterns Implementation}\label{subsec:design-patterns}
+
+\subsubsection{Creational Patterns}\label{subsec:creational-patterns}
+
+\textbf{Factory Pattern:}
+\begin{itemize}
+    \item \textbf{Dynamic Model Creation}: Tạo models động dựa trên configuration
+    \item \textbf{Parameter Validation}: Tự động kiểm tra tham số và gán giá trị mặc định
+    \item \textbf{Type Safety}: Đảm bảo strong typing để khởi tạo model chính xác
+    \item \textbf{Error Handling}: Thông báo lỗi rõ ràng cho cấu hình không hợp lệ trong AIO Classifier
+\end{itemize}
+
+\textbf{Registry Pattern:}
+\begin{itemize}
+    \item \textbf{Centralized Management}: Quản lý tập trung tất cả components với metadata đầy đủ
+    \item \textbf{Auto-discovery}: Tự động phát hiện các components khả dụng
+    \item \textbf{Dynamic Loading}: Nạp components theo nhu cầu để tối ưu tài nguyên
+    \item \textbf{Extension Support}: Dễ dàng bổ sung components mới với thay đổi tối thiểu
+\end{itemize}
+
+\subsubsection{Behavioral Patterns}
+
+\textbf{Template Method Pattern:}
+\begin{itemize}
+    \item \textbf{Base Classes}: Các abstract base classes định nghĩa workflow chung với các triển khai cụ thể
+    \item \textbf{Step Standardization}: Chuẩn hóa các bước thực hiện giữa các implementation
+    \item \textbf{Extension Points}: Xác định rõ các điểm mở rộng cho việc tùy biến
+    \item \textbf{Error Handling}: Chuẩn hóa xử lý lỗi trên toàn bộ các implementation
+\end{itemize}
+
+\subsection{Code Examples và Model Processing Implementation Chi tiết}
+
+\subsubsection{Base Model Architecture}
+
+\textbf{BaseModel Abstract Class - Lớp Cơ sở Trừu tượng cho Models}:
+
+\begin{minted}{python}
+class BaseModel:
+    """Abstract base class cho tất cả ML models"""
+    
+    def __init__(self, **kwargs):
+        self.model = None
+        self.is_fitted = False
+        self.training_history = []
+        self.model_params = {}
+        
+    def fit(self, X, y):
+        """Abstract method - phải implement trong subclass"""
+        pass
+        
+    def predict(self, X):
+        """Abstract method - phải implement trong subclass"""
+        pass
+        
+    def score(self, X, y):
+        """Calculate model score"""
+        pass
+        
+    def validate(self, X, y):
+        """Validate model performance"""
+        pass
+\end{minted}
+
+\textbf{Chú thích}: Lớp BaseModel cung cấp giao diện chung cho tất cả các mô hình trong hệ thống. Các phương thức trừu tượng đảm bảo rằng mọi lớp triển khai phải có các phương thức cơ bản nhất.
+
+\textbf{Model Registry System - Hệ thống Đăng ký Models}:
+
+\begin{minted}{python}
+# models/register_models.py
+def register_all_models(registry):
+    """Register tất cả available models trong registry"""
+    
+    # Classification models  
+    registry.register_model('knn', KNNModel, {...})
+    registry.register_model('decision_tree', DecisionTreeModel, {...})
+    registry.register_model('naive_bayes', NaiveBayesModel, {...})
+    registry.register_model('svm', SVMModel, {...})
+    registry.register_model('logistic_regression', LogisticRegressionModel, {...})
+    registry.register_model('linear_svc', LinearSVCModel, {...})
+    registry.register_model('random_forest', RandomForestModel, {...})
+    registry.register_model('adaboost', AdaBoostModel, {...})
+    registry.register_model('gradient_boosting', GradientBoostingModel, {...})
+    registry.register_model('xgboost', XGBoostModel, {...})
+    registry.register_model('lightgbm', LightGBMModel, {...})
+    
+    # Ensemble methods
+    registry.register_model('voting_ensemble_hard', VotingEnsembleModel, {...})
+    registry.register_model('stacking_ensemble_logistic_regression', StackingEnsembleModel, {...})
+\end{minted}
+
+\textbf{Chú thích}: Hệ thống đăng ký mô hình cho phép đăng ký động các mô hình và triển khai tự động mẫu thiết kế nhà máy. Hệ thống này hỗ trợ cả các mô hình đơn lẻ và các phương pháp kết hợp.
+
+\subsubsection{Specific Model Implementations}
+
+\textbf{K-Nearest Neighbors Implementation - Triển khai KNN}:
+
+\begin{minted}{python}
+class KNNModel(BaseModel):
+    """K-Nearest Neighbors với GPU acceleration"""
+    
+    def __init__(self, n_neighbors: int = 5, weights: str = 'uniform', 
+                 metric: str = 'euclidean', **kwargs):
+        super().__init__(**kwargs)
+        self.n_neighbors = n_neighbors
+        self.weights = weights
+        self.metric = metric
+        
+        # GPU acceleration setup
+        self.faiss_available = self._check_faiss_availability()
+        self.faiss_gpu_available = self._check_faiss_gpu_availability()
+        
+    def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
+            y: np.ndarray, use_gpu: bool = False):
+        """Fit KNN với memory-efficient handling"""
+        
+        n_samples, n_features = X.shape
+        memory_estimate_gb = (n_samples * n_features * 4) / (1024**3)
+        is_sparse = sparse.issparse(X)
+        
+        # Strategy: Different handling cho embeddings vs TF-IDF/BOW
+        if is_sparse:
+            # Sparse data (TF-IDF/BOW) - use sklearn
+            self.model = KNeighborsClassifier(
+                n_neighbors=self.n_neighbors,
+                weights=self.weights,
+                metric=self.metric,
+                n_jobs=-1  # Parallel processing
+            )
+        else:
+            # Dense data (embeddings) - optimized sklearn
+            self.model = KNeighborsClassifier(
+                n_neighbors=self.n_neighbors,
+                weights=self.weights,
+                metric=self.metric,
+                algorithm='ball_tree' if n_features <= 20 else 'kd_tree',
+                n_jobs=-1
+            )
+            
+        self.model.fit(X, y)
+        self.is_fitted = True
+        return self
+\end{minted}
+
+\textbf{Chú thích}: Mô hình KNN tự động phát hiện loại dữ liệu và chọn thuật toán tối ưu. Với dữ liệu thưa thớt (TF-IDF) sử dụng thư viện sklearn chuẩn, với dữ liệu đặc (embeddings) sử dụng các thuật toán được tối ưu hóa.
+
+\textbf{Random Forest với Advanced Features - Random Forest Tính năng Nâng cao}:
+
+\begin{minted}{python}
+class RandomForestModel(BaseModel):
+    """Random Forest với comprehensive optimization"""
+    
+    def __init__(self, n_estimators: int = 100, max_depth: int = None,
+                 min_samples_split: int = 2, min_samples_leaf: int = 1,
+                 bootstrap: bool = True, random_state: int = 42, **kwargs):
+        super().__init__(**kwargs)
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.min_samples_split = min_samples_split
+        self.min_samples_leaf = min_samples_leaf
+        self.bootstrap = bootstrap
+        self.random_state = random_state
+        
+    def fit(self, X: Union[np.ndarray, sparse.csr_matrix], y: np.ndarray):
+        """Fit Random Forest với automatic parameter tuning"""
+        
+        n_samples, n_features = X.shape
+        
+        # Automatic parameter optimization based on data characteristics
+        if n_samples < 1000:
+            n_estimators = min(self.n_estimators, 50)
+        elif n_samples > 10000:
+            n_estimators = max(self.n_estimators, 200)
+        else:
+            n_estimators = self.n_estimators
+            
+        # Calculate optimal max_depth
+        optimal_depth = min(self.max_depth or n_features, int(np.log2(n_samples)))
+        
+        self.model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=optimal_depth,
+            min_samples_split=self.min_samples_split,
+            min_samples_leaf=self.min_samples_leaf,
+            bootstrap=self.bootstrap,
+            random_state=self.random_state,
+            n_jobs=-1,  # Parallel processing
+            verbose=0
+        )
+        
+        self.model.fit(X, y)
+        self.is_fitted = True
+        
+        # Store feature importance for analysis
+        self.feature_importance = self.model.feature_importances_
+        
+        return self
+\end{minted}
+
+\textbf{Chú thích}: Mô hình Random Forest tự động tối ưu hóa các tham số dựa trên đặc tính của bộ dữ liệu. Hệ thống điều chỉnh \texttt{n\_estimators} và \texttt{max\_depth} để cân bằng hiệu suất và thời gian huấn luyện.
+
+\subsubsection{Data Processing Layer Implementation}
+
+\textbf{DataLoader Implementation - Triển khai DataLoader}:
+
+\begin{minted}{python}
+class DataLoader:
+    def __init__(self, cache_dir: str = CACHE_DIR):
+        self.dataset = None
+        self.samples = []
+        self.preprocessed_samples = []
+        self.label_to_id = {}
+        self.id_to_label = {}
+        self.available_categories = []
+        self.selected_categories = []
+        self.category_stats = {}
+        self.is_multi_input = False
+        
+    def load_dataset(self, skip_csv_prompt: bool = False) -> None:
+        """Load any dataset and automatically detect categories"""
+        
+        # 1. Check cache first
+        dataset_cache_path = Path(self.cache_dir) / "UniverseTBD___arxiv-abstracts-large"
+        csv_backup_path = Path(self.cache_dir) / "arxiv_dataset_backup.csv"
+        
+        # 2. Load from HuggingFace datasets
+        if dataset_cache_path.exists():
+            self.dataset = load_dataset("UniverseTBD/arxiv-abstracts-large", 
+                                       cache_dir=str(dataset_cache_path))
+        else:
+            self.dataset = load_dataset("UniverseTBD/arxiv-abstracts-large")
+        
+        # 3. Create CSV backup for faster access
+        self._create_csv_backup_chunked(csv_backup_path)
+        
+        # 4. Auto-detect categories
+        self._detect_available_categories()
+        
+    def select_samples(self, max_samples: int = None) -> None:
+        """Intelligent sampling strategy with category balancing"""
+        
+        # 1. Category-based sampling
+        if self.selected_categories:
+            category_samples = {}
+            samples_per_category = max_samples // len(self.selected_categories)
+            
+            for category in self.selected_categories:
+                category_data = [s for s in self.dataset['train'] 
+                               if category in s['categories']]
+                category_samples[category] = category_data[:samples_per_category]
+        
+        # 2. Stratified sampling
+        # 3. Memory optimization
+        # 4. Progress tracking
+\end{minted}
+
+\textbf{Chú thích}: DataLoader tự động tải các bộ dữ liệu với quản lý bộ nhớ thông minh. Hệ thống tạo bản sao lưu CSV để tăng tốc truy cập và hỗ trợ lấy mẫu dựa trên danh mục.
+
+\textbf{Text Vectorization Implementation - Triển khai Vectorization Văn bản}:
+
+\begin{minted}{python}
+class TextVectorizer:
+    """Advanced text vectorization với multiple methods"""
+    
+    def __init__(self, vectorization_method: str = 'tfidf'):
+        self.vectorization_method = vectorization_method
+        self.vectorizer = None
+        self.is_fitted = False
+        
+    def fit_transform(self, texts: List[str], method: str = None):
+        """Fit và transform texts với selected method"""
+        
+        method = method or self.vectorization_method
+        
+        if method == 'tfidf':
+            return self._fit_transform_tfidf(texts)
+        elif method == 'bow':
+            return self._fit_transform_bow(texts)
+        elif method == 'embeddings':
+            return self._fit_transform_embeddings(texts)
+        else:
+            raise ValueError(f"Unsupported vectorization method: {method}")
+            
+    def _fit_transform_tfidf(self, texts: List[str]):
+        """TF-IDF vectorization với optimization"""
+        
+        self.vectorizer = TfidfVectorizer(
+            max_features=5000,
+            ngram_range=(1, 2),
+            min_df=2,
+            max_df=0.95,
+            stop_words='english',
+            lowercase=True
+        )
+        
+        tfidf_matrix = self.vectorizer.fit_transform(texts)
+        self.is_fitted = True
+        
+        return tfidf_matrix
+        
+    def _fit_transform_embeddings(self, texts: List[str]):
+        """Sentence Transformers embeddings"""
+        
+        try:
+            from sentence_transformers import SentenceTransformer
+            
+            model = SentenceTransformer('all-MiniLM-L6-v2')
+            embeddings = model.encode(texts, show_progress_bar=True)
+            
+            self.is_fitted = True
+            return embeddings
+            
+        except ImportError:
+            print("Sentence Transformers not available, falling back to TF-IDF")
+            return self._fit_transform_tfidf(texts)
+\end{minted}
+
+\textbf{Chú thích}: TextVectorizer hỗ trợ nhiều phương pháp từ TF-IDF truyền thống đến các embedding câu hiện đại. Hệ thống tự động chuyển sang phương pháp khác khi các phụ thuộc không có sẵn.
+
+\textbf{Feature Scaling Implementation - Triển khai Scale Features}:
+
+\begin{minted}{python}
+class FeatureScaler:
+    """AIO Classifier feature scaling với multiple scalers"""
+    
+    def __init__(self, scaler_type: str = 'standard'):
+        self.scaler_type = scaler_type
+        self.scaler = None
+        self.is_fitted = False
+        
+    def fit_transform(self, X, scaler_type: str = None):
+        """Fit và transform data với selected scaler"""
+        
+        scaler_type = scaler_type or self.scaler_type
+        
+        if scaler_type == 'standard':
+            self.scaler = StandardScaler()
+        elif scaler_type == 'minmax':
+            self.scaler = MinMaxScaler()
+        elif scaler_type == 'robust':
+            self.scaler = RobustScaler()
+        else:
+            raise ValueError(f"Unsupported scaler type: {scaler_type}")
+            
+        X_scaled = self.scaler.fit_transform(X)
+        self.is_fitted = True
+        
+        return X_scaled
+        
+    def transform(self, X):
+        """Transform new data using fitted scaler"""
+        
+        if not self.is_fitted:
+            raise ValueError("Scaler must be fitted before transform")
+            
+        return self.scaler.transform(X)
+        
+    def inverse_transform(self, X_scaled):
+        """Inverse transform scaled data back to original scale"""
+        
+        if not self.is_fitted:
+            raise ValueError("Scaler must be fitted before inverse_transform")
+            
+        return self.scaler.inverse_transform(X_scaled)
+\end{minted}
+
+\textbf{Chú thích}: FeatureScaler cung cấp giao diện thống nhất cho nhiều phương pháp chuẩn hóa. Hệ thống hỗ trợ StandardScaler cho phân phối chuẩn, MinMaxScaler cho các khoảng có giới hạn, và RobustScaler cho khả năng chống các giá trị ngoại lai.
+
+\subsubsection{Advanced Pipeline Implementation}
+
+\textbf{Complete Training Pipeline Logic - Logic Pipeline Huấn luyện Hoàn chỉnh}:
+
+\begin{minted}{python}
+class TrainingPipeline:
+    def __init__(self):
+        self.models = {}
+        self.results = {}
+        self.cache_manager = CacheManager()
+        self.evaluator = AIO ClassifierEvaluator()
+        
+    def run_complete_training(self, dataset_config: Dict, models_config: List[Dict]):
+        """Run complete training pipeline với multiple models"""
+        
+        # Step 1: Data Loading và Preprocessing
+        data_loader = DataLoader()
+        processed_data = data_loader.load_and_preprocess(dataset_config)
+        
+        # Step 2: Feature Scaling
+        scalers = ['StandardScaler', 'MinMaxScaler', 'RobustScaler']
+        
+        # Step 3: Model Training Loop
+        for model_config in models_config:
+            model_name = model_config['name']
+            model_class = model_config['class']
+            
+            for scaler_name in scalers:
+                # Apply scaling
+                scaled_data = self.apply_scaling(processed_data, scaler_name)
+                
+                # Check cache first
+                cache_key = self.generate_cache_key(model_name, scaler_name, dataset_config)
+                cached_model = self.cache_manager.get_cached_model(cache_key)
+                
+                if cached_model:
+                    self.results[cache_key] = cached_model
+                    continue
+                
+                # Train new model
+                model_instance = model_class(**model_config['params'])
+                trained_model = model_instance.fit(scaled_data['X_train'], scaled_data['y_train'])
+                
+                # Evaluate model
+                evaluation_results = self.evaluator.evaluate_model(trained_model, scaled_data)
+                
+                # Cache results
+                self.cache_manager.cache_model(cache_key, {
+                    'model': trained_model,
+                    'evaluation': evaluation_results,
+                    'scaler': scaler_name,
+                    'training_time': evaluation_results['training_time']
+                })
+                
+                self.results[cache_key] = {
+                    'model': trained_model,
+                    'evaluation': evaluation_results,
+                    'scaler': scaler_name
+                }
+                
+        return self.results
+\end{minted}
+
+\textbf{Chú thích}: Pipeline huấn luyện hoàn chỉnh tích hợp tải dữ liệu, chuẩn hóa, huấn luyện mô hình, đánh giá, và lưu trữ trong một quy trình thống nhất. Hệ thống hỗ trợ xử lý song song cho nhiều kết hợp mô hình-bộ chuẩn hóa.
+
+\subsubsection{Advanced Model-Specific Implementations}
+
+\textbf{KNN GPU Acceleration Implementation - Triển khai Tăng tốc GPU cho KNN}:
+
+\begin{minted}{python}
+class KNNModel(BaseModel):
+    """K-Nearest Neighbors với GPU acceleration"""
+    
+    def __init__(self, n_neighbors: int = 5, weights: str = 'uniform', 
+                 metric: str = 'euclidean', **kwargs):
+        super().__init__(**kwargs)
+        self.n_neighbors = n_neighbors
+        self.weights = weights
+        self.metric = metric
+        
+        # GPU acceleration setup
+        self.faiss_available = self._check_faiss_availability()
+        self.faiss_gpu_available = self._check_faiss_gpu_availability()
+        
+    def fit(self, X: Union[np.ndarray, sparse.csr_matrix], 
+            y: np.ndarray, use_gpu: bool = False):
+        """Fit KNN với memory-efficient handling"""
+        
+        n_samples, n_features = X.shape
+        memory_estimate_gb = (n_samples * n_features * 4) / (1024**3)
+        is_sparse = sparse.issparse(X)
+        
+        # Strategy: Different handling cho embeddings vs TF-IDF/BOW
+        if is_sparse:
+            # Sparse data (TF-IDF/BOW) - use sklearn
+            self.model = KNeighborsClassifier(
+                n_neighbors=self.n_neighbors,
+                weights=self.weights,
+                metric=self.metric,
+                n_jobs=-1
+            )
+            self.model.fit(X, y)
+            
+        elif memory_estimate_gb > 2.0:  # Large dense data
+            # Large dense data - use FAISS
+            if use_gpu and self.faiss_gpu_available:
+                self._setup_faiss_gpu(X, y)
+            elif self.faiss_available:
+                self._setup_faiss_cpu(X, y)
+            else:
+                # Fallback to sklearn
+                self.model = KNeighborsClassifier(
+                    n_neighbors=self.n_neighbors,
+                    weights=self.weights,
+                    metric=self.metric,
+                    n_jobs=-1
+                )
+                self.model.fit(X, y)
+        else:
+            # Small dense data - use sklearn
+            self.model = KNeighborsClassifier(
+                n_neighbors=self.n_neighbors,
+                weights=self.weights,
+                metric=self.metric,
+                n_jobs=-1
+            )
+            self.model.fit(X, y)
+            
+        return self
+\end{minted}
+
+\textbf{Chú thích}: Mô hình KNN triển khai xử lý dữ liệu thông minh cùng với tăng tốc GPU và tối ưu hóa bộ nhớ. Hệ thống tự động chọn thuật toán tối ưu dựa trên đặc tính dữ liệu và phần cứng có sẵn.
+
+\textbf{CatBoost Advanced Implementation - Triển khai CatBoost Nâng cao}:
+
+\begin{minted}{python}
+class CatBoostModel(BaseModel):
+    """CatBoost với GPU acceleration"""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Import CatBoost
+        try:
+            import catboost as cb
+            self.cb = cb
+        except ImportError:
+            raise ImportError("CatBoost is required but not installed")
+            
+        # Default parameters
+        default_params = {
+            'iterations': 100,
+            'depth': 6,
+            'learning_rate': 0.1,
+            'l2_leaf_reg': 3.0,
+            'random_seed': 42,
+            'verbose': False
+        }
+        
+        # Configure GPU/CPU
+        self._configure_device_params(default_params)
+        
+        default_params.update(kwargs)
+        self.model_params = default_params
+        
+    def _configure_device_params(self, params: Dict[str, Any]):
+        """Configure device-specific parameters"""
+        try:
+            from gpu_config_manager import configure_model_device
+            
+            device_config = configure_model_device("catboost")
+            
+            if device_config["use_gpu"]:
+                params.update(device_config["device_params"])
+                print(f"🚀 CatBoost configured for GPU: {device_config['gpu_info']}")
+            else:
+                params.update({
+                    "task_type": "CPU"
+                })
+                print(f"💻 CatBoost configured for CPU")
+                
+        except ImportError:
+            params.update({
+                "task_type": "CPU"
+            })
+            print(f"💻 CatBoost configured for CPU (fallback)")
+            
+    def fit(self, X: Union[np.ndarray, sparse.csr_matrix], y: np.ndarray):
+        """Fit CatBoost với GPU optimization"""
+        
+        self.model = self.cb.CatBoostClassifier(**self.model_params)
+        
+        # CatBoost automatically handles categorical features
+        self.model.fit(
+            X, y,
+            eval_set=(X, y),
+            use_best_model=True,
+            verbose=False
+        )
+        
+        return self
+\end{minted}
+
+\textbf{Chú thích}: Mô hình CatBoost triển khai cấu hình GPU nâng cao với xử lý tự động các đặc trưng phân loại. CatBoost tự động mã hóa các đặc trưng phân loại mà không cần xử lý trước thủ công, đạt được hiệu suất xuất sắc.
+
+\textbf{Advanced Naive Bayes Implementation - Triển khai Naive Bayes Nâng cao}:
+
+\begin{minted}{python}
+class NaiveBayesModel(BaseModel):
+    """Naive Bayes với automatic type selection"""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.nb_type = None  # Will be determined automatically
+        
+    def fit(self, X: Union[np.ndarray, sparse.csr_matrix], y: np.ndarray):
+        """Fit Naive Bayes với automatic type selection"""
+        
+        # Auto-detect best Naive Bayes type
+        self.nb_type = self._detect_best_nb_type(X, y)
+        
+        if self.nb_type == 'multinomial':
+            self.model = MultinomialNB()
+        elif self.nb_type == 'gaussian':
+            self.model = GaussianNB()
+        elif self.nb_type == 'bernoulli':
+            self.model = BernoulliNB()
+        else:
+            # Default to multinomial
+            self.model = MultinomialNB()
+            
+        self.model.fit(X, y)
+        return self
+        
+    def _detect_best_nb_type(self, X, y):
+        """Detect best Naive Bayes type based on data characteristics"""
+        
+        # Check data characteristics
+        is_sparse = sparse.issparse(X)
+        has_negative = np.any(X < 0) if not is_sparse else np.any(X.data < 0)
+        is_binary = np.all(np.isin(X, [0, 1])) if not is_sparse else np.all(np.isin(X.data, [0, 1]))
+        
+        if is_sparse:
+            return 'multinomial'
+        elif is_binary:
+            return 'bernoulli'
+        elif has_negative:
+            return 'gaussian'
+        else:
+            return 'multinomial'
+\end{minted}
+
+\textbf{Chú thích}: Mô hình Naive Bayes triển khai phát hiện loại thông minh để chọn biến thể NB tối ưu. Hệ thống tự động lựa chọn giữa MultinomialNB, GaussianNB, và BernoulliNB dựa trên đặc tính dữ liệu.
+
+\subsection{Tổng kết Kiến trúc Modular}
+
+\noindent
+Kiến trúc mô-đun của hệ thống AIO Classifier thể hiện các nguyên tắc kỹ thuật phần mềm phức tạp được áp dụng cho các quy trình làm việc học máy. Các lựa chọn thiết kế đảm bảo khả năng mở rộng, tính dễ bảo trì và tính linh hoạt trong khi hỗ trợ các quy trình làm việc đa mô hình phức tạp với khả năng tiền xử lý và đánh giá tiên tiến.
+
+Kiến trúc hỗ trợ từ tạo mẫu quy mô nhỏ đến triển khai sản xuất với cùng một mã nguồn cơ sở, thể hiện việc ứng dụng hiệu quả các nguyên tắc thiết kế mô-đun trong bối cảnh kỹ thuật học máy. Các mở rộng và sửa đổi trong tương lai được tạo điều kiện bởi các giao diện sạch và các lớp trừu tượng toàn diện xuyên suốt hệ thống.

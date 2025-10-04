@@ -1,0 +1,112 @@
+\section{Mục tiêu của Dự án}\label{sec:project-goals}
+
+\noindent
+Trong bối cảnh Máy học đang phát triển mạnh mẽ, việc thử nghiệm và so sánh các mô hình học máy trên các bộ dữ liệu khác nhau đã trở thành một thách thức lớn. Theo nghiên cứu tổng quan về AutoML và AIO Classifier \cite{guiyang2020}, các nhà nghiên cứu ML trung bình dành 60-70\% thời gian cho việc tiền xử lý, kỹ thuật đặc trưng và thử nghiệm các mô hình khác nhau, trong khi chỉ 30-40\% thời gian thực sự dành cho việc phân tích kết quả và khả năng giải thích mô hình.
+
+\vspace{1em}
+\noindent
+Nghiên cứu về tải nhận thức trong các quy trình làm việc ML của \cite{dondi2023} cho thấy rằng việc chuyển đổi giữa các mô hình và bộ dữ liệu khác nhau tạo ra chi phí chuyển đổi ngữ cảnh đáng kể. Tương tự, các phương pháp tốt nhất trong MLOps từ \cite{google-mlops} cũng ghi nhận rằng hầu hết thời gian của các chuyên viên ML dành cho chuẩn bị pipeline dữ liệu và so sánh mô hình, thường là hơn 70\% tổng thời gian phát triển. Theo \cite{domingos2012}, việc xây dựng AIO Classifier toàn diện với hỗ trợ nhiều mô hình và đánh giá tự động đòi hỏi một kiến trúc mạnh mẽ và mô-đun.
+
+\vspace{1em}
+\noindent
+Nhận thấy vấn đề này, dự án \textbf{AIO Classifier} được phát triển để xây dựng một giải pháp Tất cả-trong-Một nhằm tối ưu hóa toàn bộ quy trình Máy học từ tiền xử lý dữ liệu đến khả năng giải thích mô hình. Dự án được thiết kế với các mục tiêu chiến lược sau:
+
+\vspace{1em}
+\begin{itemize}
+    \item \textbf{Hỗ trợ Mô hình Toàn diện}: Tích hợp 13 thuật toán máy học bao gồm Random Forest, LightGBM, CatBoost, XGBoost, Decision Tree, Logistic Regression, SVM, KNN, Naive Bayes, AdaBoost, Gradient Boosting và các phương pháp Ensemble (Voting, Stacking). Hỗ trợ cả vectorization văn bản và xử lý đặc trưng số, cho phép đánh giá toàn diện trên nhiều bộ dữ liệu với các metrics chuẩn hóa.
+    
+    \item \textbf{Tương thích Đa Bộ dữ liệu}: Thiết kế để hỗ trợ xử lý hiệu quả nhiều bộ dữ liệu. Đã thực nghiệm thành công trên Cleveland Heart Disease dataset và Heart Disease dataset với tổng cộng 78 cấu hình mô hình (39 cho mỗi dataset), đạt được hiệu suất xuất sắc với nhiều mô hình đạt độ chính xác trên 90\% và một số mô hình đạt 100\% trên tập test.
+    
+    \item \textbf{Tối ưu hóa Nâng cao \& Tăng tốc}: Tăng tốc GPU với hỗ trợ CUDA 12.6+, hệ thống cache thông minh với điểm tương thích và tối ưu hóa hyperparameter Optuna. Quản lý bộ nhớ cho xử lý quy mô lớn với bảo vệ rò rỉ bộ nhớ hiệu quả.
+    
+    \item \textbf{Khả năng Giải thích Mô hình}: Tích hợp phân tích SHAP (SHapley Additive exPlanations) với visualization toàn diện. Cung cấp các biểu đồ nâng cao bao gồm biểu đồ tóm tắt, biểu đồ cột, biểu đồ phụ thuộc và biểu đồ waterfall để hiểu tầm quan trọng đặc trưng sâu và cách hành vi mô hình.
+    
+    \item \textbf{Kiến trúc Giao diện Wizard}: Giao diện wizard dựa trên Streamlit với quy trình 5 bước: lựa chọn bộ dữ liệu, tiền xử lý, cấu hình mô hình, thực thi huấn luyện và visualization. Quản lý phiên với khả năng tự động lưu và các cơ chế khôi phục lỗi.
+    
+    \item \textbf{Kiến trúc Sẵn sàng Triển khai}: Mẫu thiết kế mô-đun với Factory và Registry patterns, xử lý lỗi toàn diện và tối ưu hóa khả năng mở rộng. Kiến trúc này đã được kiểm chứng qua việc xử lý thành công nhiều bộ dữ liệu với các pipeline đánh giá nâng cao.
+    
+    \item \textbf{Đánh giá Toàn diện}: Hệ thống đánh giá nâng cao với ma trận confusion, các metrics hiệu suất và phân tích so sánh. Hỗ trợ cross-validation với embeddings được tính toán trước để đảm bảo so sánh công bằng giữa các mô hình và phương pháp vectorization.
+\end{itemize}
+
+\vspace{1em}
+\noindent
+Dự án này thể hiện một cách tiếp cận chuyên nghiệp trong việc xây dựng AIO Classifier toàn diện, kết hợp các phương pháp tốt nhất từ cả máy học và kỹ thuật phần mềm để tạo ra một giải pháp có thể ứng dụng trong cả môi trường nghiên cứu và triển khai sản xuất.
+
+\subsection{Phân tích Chi tiết các Mục tiêu}\label{subsec:detailed-goals}
+
+\subsubsection{Hỗ trợ Mô hình Toàn diện}
+
+Việc tích hợp đa dạng thuật toán trong một framework thống nhất mang lại những lợi ích đáng kể:
+
+\begin{itemize}
+    \item \textbf{Đa dạng Thuật toán}: Từ các thuật toán cổ điển như Logistic Regression, Decision Tree đến các phương pháp ensemble tiên tiến như LightGBM, CatBoost, XGBoost.
+    \item \textbf{Đánh giá Chuẩn hóa}: Tất cả 13 mô hình được đánh giá trên cùng bộ dữ liệu với các metrics chuẩn hóa (accuracy, precision, recall, F1-score, training time).
+    \item \textbf{Pipeline Tự động}: AIO Classifier pipeline từ tiền xử lý đến đánh giá được tự động hóa với xử lý lỗi mạnh mẽ.
+    \item \textbf{So sánh Hiệu suất}: Cho phép phân tích hiệu suất chi tiết và nghiên cứu so sánh của các nhóm mô hình khác nhau.
+\end{itemize}
+
+\subsubsection{Tương thích Đa Bộ dữ liệu \& Xác thực Kết quả}
+
+Framework được thiết kế để xử lý hiệu quả nhiều bộ dữ liệu:
+
+\begin{itemize}
+    \item \textbf{Thiết kế Độc lập}: Hỗ trợ cả bộ dữ liệu văn bản và số với tiền xử lý thông minh.
+    \item \textbf{Xác thực Thực tế}: Đã kiểm thử thành công trên 2 bộ dữ liệu tim mạch với tổng cộng 78 cấu hình.
+    \item \textbf{Thành tựu Hiệu suất}: Nhiều mô hình đạt được độ chính xác 100\%, với Stacking Ensemble thể hiện hiệu suất xuất sắc.
+    \item \textbf{Kiến trúc Có thể Mở rộng}: Kiến trúc hỗ trợ cho các bộ dữ liệu từ quy mô nhỏ đến trung bình với cùng framework.
+\end{itemize}
+
+\subsubsection{Tối ưu hóa Nâng cao \& Tăng tốc}
+
+Tối ưu hóa hiệu suất được tích hợp ở nhiều mức độ khác nhau:
+
+\begin{itemize}
+    \item \textbf{Tăng tốc GPU}: Hỗ trợ CUDA 12.6+ với tích hợp PyTorch và tự động phát hiện thiết bị.
+    \item \textbf{Cache Thông minh}: Cache đa lớp với điểm tương thích để tối đa hóa tỷ lệ cache hit.
+    \item \textbf{Quản lý Bộ nhớ}: Bảo vệ rò rỉ bộ nhớ nâng cao và chiến lược tối ưu hóa bộ nhớ.
+    \item \textbf{Tối ưu hóa Hyperparameter}: Tích hợp Optuna cho tối ưu hóa tham số tự động.
+\end{itemize}
+
+\subsubsection{Khả năng Giải thích Mô hình \& Tích hợp SHAP}\label{subsec:model-interpretability}
+
+Khả năng giải thích mô hình sâu là một tính năng chính của nền tảng:
+
+\begin{itemize}
+    \item \textbf{Phân tích SHAP}: Tích hợp SHAP toàn diện với nhiều loại explainer (TreeExplainer, LinearExplainer, KernelExplainer).
+    \item \textbf{Tầm Quan trọng Đặc trưng}: Phân tích chi tiết tầm quan trọng của đặc trưng với kiểm tra ý nghĩa thống kê.
+    \item \textbf{Phân tích Tính Nhất quán}: Xem xét các mẫu nhất quán qua các mô hình với các bộ tiền xử lý khác nhau.
+    \item \textbf{Xác thực Lâm sàng}: Xác thực kết quả trong thực tế với kiến thức lĩnh vực lâm sàng như chẩn đoán tim mạch.
+\end{itemize}
+
+\subsubsection{Kiến trúc Giao diện Wizard}\label{subsec:wizard-architecture}
+
+Trải nghiệm người dùng được tối ưu hóa qua thiết kế giao diện tinh vi:
+
+\begin{itemize}
+    \item \textbf{Workflow 5 Bước}: Quy trình làm việc có cấu trúc từ chọn dữ liệu đến hiển thị với tiết lộ tiệm tiến.
+    \item \textbf{Quản lý Phiên}: Khả năng tự động lưu và khôi phục để duy trì tiến độ người dùng.
+    \item \textbf{Phản hồi Thời gian thực}: Xác thực ngay lập tức và các chỉ báo tiến độ với thông báo lỗi chi tiết.
+    \item \textbf{Hiển thị Nâng cao}: Tích hợp các biểu đồ SHAP và ma trận confusion vào giao diện web.
+\end{itemize}
+
+\subsubsection{Kiến trúc Sẵn sàng Cho Sản xuất}
+
+Kiến trúc được thiết kế theo tiêu chuẩn kỹ thuật phần mềm doanh nghiệp:
+
+\begin{itemize}
+    \item \textbf{Thiết kế Mô-đun}: Tách biệt trách nhiệm rõ ràng với các module models/, wizard\_ui/, patch/, utils/.
+    \item \textbf{Mẫu thiết kế}: Factory pattern cho tạo mô hình, Registry pattern cho quản lý mô hình.
+    \item \textbf{Xử lý Lỗi}: AIO Classifier xử lý lỗi với suy giảm nhẹ nhàng và cơ chế khôi phục.
+    \item \textbf{Khả năng Mở rộng}: Thiết kế kiến trúc cho mở rộng ngang và dọc với sử dụng tài nguyên hiệu quả.
+\end{itemize}
+
+\subsubsection{AIO Classifier Evaluation Framework}
+
+Khả năng đánh giá nâng cao cho phép phân tích hiệu suất toàn diện:
+
+\begin{itemize}
+    \item \textbf{Nhiều Metrics}: Accuracy, precision, recall, F1-score với phân tích theo từng lớp.
+    \item \textbf{Cross-Validation}: Cross-validation robust với các embedding được tính trước để đảm bảo so sánh công bằng.
+    \item \textbf{Phân tích So sánh}: So sánh chi tiết của các mô hình, bộ tiền xử lý và chiến lược ensemble.
+    \item \textbf{Xác thực Thống kê}: Kiểm định ý nghĩa thống kê để xác thực các khác biệt về hiệu suất.
+\end{itemize}

@@ -1,0 +1,1080 @@
+\section{Tính năng Nâng cao \& Tối ưu hóa}\label{sec:advanced-features}
+
+\noindent
+AIO Classifier không chỉ là một công cụ máy học đơn giản mà còn là một platform công nghệ cao với các tính năng nâng cao được thiết kế để giải quyết các thách thức thực tế trong môi trường sản xuất. Platform này tích hợp các kỹ thuật tối ưu hóa tiên tiến để đảm bảo hiệu suất cao nhất và trải nghiệm người dùng mượt mà trong môi trường Streamlit.
+
+\textbf{Tầm quan trọng của Advanced Features:}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Máy học Hiệu suất Cao}: Các tính năng nâng cao đảm bảo các mô hình ML hoạt động với tốc độ và độ chính xác tối ưu trong môi trường thực tế
+    \item \textbf{Tối ưu hóa Tài nguyên}: Quản lý thông minh memory và CPU để xử lý các dataset lớn mà không bị crash hoặc slowdown
+    \item \textbf{Automatization}: Tự động hóa các quy trình phức tạp như hyperparameter tuning và model interpretation
+    \item \textbf{Scalability}: Hỗ trợ từng cấp độ user từ beginner đến expert với khả năng mở rộng
+\end{itemize}
+
+AIO Classifier tận dụng nhiều công nghệ đột phá bao gồm hệ thống cache thông minh với Streamlit integration, tối ưu hóa hyperparameter bằng Optuna (một framework Bayesian optimization tiên tiến), và khả năng giải thích mô hình sâu sắc với SHAP (SHapley Additive exPlanations) để tạo ra một giải pháp ML hoàn chỉnh và sẵn sàng triển khai trong môi trường production.
+
+\subsection{Hệ thống Caching Streamlit Thông Minh}\label{subsec:intelligent-caching}
+
+\noindent
+Caching là một trong những tính năng quan trọng nhất của AIO Classifier, được thiết kế để giải quyết những thách thức về hiệu suất trong các ứng dụng máy học web. Khi người dùng upload dataset lớn và thực hiện training nhiều mô hình, việc cache kết quả giữa các lần chạy application sẽ tiết kiệm đáng kể thời gian và tài nguyên máy tính.
+
+\subsubsection{Cửa hàng Cache với Streamlit Cache Resource}
+
+\textbf{Khi nào và tại sao cần Caching?}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Vấn đề Hiệu suất}: Training một mô hình Random Forest trên dataset 10,000 rows có thể mất 2-5 phút. Nếu user refresh trang hoặc chuyển sang tab khác và quay lại, không có cache có nghĩa là phải train lại từ đầu
+    \item \textbf{Tốn Kém Tài nguyên}: Mỗi lần train lại không chỉ tốn CPU mà còn tốn điện năng server
+    \item \textbf{Trải nghiệm Người dùng}: Người dùng sẽ frustration khi phải đợi lại những gì đã làm xong
+\end{itemize}
+
+\textbf{Streamlit Cache Resource - Công nghệ Cốt lõi}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{@st.cache\_resources}: Đây là decorator đặc biệt của Streamlit được thiết kế để cache các expensive operations như loading models, databases, hoặc API calls. Khác với regular caching, nó persist giữa các browser sessions
+    
+    \textbf{Cách hoạt động chi tiết}:
+    \begin{enumerate}[leftmargin=*]
+        \item Khi function được call lần đầu, Streamlit execute function thực sự
+        \item Streamlit automatically hash parameters và function code
+        \item Kết quả được lưu vào memory với key là hash này
+        \item Lần sau khi function được call với cùng parameters, Streamlit check hash và return cached result ngay lập tức
+    \end{enumerate}
+    
+    \item \textbf{Trained Model Cache}: Khi người dùng train một mô hình với specific configuration (ví dụ: Random Forest với n\_estimators=100, max\_depth=10), mô hình này được serialize và cache. Nếu user chọn cùng configuration trong session sau, system load model từ cache thay vì train lại
+    
+    \item \textbf{SHAP Analysis Cache}: Phân tích SHAP là một process rất expensive computation-wise. Việc tính SHAP values cho một dataset lớn có thể mất vài phút. Cache này lưu trữ cả SHAP explainer object và SHAP values để instant loading
+    
+    \item \textbf{Data Processing Cache}: Khi user upload file CSV và preprocessing được thực hiện (cleaning, scaling, feature engineering), kết của này được cache để tránh reprocess file giống nhau
+\end{itemize}
+
+\subsubsection{Session Management Cache - Quản lý Trạng thái Phiên làm việc}
+
+\textbf{Tương thích Trạng thái Phiên (Session State Persistence)}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Vấn đề}: Streamlit có một đặc điểm là chạy code từ top xuống mỗi khi user interact với interface. Điều này có nghĩa là mọi biến được reset về giá trị ban đầu
+    \item \textbf{Giải pháp AIO Classifier}: Sử dụng st.session\_state để persist data giữa các interactions
+    \item \textbf{Ví dụ Thực tế}: User ở Step 1 upload file, ở Step 2 chọn features, ở Step 3 config model. Mỗi Step này cần access data từ Step trước đó
+\end{itemize}
+
+\textbf{Cache Các thông tin Quan trọng}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Wizard Progress Cache}: Lưu trữ tiến trình của người dùng qua 5 steps của wizard. Nếu application crash hoặc browser refresh, user có thể resume từ step đã hoàn thành thay vì bắt đầu lại từ đầu
+    
+    \item \textbf{Configuration Cache}: Cache configuration đã được user chọn (scaler type, model parameters, feature columns). Điều này ensure consistency khi user navigate giữa các steps
+    
+    \item \textbf{File Processing Cache}: Khi user upload file, validation và parsing results được cache. Điều này tránh re-read và re-validate file mỗi lần application restart
+\end{itemize}
+
+\subsection{Tích hợp Optuna Optimization}\label{subsec:optuna-optimization}
+
+\noindent
+Optuna là một framework phổ biến trong community machine learning để automate hyperparameter tuning. Thay vì manual testing với different parameter combinations, Optuna sử dụng smart algorithms để efficiently tìm optimal parameters. Điều này đặc biệt quan trọng trong production environment where computational resources có giá trị cao.
+
+\subsubsection{Hyperparameter Optimization - Tại sao và Như thế nào?}
+
+\textbf{Vấn đề của Manual Hyperparameter Tuning}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Time-intensive}: Manual testing combinations có thể mất hàng giờ đến hàng ngày
+    \item \textbf{Suboptimal}: Human bias và intuition không always lead đến best performance
+    \item \textbf{Intractable}: Với high-dimensional parameter spaces (ví dụ: neural networks), manual search trở nên impractical
+    \item \textbf{Inconsistent}: Different users có thể cho different results với same dataset
+\end{itemize}
+
+\textbf{Optuna's Smart Approach - Phương pháp Thông minh của Optuna}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Bayesian Optimization với Tree-structured Parzen Estimator (TPE)}: 
+    
+    Đây là core algorithm của Optuna. Thay vì random search, TPE learns từ historical trials và suggests parameters có likelihood cao nhất để improve performance.
+    
+    \textbf{Cách TPE hoạt động}:
+    \begin{enumerate}[leftmargin=*]
+        \item \textbf{Exploration Phase}: Đầu tiên, Optuna chạy random trials để explore parameter space
+        \item \textbf{Learning Phase}: Dựa trên results từ exploration, TPE builds probabilistic model về relationship giữa parameters và performance
+        \item \textbf{Exploitation Phase}: Model được sử dụng để suggest new parameters có highest expected improvement
+        \item \textbf{Continuous Learning}: Mỗi trial update model, làm future suggestions increasingly accurate
+    \end{enumerate}
+    
+    \item \textbf{Trials Configuration linh hoạt}:
+    \begin{itemize}[leftmargin=*]
+        \item \textbf{Number of Trials}: Người dùng có thể set bao nhiêu trials (ví dụ: 50, 100, 200) dựa trên available computational budget
+        \item \textbf{Time Limits}: Có thể set timeout (ví dụ: 2 hours) để avoid infinite running
+        \item \textbf{Parallel Trials}: Multiple trials có thể chạy concurrently để speed up optimization
+    \end{itemize}
+    
+    \item \textbf{Model-specific Optimization}: Mỗi algorithm có unique parameter space:
+    \begin{itemize}[leftmargin=*]
+        \item \textbf{Random Forest}: n\_estimators (50-500), max\_depth (3-20), min\_samples\_split (2-20)
+        \item \textbf{XGBoost}: learning\_rate (0.01-0.3), max\_depth (3-10), subsample (0.5-1.0)
+        \item \textbf{SVM}: C (0.1-100), gamma (0.001-1.0), kernel type selection
+    \end{itemize}
+    
+    \item \textbf{Early Stopping Intelligent}: 
+    \begin{itemize}[leftmargin=*]
+        \item Optuna automatically prunes trials có performance kém so với trials tốt nhất
+        \item Có thể save computational resources bằng cách stop unpromising trials early
+        \item MedianPruner stops trial nếu intermediate performance worse than median của previous results
+    \end{itemize}
+\end{itemize}
+
+\subsubsection{Optimization trong Wizard Interface - Trải nghiệm Người dùng}
+
+\textbf{Giao diện Thân thiện với Người dùng}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Simplified Setup}: Thay vì expose complex Optuna configurations, wizard interface chỉ cung cấp essential options:
+    \begin{itemize}[leftmargin=*]
+        \item Number of optimization trials (50, 100, 150, 200)
+        \item Time limit for optimization (30 minutes, 1 hour, Unlimited)
+        \item Optimization objective (Accuracy, F1-score, AUC)
+    \end{itemize}
+    
+    \item \textbf{Real-time Progress Visualization}:
+    \begin{itemize}[leftmargin=*]
+        \item Progress bar showing completion percentage
+        \item Live update của best score found so far
+        \item Current trial information (parameter values đang được test)
+        \item Estimated time remaining
+    \end{itemize}
+    
+    \item \textbf{Results Presentation}:
+    \begin{itemize}[leftmargin=*]
+        \item Best parameters achieved được highlight clearly
+        \item Performance comparison: original vs optimized
+        \item Visualization của optimization history (learning curve)
+        \item Option để save optimization results cho future reference
+    \end{itemize}
+\end{itemize}
+
+\textbf{Integration với Training Pipeline}:
+\begin{itemize}[leftmargin=*]
+    \item Sau khi Optuna completes, best parameters được automatically integrate vào main training pipeline
+    \item Final model được train với optimized parameters và evaluate trên test set
+    \item Optimized model được cache để avoid re-optimization với same dataset và configuration
+\end{itemize}
+
+\subsection{Memory Management \& Optimization}\label{subsec:memory-management}
+
+\noindent
+Hệ thống memory management được thiết kế để optimize performance cho large-scale ML operations với dynamic memory monitoring và intelligent resource allocation.
+
+\textbf{Advanced Memory Management Implementation}:
+
+\begin{minted}{python}
+class AdvancedMemoryManager:
+    """Advanced memory management for large-scale ML operations"""
+    
+    def __init__(self, max_memory_gb: float = 8.0):
+        self.max_memory_gb = max_memory_gb
+        self.memory_threshold = max_memory_gb * 1024**3  # Convert to bytes
+        self.memory_monitor = MemoryMonitor()
+        
+    def optimize_data_loading(self, dataset_path: str, chunk_size: int = 10000):
+        """Optimize data loading based on available memory"""
+        
+        available_memory = psutil.virtual_memory().available
+        
+        if available_memory < self.memory_threshold:
+            # Use chunked loading for large datasets
+            return self.load_data_chunked(dataset_path, chunk_size)
+        else:
+            # Full dataset can be loaded
+            return pd.read_csv(dataset_path)
+            
+    def monitor_memory_usage(self):
+        """Monitor current memory usage"""
+        memory_info = psutil.virtual_memory()
+        usage_percent = memory_info.percent
+        available_gb = memory_info.available / (1024**3)
+        
+        if usage_percent > 80:
+            return "critical"
+        elif usage_percent > 60:
+            return "high"
+        else:
+            return "low"
+\end{minted}
+
+\textbf{Sparse Matrix Optimization}:
+
+\begin{minted}{python}
+class SparseMatrixOptimizer:
+    """Optimize sparse matrix operations for memory efficiency"""
+    
+    @staticmethod
+    def optimize_sparse_matrix(X, sparsify_threshold: float = 0.1):
+        """Convert dense matrix to sparse if beneficial"""
+        
+        if hasattr(X, 'toarray'):  # Already sparse
+            return X
+            
+        # Calculate sparsity
+        total_elements = X.shape[0] * X.shape[1]
+        non_zero_elements = np.count_nonzero(X)
+        sparsity = 1 - (non_zero_elements / total_elements)
+        
+        if sparsity > sparsify_threshold:
+            # Convert to sparse matrix
+            from scipy import sparse
+            return sparse.csr_matrix(X)
+        else:
+            return X
+\end{minted}
+
+\subsection{Tích hợp SHAP \& Khả năng Giải thích Mô hình}\label{subsec:shap-integration}
+
+\noindent
+Trong thời đại ngày nay, khi các hệ thống trí tuệ nhân tạo ngày càng được ứng dụng rộng rãi trong nhiều lĩnh vực quan trọng như y tế, tài chính, giáo dục, việc hiểu được cách thức mà một mô hình machine learning đưa ra các quyết định cụ thể trở nên vô cùng quan trọng. Người ta không thể chỉ tin tưởng vào kết quả mà không biết tại sao mô hình lại đưa ra quyết định đó.
+
+SHAP (SHapley Additive exPlanations) là một công nghệ đột phá được phát triển bởi Scott Lundberg và Su-In Lee để giải quyết vấn đề này. SHAP cung cấp một khung công việc thống nhất để giải thích đầu ra của bất kỳ mô hình machine learning nào theo cách nhất quán và có logic.
+
+\paragraph{Tại sao Khả năng Giải thích Mô hình Quan trọng?}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Tuân thủ Quy định}: Nhiều ngành công nghiệp như y tế, tài chính, bảo hiểm yêu cầu các quyết định từ AI phải có thể giải thích được. Điều này đặc biệt quan trọng khi các quyết định có ảnh hưởng trực tiếp đến cuộc sống của con người
+    
+    \item \textbf{Lòng tin của Các bên liên quan}: Người dùng, các nhà quản lý và khách hàng cần hiểu được lý do tại sao một dự đoán cụ thể được đưa ra. Điều này giúp họ tin tưởng vào hệ thống và sẵn sàng áp dụng các khuyến nghị
+    
+    \item \textbf{Gỡ lỗi Mô hình}: Khả năng giải thích giúp các nhà khoa học dữ liệu xác định các vấn đề hoặc thiên lệch ẩn trong mô hình, từ đó cải thiện độ chính xác và tính công bằng
+    
+    \item \textbf{Đảm bảo Tính công bằng}: Việc có thể giải thích mô hình đảm bảo rằng hệ thống không phân biệt đối xử với các nhóm được bảo vệ và đưa ra quyết định dựa trên các tiêu chí khách quan
+\end{itemize}
+
+\paragraph{Cơ sở Toán học của SHAP Value}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Shapley Values}: Dựa trên lý thuyết trò chơi hợp tác, các giá trị Shapley phân phối một cách công bằng "đóng góp" của mỗi feature trong việc đưa ra dự đoán. Điều này giống như việc tính toán mỗi cầu thủ đóng góp bao nhiêu vào chiến thắng của đội bóng
+    
+    \item \textbf{Tính chất Cộng}: SHAP values có tính chất đặc biệt là tổng của tất cả các đóng góp feature bằng với sự khác biệt giữa dự đoán và giá trị cơ sở (thường là giá trị trung bình của dự đoán). Điều này có nghĩa là mỗi feature có thể được hiểu là làm tăng hoặc giảm dự đoán bao nhiêu so với mức trung bình
+    
+    \item \textbf{Tính nhất quán}: Các feature được gán SHAP values một cách nhất quán trên các mô hình và dataset khác nhau, cho phép so sánh tầm quan trọng của các feature giữa các mô hình
+\end{itemize}
+
+\subsubsection{Phân tích SHAP trong AIO Classifier - Triển khai Chi tiết}
+
+\paragraph{Tích hợp TreeExplainer - Hỗ trợ Các mô hình cây}
+
+\textbf{Lý do tại sao cần TreeExplainer riêng?}
+\begin{itemize}[leftmargin=*]
+    \item Các mô hình dựa trên cây quyết định như Random Forest, XGBoost, LightGBM, CatBoost rất phổ biến và hiệu quả trong thực tế. Tuy nhiên, việc tính toán SHAP values chính xác cho các mô hình này từng là một thách thức lớn về mặt tính toán
+    
+    \item Trước đây, các nhà nghiên cứu phải sử dụng các phương pháp xấp xỉ như KernelExplainer, vốn không chỉ chậm mà còn không cho ra kết quả chính xác
+\end{itemize}
+
+\textbf{Ưu điểm của TreeExplainer}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Cung cấp SHAP values chính xác}: TreeExplainer không phải là xấp xỉ mà tính toán SHAP values chính xác tuyệt đối, đảm bảo độ tin cậy cao trong việc giải thích mô hình
+    
+    \item \textbf{Tốc độ tính toán nhanh hơn đáng kể}: TreeExplainer nhanh hơn KernelExplainer từ 10 đến 100 lần, giúp thời gian phân tích SHAP từ hàng giờ xuống còn vài phút
+    
+    \item \textbf{Hỗ trợ tương tác feature một cách tự nhiên}: Mô hình cây có thể tự nhiên nắm bắt các tương tác phức tạp giữa các feature, và TreeExplainer diễn giải chúng một cách chính xác
+    
+    \item \textbf{Tối ưu bộ nhớ cho dataset lớn}: TreeExplainer được thiết kế đặc biệt để xử lý hiệu quả các dataset lớn mà không gây tràn bộ nhớ
+\end{itemize}
+
+\textbf{Các mô hình được hỗ trợ trong AIO Classifier}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Random Forest}: Mô hình tập hợp nhiều cây quyết định cùng với kỹ thuật bagging nhằm giảm overfitting và tăng độ chính xác
+    
+    \item \textbf{XGBoost}: Gradient boosting với regularization mạnh và early stopping tự động, được tối ưu cho hiệu suất cao
+    
+    \item \textbf{LightGBM}: Gradient boosting được tối ưu hóa đặc biệt cho tốc độ và hiệu quả bộ nhớ, phù hợp với dataset lớn
+    
+    \item \textbf{CatBoost}: Gradient boosting với khả năng xử lý nâng cao các feature phân loại mà không cần mã hóa trước
+    
+    \item \textbf{Decision Tree}: Mô hình cây đơn giản nhất, tạo nền tảng cho hiểu biết về cách SHAP hoạt động trong các mô hình phức tạp hơn
+    
+    \textbf{Lưu ý về Feature Corruption:} Khi sử dụng SHAP với các đặc trưng số, có thể xuất hiện hiện tượng Feature Corruption do việc mask các giá trị trong quá trình tính toán SHAP values. Điều này có thể dẫn làm suy giảm một phần độ chính xác của việc giải thích mô hình trong một số trường hợp cụ thể.
+\end{itemize}
+
+\paragraph{Lựa chọn Explainer Thông minh}
+
+\textbf{Phát hiện Tự động Loại Mô hình}:
+\begin{itemize}[leftmargin=*]
+    \item AIO Classifier có khả năng tự động phát hiện loại mô hình và chọn explainer tối ưu nhất cho từng trường hợp:
+    \begin{itemize}[leftmargin=*]
+        \item \textbf{Mô hình dựa trên cây} → TreeExplainer (nhanh và chính xác)
+        \item \textbf{Mô hình tuyến tính} → LinearExplainer (bảo toàn các mối quan hệ tuyến tính)
+        \item \textbf{Mô hình học sâu} → DeepExplainer hoặc KernelExplainer như phương án dự phòng
+        \item \textbf{Mô hình tùy chỉnh} → KernelExplainer (phổ quát nhưng chậm hơn)
+    \end{itemize}
+    
+    \item Điều này có nghĩa là nhà phát triển không cần phải biết sử dụng explainer nào cho từng loại mô hình, hệ thống sẽ tự động quyết định
+\end{itemize}
+
+\textbf{Chiến lược Tối ưu Bộ nhớ}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Dataset lớn (hơn 10,000 dòng)}: Hệ thống tự động lấy mẫu đại diện để tính toán SHAP mà không làm mất tính tổng quát của kết quả phân tích
+    
+    \item \textbf{Loại bỏ Feature ít quan trọng}: Các feature có mức độ quan trọng thấp sẽ được tự động loại bỏ để giảm tải tính toán và tập trung vào những đặc điểm quan trọng nhất
+    
+    \item \textbf{Xử lý theo Chunks}: Việc tính toán được chia thành các batch nhỏ hơn để quản lý hiệu quả việc sử dụng bộ nhớ và tránh tình trạng tràn bộ nhớ
+\end{itemize}
+
+\paragraph{Tích hợp Trực quan hóa SHAP - Phân tích Thị giác Toàn diện}
+
+\textbf{Summary Plots (Biểu đồ Tổng quan)}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Mục đích}: Cung cấp cái nhìn tổng quan ở mức cao về tầm quan trọng và tác động của các feature
+    
+    \item \textbf{Thông tin hiển thị}: Mỗi chấm đại diện cho một điểm dữ liệu và SHAP value của feature đó. Các chấm được sắp xếp theo thứ tự tầm quan trọng của features
+    
+    \item \textbf{Mã màu sắc}: 
+    \begin{itemize}[leftmargin=*]
+        \item Màu đỏ: Tác động tích cực (feature này làm tăng dự đoán)
+        \item Màu xanh: Tác động tiêu cực (feature này làm giảm dự đoán)
+    \end{itemize}
+    
+    \item \textbf{Trục Y}: Các feature được sắp xếp theo giá trị trung bình tuyệt đối của SHAP value, feature quan trọng nhất ở trên cùng
+\end{itemize}
+
+\textbf{Bar Plots (Biểu đồ Cột)}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Mục đích}: Cung cấp xếp hạng rõ ràng của các feature theo mức độ quan trọng
+    
+    \item \textbf{Thông tin hiển thị}: Giá trị trung bình tuyệt đối của SHAP value cho mỗi feature, được hiển thị dưới dạng thanh cột có chiều cao tỷ lệ với độ quan trọng
+    
+    \item \textbf{Tình huống sử dụng}: Nhận diện nhanh các feature có ảnh hưởng lớn nhất đến kết quả dự đoán của mô hình
+\end{itemize}
+
+\textbf{Dependence Plots (Biểu đồ Phụ thuộc)}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Mục đích}: Phân tích mối quan hệ giữa giá trị của feature và SHAP values của nó
+    
+    \item \textbf{Thông tin hiển thị}: Biểu đồ phân tán với giá trị feature trên trục X và SHAP value trên trục Y
+    
+    \item \textbf{Thông tin cung cấp}: 
+    \begin{itemize}[leftmargin=*]
+        \item Mối quan hệ phi tuyến tính giữa feature và dự đoán
+        \item Ngưỡng quan trọng của feature
+        \item Hiệu ứng tương tác với các feature khác
+        \item Đường cong phân phối của tác động
+    \end{itemize}
+\end{itemize}
+
+\textbf{Waterfall Plots (Biểu đồ Thác nước)}:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Mục đích}: Giải thích từng dự đoán cá nhân một cách từng bước
+    
+    \item \textbf{Thông tin hiển thị}: Hiển thị cách giá trị cơ sở (baseline) được điều chỉnh bởi mỗi feature, có tính đến các tương tác giữa chúng
+    
+    \item \textbf{Tình huống sử dụng}: 
+    \begin{itemize}[leftmargin=*]
+        \item Gỡ lỗi các dự đoán cụ thể không như mong đợi
+        \item Hiểu quá trình ra quyết định cho các trường hợp cá nhân
+        \item Giải thích với người dùng cuối về cách mô hình đưa ra dự đoán cho trường hợp của họ
+    \end{itemize}
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.7, node distance=3cm]
+
+% Define colors first
+\definecolor{darkgreen}{RGB}{34,139,34}
+\definecolor{darkorange}{RGB}{255,140,0}
+\definecolor{orange}{RGB}{255,165,0}
+
+% Define styles after colors with increased height
+\tikzset{
+    input/.style={rectangle, draw=darkgreen, fill=darkgreen!15, 
+                  minimum width=2.5cm, minimum height=1.5cm, text centered, font=\scriptsize},
+    process/.style={rectangle, draw=darkorange, fill=darkorange!15, 
+                    minimum width=2.5cm, minimum height=1.5cm, text centered, font=\scriptsize},
+    output/.style={ellipse, draw=orange, fill=orange!15, 
+                   minimum width=2.5cm, minimum height=1.5cm, text centered, font=\scriptsize}
+}
+
+% Nodes with maximum vertical spacing
+\node[input] (model) at (0,9) {Trained Model};
+\node[input] (data) at (0,1) {Test Data};
+\node[process] (explainer) at (4.5,5) {SHAP Explainer Selection};
+\node[process] (compute) at (9,1) {SHAP Values Computation};
+\node[process] (analyze) at (13.5,5) {Feature Importance Analysis};
+\node[output] (plots) at (18,9) {Summary Plots};
+\node[output] (barplot) at (18,1) {Bar Plots};
+\node[output] (depen) at (18,-5) {Dependence Plots};
+
+% Arrows with thicker lines
+\draw[->, thick, darkgreen] (model) -- (explainer);
+\draw[->, thick, darkgreen] (data) -- (explainer);
+\draw[->, thick, darkorange] (explainer) -- (compute);
+\draw[->, thick, darkorange] (compute) -- (analyze);
+\draw[->, thick, orange] (analyze) -- (plots);
+\draw[->, thick, orange] (analyze) -- (barplot);
+\draw[->, thick, orange] (analyze) -- (depen);
+
+% Labels with maximum vertical spacing
+\node[text=darkgreen, font=\tiny] at (2.25,7.5) {Tree models};
+\node[text=darkorange, font=\tiny] at (6.75,3.25) {Memory-safe};
+\node[text=orange, font=\tiny] at (11.25,7.5) {Feature ranking};
+
+\end{tikzpicture}
+\caption{SHAP Analysis Pipeline trong AIO Classifier}
+\label{fig:shap_pipeline}
+\end{figure}
+
+\subsubsection{Feature Importance Analysis}
+
+\textbf{Clinical Validation cho Heart Disease}:
+\begin{itemize}
+    \item \textbf{Biomarkers Analysis}: Phân tích importance của biomarkers như cholesterol, blood pressure
+    \item \textbf{Lifestyle Factors}: Investigation của lifestyle factors như exercise, diet habits
+    \item \textbf{Demographic Factors}: Analysis của age, gender importance trong cardiovascular risk
+    \item \textbf{Feature Consistency}: Cross-model consistency analysis của top features
+\end{itemize}
+
+\subsection{Model Training Pipeline Optimization}\label{subsec:pipeline-optimization}
+
+\subsubsection{Efficient Training Workflow}
+
+\textbf{StreamlitTrainingPipeline Features}:
+\begin{itemize}
+    \item \textbf{Batch Model Training}: Efficient training của multiple models với same configuration
+    \item \textbf{Progress Tracking}: Real-time progress display với Streamlit progress bars
+    \item \textbf{Error Handling}: AIO Classifier error handling với graceful degradation
+    \item \textbf{Results Caching}: Automatic caching của training results để avoid re-computation
+\end{itemize}
+
+\textbf{Training Optimization Strategies}:
+\begin{itemize}
+    \item \textbf{Quản lý Bộ nhớ}: Sử dụng bộ nhớ hiệu quả cho datasets lớn
+    \item \textbf{Giám sát Tài nguyên}: Theo dõi CPU và sử dụng bộ nhớ trong quá trình huấn luyện
+    \item \textbf{So sánh Mô hình}: So sánh song song của nhiều mô hình
+    \item \textbf{Phân tích Hiệu suất}: Phân tích chi tiết về thời gian huấn luyện và độ chính xác
+\end{itemize}
+
+\subsection{Tối ưu hóa Trải nghiệm Người dùng}\label{subsec:ux-optimization}
+
+\subsubsection{Hiệu suất Giao diện Wizard}
+
+\textbf{Phản hồi Thời gian Thực}:
+        \begin{itemize}
+    \item \textbf{Chỉ báo Tiến trình}: Chỉ báo tiến trình rõ ràng cho từng bước trong wizard
+    \item \textbf{Cập nhật Trạng thái}: Cập nhật trạng thái thời gian thực của tiến trình huấn luyện và phân tích
+    \item \textbf{Thông báo Lỗi}: Thông báo lỗi thân thiện với người dùng cùng gợi ý khôi phục
+    \item \textbf{Báo cáo Hiệu suất}: Hiển thị thời gian thực thi và sử dụng bộ nhớ
+        \end{itemize}
+
+\textbf{Quản lý Dữ liệu}:
+\begin{itemize}
+    \item \textbf{Tối ưu Upload File}: Xử lý upload file hiệu quả với validation
+    \item \textbf{Xem trước Dữ liệu}: Xem trước dữ liệu nhanh với tự động phát hiện loại dữ liệu
+    \item \textbf{Quản lý Cache}: Điều khiển cache rõ ràng cho quản lý người dùng
+    \item \textbf{Khả năng Xuất dữ liệu}: Nhiều định dạng export cho kết quả
+\end{itemize}
+
+\subsection{Code Examples và Advanced Implementation Chi tiết}
+
+\subsubsection{Advanced Memory Management System}
+
+\textbf{AdvancedMemoryManager Class - Hệ thống Quản lý Bộ nhớ Nâng cao}:
+
+\begin{minted}{python}
+class AdvancedMemoryManager:
+    """Advanced memory management for large-scale ML operations"""
+    
+    def __init__(self, max_memory_gb: float = 8.0):
+        self.max_memory_gb = max_memory_gb
+        self.memory_threshold = max_memory_gb * 1024**3  # Convert to bytes
+        self.memory_monitor = MemoryMonitor()
+        
+    def optimize_data_loading(self, dataset_path: str, chunk_size: int = 10000):
+        """Optimize data loading based on available memory"""
+        
+        available_memory = psutil.virtual_memory().available
+        
+        if available_memory < self.memory_threshold:
+            # Use chunked loading for large datasets
+            return self.load_data_chunked(dataset_path, chunk_size)
+    else:
+            # Load full dataset if memory allows
+            return pd.read_csv(dataset_path)
+            
+    def load_data_chunked(self, dataset_path: str, chunk_size: int):
+        """Load data in chunks to manage memory usage"""
+        
+        chunks = []
+        total_rows = 0
+        
+        for chunk in pd.read_csv(dataset_path, chunksize=chunk_size):
+            chunks.append(chunk)
+            total_rows += len(chunk)
+            
+            # Check memory usage
+            if self.memory_monitor.get_memory_usage() > 0.8:  # 80% threshold
+                break
+                
+        if chunks:
+            return pd.concat(chunks, ignore_index=True)
+        else:
+            raise MemoryError("Insufficient memory to load dataset")
+            
+    def cleanup_memory(self):
+        """Aggressive memory cleanup"""
+        
+        import gc
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Clear matplotlib cache
+        try:
+            import matplotlib.pyplot as plt
+            plt.close('all')
+        except ImportError:
+            pass
+            
+        return True
+\end{minted}
+
+\textbf{Chú thích}: AdvancedMemoryManager tự động điều chỉnh cách load dữ liệu dựa trên memory available. Với datasets lớn, hệ thống sẽ load theo chunks để tránh memory overflow và tự động cleanup memory khi cần thiết.
+
+\textbf{Memory Monitor Implementation - Triển khai Giám sát Bộ nhớ}:
+
+\begin{minted}{python}
+class MemoryMonitor:
+    """Real-time memory monitoring and alerting"""
+    
+    def __init__(self):
+        self.memory_history = []
+        self.alert_threshold = 0.85  # 85% memory usage
+        
+    def get_memory_usage(self) -> float:
+        """Get current memory usage percentage"""
+        
+        memory = psutil.virtual_memory()
+        usage_percent = memory.percent / 100.0
+        
+        # Store in history
+        self.memory_history.append({
+            'timestamp': time.time(),
+            'usage_percent': usage_percent,
+            'available_gb': memory.available / 1024**3
+        })
+        
+        # Keep only last 100 measurements
+        if len(self.memory_history) > 100:
+            self.memory_history = self.memory_history[-100:]
+            
+        return usage_percent
+        
+    def check_memory_alert(self) -> bool:
+        """Check if memory usage exceeds threshold"""
+        
+        current_usage = self.get_memory_usage()
+        
+        if current_usage > self.alert_threshold:
+            print(f"⚠️ Memory usage alert: {current_usage:.1%}")
+        return True
+        
+        return False
+
+    def get_memory_trend(self) -> str:
+        """Analyze memory usage trend"""
+        
+        if len(self.memory_history) < 10:
+            return "insufficient_data"
+            
+        recent_usage = [m['usage_percent'] for m in self.memory_history[-10:]]
+        avg_usage = sum(recent_usage) / len(recent_usage)
+        
+        if avg_usage > 0.8:
+            return "high"
+        elif avg_usage > 0.6:
+            return "medium"
+        else:
+            return "low"
+\end{minted}
+
+\textbf{Chú thích}: MemoryMonitor cung cấp real-time monitoring cho memory usage với alert system và trend analysis. Hệ thống giữ history của 100 measurements để phân tích xu hướng sử dụng memory.
+
+\subsubsection{GPU Acceleration và RAPIDS Integration}
+
+\textbf{RAPIDS Detection và Optimization - Phát hiện và Tối ưu RAPIDS}:
+
+\begin{minted}{python}
+class RAPIDSManager:
+    """Manager for RAPIDS cuML integration"""
+    
+    def __init__(self):
+        self.rapids_available = self.detect_rapids_capabilities()
+        self.cuml_models = self.get_cuml_models()
+        
+    def detect_rapids_capabilities(self) -> Dict[str, Any]:
+        """Detect RAPIDS cuML availability and GPU support"""
+        
+        detection_result = {
+            'cuml_available': False,
+            'gpu_available': False,
+            'device_type': 'cpu',
+            'error_message': None,
+            'version': None
+        }
+        
+        try:
+            import cuml
+            detection_result['cuml_available'] = True
+            detection_result['version'] = cuml.__version__
+            
+            # Check GPU availability
+            try:
+                import cupy as cp
+                detection_result['gpu_available'] = True
+                detection_result['device_type'] = 'gpu'
+            except ImportError:
+                detection_result['device_type'] = 'cpu'
+                
+        except ImportError as e:
+            detection_result['error_message'] = str(e)
+            
+        return detection_result
+        
+    def get_cuml_models(self) -> Dict[str, Any]:
+        """Get available cuML models"""
+        
+        if not self.rapids_available['cuml_available']:
+            return {}
+            
+        try:
+            import cuml
+            
+            models = {
+                'kmeans': cuml.KMeans,
+                'random_forest': cuml.RandomForestClassifier,
+                'svm': cuml.SVM,
+                'logistic_regression': cuml.LogisticRegression,
+                'pca': cuml.PCA,
+                'tsvd': cuml.TruncatedSVD
+            }
+            
+            return models
+            
+        except ImportError:
+            return {}
+\end{minted}
+
+\textbf{Chú thích}: RAPIDSManager tự động detect GPU capabilities và available cuML models. Hệ thống gracefully handle CPU fallback khi GPU không available, đảm bảo platform vẫn hoạt động trên mọi environment.
+
+\subsubsection{Intelligent Cache Management System}
+
+\textbf{Cache Management Implementation - Triển khai Quản lý Cache}:
+
+\begin{minted}{python}
+class IntelligentCacheManager:
+    """Advanced cache management with intelligent cleanup"""
+    
+    def __init__(self, cache_root: Path, cleanup_policies: Dict[str, Any]):
+        self.cache_root = Path(cache_root)
+        self.cache_policies = cleanup_policies
+        self.access_patterns = {}
+        
+    def cleanup_cache_comprehensive(self) -> Dict[str, Any]:
+        """AIO Classifier cache cleanup based on policies"""
+        
+        cleanup_stats = {
+            'files_removed': 0,
+            'space_freed_gb': 0.0,
+            'cache_types_cleaned': [],
+            'duration_seconds': 0.0
+        }
+        
+        start_time = time.time()
+        
+        for cache_type, policy in self.cache_policies.items():
+            cache_dir = self.cache_root / cache_type
+            
+            if cache_dir.exists():
+                removed_files, freed_space = self.cleanup_cache_type(
+                    cache_dir, policy
+                )
+                
+                cleanup_stats['files_removed'] += removed_files
+                cleanup_stats['space_freed_gb'] += freed_space
+                cleanup_stats['cache_types_cleaned'].append(cache_type)
+                
+        cleanup_stats['duration_seconds'] = time.time() - start_time
+        return cleanup_stats
+        
+    def optimize_cache_access(self, cache_key: str) -> str:
+        """Optimize cache access patterns"""
+        
+        # Check if cache exists
+        cache_path = self.get_cache_path(cache_key)
+        
+        if cache_path.exists():
+            # Update access time
+            cache_path.touch()
+            
+            # Move to faster storage if available
+            if self.has_fast_storage():
+                self.move_to_fast_storage(cache_path)
+                
+        return str(cache_path)
+\end{minted}
+
+\textbf{Chú thích}: IntelligentCacheManager sử dụng intelligent policies để quản lý cache một cách hiệu quả. Hệ thống tự động cleanup theo age policies và optimize access patterns để improve performance.
+
+\subsubsection{Advanced Cache Management System}
+
+\textbf{Cache Configuration và Structure - Cấu hình và Cấu trúc Cache}:
+
+\begin{minted}{python}
+class CacheConfig:
+    """Advanced cache configuration với hierarchical structure"""
+    
+    def __init__(self, cache_root_dir: Path):
+        self.cache_root_dir = Path(cache_root_dir)
+        
+        # Hierarchical cache structure
+        self.cache_structure = {
+            'models': {
+                'path': self.cache_root_dir / 'models',
+                'max_age_days': 30,
+                'max_size_gb': 50
+            },
+            'shap': {
+                'path': self.cache_root_dir / 'shap',
+                'max_age_days': 14,
+                'max_size_gb': 20
+            },
+            'confusion_matrices': {
+                'path': self.cache_root_dir / 'confusion_matrices',
+                'max_age_days': 7,
+                'max_size_gb': 5
+            }
+        }
+        
+    def generate_config_hash(self, config: Dict[str, Any]) -> str:
+        """Generate SHA256 hash từ configuration"""
+        # Normalize config by sorting keys và converting to JSON
+        config_str = json.dumps(config, sort_keys=True, default=str)
+        return hashlib.sha256(config_str.encode()).hexdigest()
+        
+    def generate_dataset_fingerprint(self, dataset_path: str, dataset_size: int, 
+                                   num_rows: int) -> str:
+        """Generate dataset fingerprint"""
+        fingerprint_data = {
+            'dataset_path': dataset_path,
+            'dataset_size': dataset_size,
+            'num_rows': num_rows,
+            'timestamp': datetime.now().isoformat()
+        }
+        fingerprint_str = json.dumps(fingerprint_data, sort_keys=True)
+        return hashlib.sha256(fingerprint_str.encode()).hexdigest()
+\end{minted}
+
+\textbf{Chú thích}: CacheConfig quản lý structured cache với hierarchical organization. Hệ thống tạo SHA256 hash cho config và dataset fingerprint để ensure cache integrity.
+
+\textbf{Model Cache Save và Load Operations - Thao tác Lưu và Tải Model Cache}:
+
+\begin{minted}{python}
+class ModelCacheManager:
+    """Advanced model cache management với comprehensive error handling"""
+    
+    def save_model_cache(self, model_key: str, dataset_id: str, config_hash: str,
+                        dataset_fingerprint: str, model, params: Dict[str, Any],
+                        metrics: Dict[str, Any], config: Dict[str, Any],
+                        eval_predictions: Optional[pd.DataFrame] = None,
+                        shap_sample: Optional[pd.DataFrame] = None,
+                        shap_explainer: Optional[Any] = None,
+                        shap_values: Optional[Any] = None) -> str:
+        """Save model cache với comprehensive error handling"""
+        
+        try:
+            print(f"Starting cache save for {model_key}")
+            
+            cache_path = self.get_cache_path(model_key, dataset_id, config_hash)
+            cache_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save trained model
+            model_file = cache_path / 'model.pkl'
+            with open(model_file, 'wb') as f:
+                pickle.dump(model, f)
+            
+            # Safe JSON serializer cho non-serializable objects
+            def safe_json_serializer(obj):
+                """Convert non-serializable objects to strings"""
+                try:
+                    if hasattr(obj, '__module__'):
+                        return f"<{obj.__class__.__name__} object>"
+                    elif hasattr(obj, '__dict__'):
+                        return str(obj)
+    else:
+                        return str(obj)
+                except Exception as e:
+                    return f"<SerializationError: {str(e)}>"
+            
+            # Save params, metrics, config
+            for data_type, filename in [('params', 'params.json'), 
+                                       ('metrics', 'metrics.json'), 
+                                       ('config', 'config.json')]:
+                data_file = cache_path / filename
+                with open(data_file, 'w') as f:
+                    json.dump(locals()[data_type], f, indent=2, default=safe_json_serializer)
+            
+            # Save SHAP data nếu provided
+            if shap_sample is not None:
+                shap_file = cache_path / 'shap_sample.parquet'
+                shap_sample.to_parquet(shap_file, index=False)
+            
+            if shap_explainer is not None and shap_values is not None:
+                # Save SHAP explainer và values
+                shap_explainer_file = cache_path / 'shap_explainer.pkl'
+                with open(shap_explainer_file, 'wb') as f:
+                    pickle.dump(shap_explainer, f)
+                
+                shap_values_file = cache_path / 'shap_values.pkl'
+                with open(shap_values_file, 'wb') as f:
+                    pickle.dump(shap_values, f)
+            
+            print(f"✅ Cache saved successfully: {cache_path}")
+            return str(cache_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to save cache for {model_key}: {e}")
+            raise
+            
+    def load_model_cache(self, model_key: str, dataset_id: str, config_hash: str) -> Dict[str, Any]:
+        """Load model cache với comprehensive error handling"""
+        
+        try:
+            cache_path = self.get_cache_path(model_key, dataset_id, config_hash)
+            
+            if not cache_path.exists():
+                raise FileNotFoundError(f"Cache not found: {cache_path}")
+            
+            cached_data = {}
+            
+            # Load model
+            model_file = cache_path / 'model.pkl'
+            if model_file.exists():
+                with open(model_file, 'rb') as f:
+                    cached_data['model'] = pickle.load(f)
+            
+            # Load JSON data
+            for data_type, filename in [('params', 'params.json'), 
+                                       ('metrics', 'metrics.json'), 
+                                       ('config', 'config.json')]:
+                data_file = cache_path / filename
+                if data_file.exists():
+                    with open(data_file, 'r') as f:
+                        cached_data[data_type] = json.load(f)
+            
+            return cached_data
+            
+        except Exception as e:
+            logger.error(f"Failed to load cache for {model_key}: {e}")
+            raise
+\end{minted}
+
+\textbf{Chú thích}: ModelCacheManager implement comprehensive cache operations với error handling và serialization safety. Hệ thống support cả model artifacts và SHAP data caching.
+
+\textbf{Cache Compatibility Scoring System - Hệ thống Chấm điểm Tương thích Cache}:
+
+\begin{minted}{python}
+class CacheCompatibilityManager:
+    """Advanced cache compatibility detection và scoring"""
+    
+    def calculate_compatibility_score(self, cached_config: Dict[str, Any], 
+                                    current_config: Dict[str, Any]) -> float:
+        """Calculate compatibility score between cached và current config"""
+        
+        score = 0.0
+        max_score = 100.0
+        
+        # Check essential parameters
+        essential_params = ['model_type', 'dataset_identifier', 'feature_columns']
+        for param in essential_params:
+            if cached_config.get(param) == current_config.get(param):
+                score += 30.0 / len(essential_params)
+        
+        # Check hyperparameters compatibility
+        hyperparams_score = self._check_hyperparameters_compatibility(
+            cached_config.get('hyperparameters', {}),
+            current_config.get('hyperparameters', {})
+        )
+        score += hyperparams_score * 0.4
+        
+        # Check preprocessing compatibility
+        preprocessing_score = self._check_preprocessing_compatibility(
+            cached_config.get('preprocessing', {}),
+            current_config.get('preprocessing', {})
+        )
+        score += preprocessing_score * 0.3
+        
+        return min(score, max_score)
+        
+    def _check_hyperparameters_compatibility(self, cached_hp: Dict[str, Any], 
+                                           current_hp: Dict[str, Any]) -> float:
+        """Check hyperparameter compatibility"""
+        
+        if not cached_hp or not current_hp:
+            return 0.0
+            
+        common_params = set(cached_hp.keys()) & set(current_hp.keys())
+        if not common_params:
+            return 0.0
+            
+        compatible_params = 0
+        for param in common_params:
+            if cached_hp[param] == current_hp[param]:
+                compatible_params += 1
+                
+        return compatible_params / len(common_params)
+\end{minted}
+
+\textbf{Chú thích}: CacheCompatibilityManager tính toán compatibility score giữa cached và current configuration. Hệ thống check essential parameters, hyperparameters, và preprocessing để determine cache usability.
+
+\subsubsection{Optuna Hyperparameter Optimization System}
+
+\textbf{OptunaOptimizer Configuration - Cấu hình Optuna Optimizer}:
+
+\begin{minted}{python}
+# config.py
+OPTUNA_ENABLE = True
+OPTUNA_TRIALS = 100
+OPTUNA_TIMEOUT = None  # seconds, None for no timeout
+OPTUNA_DIRECTION = "maximize"
+
+class OptunaOptimizer:
+    def __init__(self, config: Dict[str, Any] = None):
+        self.default_config = {
+            'trials': 100,
+            'timeout': None,
+            'direction': 'maximize',
+            'study_name': 'ml_optimization',
+            'storage': None,
+            'sampler': 'TPE',
+            'pruner': 'MedianPruner'
+        }
+        
+    def create_study(self, study_name: str = None) -> optuna.Study:
+        """Create Optuna study with TPE sampler and MedianPruner"""
+        
+        # TPE Sampler với cấu hình tối ưu
+        sampler = optuna.samplers.TPESampler(
+            seed=42,
+            n_startup_trials=20,  # Random trials trước khi TPE
+            n_ei_candidates=24     # Số candidates cho Expected Improvement
+        )
+        
+        # MedianPruner để dừng sớm các trial kém
+        pruner = optuna.pruners.MedianPruner(
+            n_startup_trials=10,  # Không prune trong 10 trials đầu
+            n_warmup_steps=5,     # Warmup steps
+            interval_steps=1      # Check pruning mỗi step
+        )
+        
+        study = optuna.create_study(
+            direction=self.default_config['direction'],
+            sampler=sampler,
+            pruner=pruner,
+            study_name=study_name or self.default_config['study_name']
+        )
+        
+        return study
+\end{minted}
+
+\textbf{Chú thích}: OptunaOptimizer sử dụng TPE (Tree-structured Parzen Estimator) sampler với MedianPruner để optimize hyperparameters. Hệ thống tự động skip các trials kém để tiết kiệm computational resources.
+
+\textbf{Integration với Training Pipeline - Tích hợp với Training Pipeline}:
+
+\begin{minted}{python}
+# app.py - train_models_with_scaling function
+if optuna_enabled:
+    # Sử dụng Optuna optimization
+    optimizer = OptunaOptimizer(optuna_config)
+    optimization_result = optimizer.optimize_model(
+        model_name=mapped_name,
+        model_class=model.__class__,
+        X_train=X_train_scaled,
+        y_train=y_train,
+        X_val=X_val_scaled,  # Sử dụng validation set cho Optuna
+        y_val=y_val
+    )
+    
+    best_params = optimization_result['best_params']
+    best_score = optimization_result['best_score']
+    
+    # Train final model với best params
+    final_model = model_factory.create_model(mapped_name)
+    final_model.set_params(**best_params)
+    final_model.fit(X_train_scaled, y_train)
+\end{minted}
+
+\textbf{Chú thích}: Optuna integration vào training pipeline tự động optimize parameters và tạo final model với best configuration từ validation performance.
+
+\subsubsection{Advanced Scaler và Normalization System}
+
+\textbf{Scaler Configuration và Implementation - Cấu hình và Triển khai Scaler}:
+
+\begin{minted}{python}
+# Các scaler có sẵn trong dự án
+SCALERS = {
+    'StandardScaler': StandardScaler(),      # Z-score normalization
+    'MinMaxScaler': MinMaxScaler(),          # Min-Max scaling [0,1]
+    'RobustScaler': RobustScaler(),          # Robust scaling với median
+    'None': None                             # Không scaling
+}
+
+def preprocess_multi_input_data(self, df, input_columns: List[str], 
+                              label_column: str, 
+                              preprocessing_config: Dict = None) -> Dict:
+    """Preprocess data với multiple scalers"""
+    
+    # Separate columns by type
+    numeric_cols = [col for col in input_columns if type_mapping.get(col) == 'numeric']
+    categorical_cols = [col for col in input_columns if type_mapping.get(col) == 'categorical']
+    text_cols = [col for col in input_columns if type_mapping.get(col) == 'text']
+    
+    # Initialize scaler cho numeric columns
+    scaler = None
+    if numeric_cols:
+        scaler_type = preprocessing_config.get('numeric_scaler', 'standard')
+        if scaler_type == 'minmax':
+            scaler = MinMaxScaler()
+        elif scaler_type == 'robust':
+            scaler = RobustScaler()
+        else:
+            scaler = StandardScaler()
+    
+    # Apply scaling
+    if numeric_cols and scaler is not None:
+        processed_data['numeric_scaled'] = scaler.fit_transform(df[numeric_cols])
+        processed_data['scaler'] = scaler
+\end{minted}
+
+\textbf{Chú thích}: Advanced scaler system tự động detect column types và apply appropriate scaling. Hệ thống support multiple scaling methods tùy theo data characteristics và model requirements.
+
+\textbf{Training Pipeline với Dynamic Scaling - Training Pipeline với Scaling Động}:
+
+\begin{minted}{python}
+# app.py - train_numeric_data_directly function
+for scaler_idx, scaler_name in enumerate(numeric_scalers):
+    # Apply scaling
+    if scaler_name == 'StandardScaler':
+        scaler = StandardScaler()
+    elif scaler_name == 'MinMaxScaler':
+        scaler = MinMaxScaler()
+    elif scaler_name == 'RobustScaler':
+        scaler = RobustScaler()
+    elif scaler_name == 'None':
+        scaler = None
+    else:
+        scaler = StandardScaler()  # Default fallback
+    
+    # Scale numeric features
+    if scaler is not None:
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_val_scaled = scaler.transform(X_val)
+        X_test_scaled = scaler.transform(X_test)
+    else:
+        X_train_scaled = X_train.values
+        X_val_scaled = X_val.values
+        X_test_scaled = X_test.values
+\end{minted}
+
+\textbf{Chú thích}: Dynamic scaling trong training pipeline tự động choose appropriate scaler và apply transformations. Hệ thống support both scaled và unscaled data để train diverse model configurations.
+
+\subsection{Tổng kết Advanced Features}
+
+\noindent
+Advanced Features của Nền tảng Máy học Toàn Diện demonstrate practical engineering solutions cho ML workflows trên Streamlit. Integration của intelligent caching với @st.cache\_resource, Optuna hyperparameter optimization, và comprehensive SHAP analysis creates platform capable của handling production-ready ML tasks với optimal performance.
+
+Những features này enable users để leverage advanced ML capabilities through intuitive wizard interface mà không requiring deep technical expertise trong underlying optimization techniques, democratizing access to professional-grade ML technologies.

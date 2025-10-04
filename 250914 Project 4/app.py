@@ -334,7 +334,7 @@ def main():
     st.markdown("""
     <div class="main-header">
         <h1>🤖 AIO Classifier</h1>
-        <p>Intelligent Text Classification with Machine Learning</p>
+        <p>Intelligent DATA Classification with Machine Learning</p>
     </div>
     """, unsafe_allow_html=True)
     

@@ -1,0 +1,207 @@
+\documentclass[a4paper,12pt]{article}
+
+\input{preamble.tex} % Gọi preamble từ file riêng
+
+\begin{document}
+\fancyhead[L]{%
+    \includegraphics[height=1.2cm]{Logo/Logo.png}%
+}
+\newpage
+
+\begin{center}
+    \vspace*{2em}
+    {\LARGE\bfseries AIO Classifier \par}
+    \vspace{0.5em}
+    {\Huge\bfseries Từ Những Dòng Code Đơn Giản Đến Hệ Thống AIO Classifier \par}
+    \vspace{1em}
+    {\Large\itshape Hành trình phát triển từ Jupyter Notebook đơn giản đến hệ thống AIO Classifier với 13 thuật toán máy học \par}
+    \vspace{2em}
+    {\large\textbf{Tác giả:} GRID034} \\
+    \vspace{2em}
+    \hrule
+    \vspace{1.5em}
+\end{center}
+
+\vspace{1em}
+\noindent
+Dự án AIO Classifier đã trải qua một hành trình phát triển đầy ấn tượng, từ một tập mã lệnh Jupyter Notebook đơn giản với vài thuật toán cơ bản đến một hệ thống máy học hoàn chỉnh với 13 thuật toán học máy (11 base algorithms + 2 ensemble methods), giao diện wizard tương tác 5 bước, hệ thống học kết hợp tiên tiến, và đánh giá toàn diện với phân tích SHAP. 
+
+Hệ thống triển khai giao diện wizard thân thiện với người dùng, hướng dẫn từng bước qua quy trình machine learning phức tạp:
+
+\vspace{1em}
+\noindent
+Blog này sẽ phân tích chi tiết quá trình phát triển, bao gồm:
+
+\vspace{1em}
+\begin{enumerate}
+    \item \textbf{Mục tiêu của Dự án}  
+    Giải thích lý do và mục tiêu xây dựng AIO Classifier, hỗ trợ nhiều bộ dữ liệu và nhiều cấu hình mô hình.
+
+    \item \textbf{Tiến trình phát triển}  
+    Hành trình từ Jupyter Notebook đơn giản đến AIO Classifier hoàn chỉnh với kiến trúc hệ thống được thiết kế tỉ mỉ.
+
+    \item \textbf{Kiến trúc Modular}  
+    Thiết kế modular với các thư mục chuyên biệt và các mẫu thiết kế hiện đại (Factory, Registry).
+
+    \item \textbf{Giao diện Wizard \& Trải nghiệm Người dùng}  
+    Giao diện wizard 5 bước với quản lý phiên làm việc, hệ thống xác thực, thiết kế responsive và khôi phục lỗi.
+
+    \item \textbf{Tính năng Tiên tiến \& Tối ưu hóa}  
+    Tăng tốc GPU, hệ thống cache thông minh, tối ưu hóa Optuna, học kết hợp và tích hợp SHAP.
+
+    \item \textbf{Phân tích Kết quả Thực nghiệm}  
+    Phân tích toàn diện các kết quả thực nghiệm từ 2 bộ dữ liệu với các chỉ số hiệu suất chi tiết, phân tích SHAP và ma trận confusion.
+
+    \item \textbf{Cải tiến Mô hình \& Phân tích Hiệu suất}  
+    Phân tích chi tiết 78 cấu hình mô hình trên 2 dataset, so sánh hiệu suất và hiểu biết về tầm quan trọng của đặc trưng.
+
+    \item \textbf{Hướng phát triển trong tương lai}  
+    Đề xuất cải tiến dựa trên kết quả thực tế: triển khai production, nâng cấp khả năng mở rộng và các tính năng tiên tiến.
+
+    \item \textbf{Tổng kết \& Bài học Rút ra}  
+    Tổng kết thành tựu đạt được, bài học kinh nghiệm và giá trị của AIO Classifier.
+\end{enumerate}
+
+\vspace{1em}
+\noindent\textbf{ Giá trị nhận được sau khi đọc Blog}
+\begin{itemize}
+    \item Hiểu quá trình phát triển từ Jupyter Notebook đơn giản đến AIO Classifier hoàn chỉnh với 13 thuật toán.  
+    \item Nắm vững kiến trúc modular và các mẫu thiết kế (Factory, Registry) trong các dự án ML.  
+    \item Biết cách xây dựng giao diện wizard tương tác cho các ứng dụng ML với quản lý phiên làm việc.  
+    \item Học được các thực hành tốt về tối ưu hóa: tăng tốc GPU, chiến lược cache, quản lý bộ nhớ.  
+    \item Áp dụng được học kết hợp, tối ưu hóa Optuna và phân tích SHAP cho khả năng giải thích mô hình.  
+    \item Hiểu rõ đặc trưng hiệu suất của các mô hình và phương pháp chuẩn hóa khác nhau trên dữ liệu thực tế.  
+\end{itemize}
+
+
+\vspace{2em}
+\noindent
+{\Large\bfseries Mục lục}
+\vspace{1em}
+
+\noindent
+\textbf{1. Mục tiêu của Dự án} \dotfill \pageref{sec:project-goals}
+\begin{itemize}
+    \item Phân tích Chi tiết các Mục tiêu \dotfill \pageref{subsec:detailed-goals}
+    \item Model Interpretability \& Tích hợp SHAP \dotfill \pageref{subsec:model-interpretability}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{2. Tiến trình Phát triển} \dotfill \pageref{sec:project-evolution}
+\begin{itemize}
+    \item Giai đoạn 1: Phát triển Prototype \dotfill \pageref{subsec:prototype-stage}
+    \item Giai đoạn 2: Phát triển Kiến trúc Modular \dotfill \pageref{subsec:modular-stage}
+    \item Giai đoạn 3: Tích hợp Tính năng Nâng cao \dotfill \pageref{subsec:advanced-stage}
+    \item Giai đoạn 4: Phát triển Giao diện Người dùng \dotfill \pageref{subsec:ui-stage}
+    \item Giai đoạn 5: Hệ thống Đánh giá Toàn diện \dotfill \pageref{subsec:evaluation-stage}
+    \item Giai đoạn 6: Kiểm thử Thực tế \& Xác thực \dotfill \pageref{subsec:testing-stage}
+    \item Giai đoạn 7: Tài liệu \& Chuyển giao Tri thức \dotfill \pageref{subsec:documentation-stage}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{3. Kiến trúc Modular} \dotfill \pageref{sec:modular-architecture}
+\begin{itemize}
+    \item Tổng quan Kiến trúc \dotfill \pageref{subsec:architecture-overview}
+    \item Models Layer Architecture \dotfill \pageref{subsec:models-layer}
+    \item Lớp Xử lý Dữ liệu \dotfill \pageref{subsec:data-processing}
+    \item Kiến trúc Giao diện Wizard \dotfill \pageref{subsec:wizard-integration}
+    \item Kiến trúc Cache Thông minh \dotfill \pageref{subsec:caching-architecture}
+    \item Kiến trúc Lớp Đánh giá \dotfill \pageref{subsec:evaluation-architecture}
+    \item Design Patterns Implementation \dotfill \pageref{subsec:design-patterns}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{4. Giao diện Wizard \& Trải nghiệm Người dùng} \dotfill \pageref{sec:wizard-interface}
+\begin{itemize}
+    \item Tổng quan Kiến trúc Wizard \dotfill \pageref{subsec:wizard-overview}
+    \item Hệ thống Quản lý Phiên làm việc \dotfill \pageref{subsec:session-management}
+    \item Xử lý Lỗi \& Khôi phục \dotfill \pageref{subsec:error-handling}
+    \item Kiến trúc Thiết kế Responsive \dotfill \pageref{subsec:responsive-design}
+    \item Nguyên tắc Thiết kế Trải nghiệm Người dùng \dotfill \pageref{subsec:ux-principles}
+    \item Hiệu suất \& Tối ưu hóa \dotfill \pageref{subsec:wizard-optimization}
+    \item Tích hợp Pipeline Huấn luyện \dotfill \pageref{subsec:training-integration}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{5. Tính năng Nâng cao \& Tối ưu hóa} \dotfill \pageref{sec:advanced-features}
+\begin{itemize}
+    \item GPU Acceleration \& CUDA Optimization \dotfill \pageref{subsec:pipeline-optimization}
+    \item Intelligent Caching System \dotfill \pageref{subsec:intelligent-caching}
+    \item Optuna Hyperparameter Optimization \dotfill \pageref{subsec:optuna-optimization}
+    \item Memory Management \dotfill \pageref{subsec:memory-management}
+    \item SHAP Integration \& Model Interpretability \dotfill \pageref{subsec:shap-integration}
+    \item UX Optimization \dotfill \pageref{subsec:ux-optimization}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{6. Phân tích Kết quả Thực nghiệm} \dotfill \pageref{sec:ra-detailed-results-analysis}
+\begin{itemize}
+    \item Tổng quan Bộ Dữ liệu và Thiết lập Thực nghiệm \dotfill \pageref{subsec:ra-experimental-overview}
+    \item Kết quả Phân tích Hiệu suất \dotfill \pageref{subsec:ra-performance-by-model-groups}
+    \item Phân tích Tầm quan trọng Đặc trưng từ SHAP \dotfill \pageref{subsec:ra-feature-importance-analysis}
+    \item Phân tích Hiệu ứng Scaler \dotfill \pageref{subsec:detailed-scaler-analysis}
+    \item Phân tích Phương pháp Ensemble \dotfill \pageref{subsec:detailed-ensemble-analysis}
+    \item Hiểu biết về Tính giải thích Mô hình \dotfill \pageref{subsec:detailed-interpretability-insights}
+    \item Xác thực Thống kê \dotfill \pageref{subsec:detailed-statistical-validation}
+    \item Phân tích Mô hình Toàn diện - Tài liệu Hình ảnh Đầy đủ \dotfill \pageref{subsec:comprehensive-analysis}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{7. Cải tiến Mô hình \& Phân tích Hiệu suất} \dotfill \pageref{sec:model-improvements}
+\begin{itemize}
+    \item Tối ưu hóa Thuật toán Cơ bản \dotfill \pageref{subsec:basic-algorithm-optimization}
+    \item Cải tiến Cụ thuật toán \dotfill \pageref{subsec:algorithm-specific}
+    \item Phân tích Phương pháp Ensemble \dotfill \pageref{subsec:ensemble-methods}
+    \item Tối ưu hóa Thời gian Training \dotfill \pageref{subsec:training-optimization}
+    \item Hiểu biết Hiệu suất So sánh \dotfill \pageref{subsec:comparative-insights}
+    \item Đề xuất Cấu hình Mô hình \dotfill \pageref{subsec:device-recommendations}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{8. Hướng Phát triển trong Tương lai} \dotfill \pageref{sec:future-development}
+\begin{itemize}
+    \item Roadmap Tối ưu hóa Hiệu suất \dotfill \pageref{subsec:performance-roadmap}
+\end{itemize}
+
+\vspace{0.5em}
+\noindent
+\textbf{9. Tổng kết \& Bài học Rút ra} \dotfill \pageref{sec:conclusion}
+\begin{itemize}
+    \item Thành tựu Chính \dotfill \pageref{subsec:achievements}
+    \item Bài học Quan trọng \dotfill \pageref{subsec:key-lessons}
+    \item Giá trị Nền tảng \dotfill \pageref{subsec:platform-value}
+    \item Tác động Nền tảng \dotfill \pageref{subsec:platform-impact}
+    \item Foundation cho Tương lai \dotfill \pageref{subsec:future-foundation}
+\end{itemize}
+
+
+\input{projects/Project-Goals/main.tex}
+
+\input{projects/Project-Evolution/main.tex}
+
+\input{projects/Modular-Architecture/main.tex}
+
+\input{projects/Wizard-Interface/main.tex}
+
+\input{projects/Advanced-Features/main.tex}
+
+\input{projects/Results-Analysis/main.tex}
+
+\input{projects/Model-Improvements/main.tex}
+
+\input{projects/Future-Development/main.tex}
+
+\input{projects/Conclusion/main.tex}
+
+
+% Bibliography
+\printbibliography[title={Tài liệu tham khảo}]
+
+\end{document}
