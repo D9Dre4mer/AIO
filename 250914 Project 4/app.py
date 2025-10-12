@@ -1590,10 +1590,12 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             # Add to ensemble results
                             ensemble_results[voting_ensemble_name] = {
                                 'status': 'success',
-                                'accuracy': cache_data['metrics'].get('test_accuracy', 0),
+                                'accuracy': cache_data['metrics'].get('test_accuracy', cache_data['metrics'].get('accuracy', 0)),
+                                'validation_accuracy': cache_data['metrics'].get('validation_accuracy', cache_data['metrics'].get('test_accuracy', cache_data['metrics'].get('accuracy', 0))),
                                 'f1_score': cache_data['metrics'].get('f1_score', 0),
                                 'precision': cache_data['metrics'].get('precision', 0),
                                 'recall': cache_data['metrics'].get('recall', 0),
+                                'support': cache_data['metrics'].get('support', 0),
                                 'training_time': cache_data['metrics'].get('training_time', 0),
                                 'model': cache_data['model'],
                                 'cached': True,
@@ -1601,7 +1603,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                             }
                             
                             with log_container:
-                                st.success(f"✅ Voting Ensemble ({scaler_name}) loaded from cache: {cache_data['metrics'].get('test_accuracy', 0):.4f} accuracy")
+                                st.success(f"✅ Voting Ensemble ({scaler_name}) loaded from cache: {cache_data['metrics'].get('test_accuracy', cache_data['metrics'].get('accuracy', 0)):.4f} accuracy")
                             
                             # Skip training for this scaler - cache hit
                             continue
@@ -1732,6 +1734,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                     'f1_score': f1,
                                     'precision': precision,
                                     'recall': recall,
+                                    'support': len(y_test),
                                     'training_time': training_time
                                 },
                                 config={
@@ -1871,10 +1874,12 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         # Add to ensemble results
                         ensemble_results[stacking_ensemble_name] = {
                             'status': 'success',
-                            'accuracy': cache_data['metrics'].get('test_accuracy', 0),
+                            'accuracy': cache_data['metrics'].get('test_accuracy', cache_data['metrics'].get('accuracy', 0)),
+                            'validation_accuracy': cache_data['metrics'].get('validation_accuracy', cache_data['metrics'].get('test_accuracy', cache_data['metrics'].get('accuracy', 0))),
                             'f1_score': cache_data['metrics'].get('f1_score', 0),
                             'precision': cache_data['metrics'].get('precision', 0),
                             'recall': cache_data['metrics'].get('recall', 0),
+                            'support': cache_data['metrics'].get('support', 0),
                             'training_time': cache_data['metrics'].get('training_time', 0),
                             'model': cache_data['model'],
                             'cached': True,
@@ -1882,7 +1887,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                         }
                         
                         with log_container:
-                            st.success(f"✅ Stacking Ensemble ({scaler_name}) loaded from cache: {cache_data['metrics'].get('test_accuracy', 0):.4f} accuracy")
+                            st.success(f"✅ Stacking Ensemble ({scaler_name}) loaded from cache: {cache_data['metrics'].get('test_accuracy', cache_data['metrics'].get('accuracy', 0)):.4f} accuracy")
                         
                         # Skip training for this scaler - cache hit
                         continue
@@ -2036,6 +2041,7 @@ def train_numeric_data_directly(df, input_columns, label_column, selected_models
                                 'f1_score': f1,
                                 'precision': precision,
                                 'recall': recall,
+                                'support': len(y_test),
                                 'training_time': training_time
                             },
                             config={
@@ -4205,7 +4211,7 @@ def render_step4_wireframe():
                                 successful_results.append({
                                     'model_name': model_name,
                                     'validation_accuracy': model_data.get('validation_accuracy', 0),
-                                    'test_accuracy': model_data.get('accuracy', 0),
+                                    'test_accuracy': model_data.get('accuracy', model_data.get('test_accuracy', 0)),
                                     'f1_score': model_data.get('f1_score', 0),
                                     'precision': model_data.get('precision', 0),
                                     'recall': model_data.get('recall', 0),
@@ -4230,8 +4236,9 @@ def render_step4_wireframe():
                                 successful_results.append({
                                     'model_name': model_name,
                                     'f1_score': model_data.get('f1_score', model_data.get('accuracy', 0)),
-                                    'test_accuracy': model_data.get('accuracy', 0),
+                                    'test_accuracy': model_data.get('accuracy', model_data.get('test_accuracy', 0)),
                                     'validation_accuracy': model_data.get('validation_accuracy', 0),
+                                    'support': model_data.get('support', 0),
                                     'training_time': model_data.get('training_time', 0),
                                     'embedding_name': 'numeric_features'
                                 })
@@ -5507,9 +5514,11 @@ def render_model_comparison():
                         'dataset_id': model_info['dataset_id'],
                         'config_hash': model_info['config_hash'][:8] + '...',
                         'accuracy': metrics.get('accuracy', metrics.get('test_accuracy', 0)),  # Fallback to test_accuracy
+                        'validation_accuracy': metrics.get('validation_accuracy', metrics.get('test_accuracy', metrics.get('accuracy', 0))),
                         'f1_score': metrics.get('f1_score', 0),
                         'precision': metrics.get('precision', 0),
                         'recall': metrics.get('recall', 0),
+                        'support': metrics.get('support', 0),
                         'training_time': metrics.get('training_time', 0),
                         'status': 'success',
                         'cached': True
@@ -5562,6 +5571,20 @@ def render_model_comparison():
                         row_data['Training Time'] = f"{training_time_float:.1f}s"
                     except (ValueError, TypeError):
                         row_data['Training Time'] = f"{training_time}s"
+                if show_validation_acc:
+                    validation_acc = model_metric.get('validation_accuracy', 0)
+                    try:
+                        validation_acc_float = float(validation_acc)
+                        row_data['Validation Accuracy'] = f"{validation_acc_float:.4f}"
+                    except (ValueError, TypeError):
+                        row_data['Validation Accuracy'] = f"{validation_acc}"
+                if show_support:
+                    support = model_metric.get('support', 0)
+                    try:
+                        support_int = int(support)
+                        row_data['Support'] = f"{support_int}"
+                    except (ValueError, TypeError):
+                        row_data['Support'] = f"{support}"
                 if show_status:
                     row_data['Status'] = model_metric['status']
                 if show_cached:
