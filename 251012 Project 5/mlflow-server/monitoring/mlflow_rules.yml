@@ -1,0 +1,29 @@
+groups:
+  - name: mlflow_alerts
+    rules:
+      - alert: MLflowServerDown
+        expr: up{job="mlflow-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MLflow server is down"
+          description: "MLflow server has been down for more than 1 minute"
+
+      - alert: HighMLflowLatency
+        expr: mlflow_request_duration_seconds{quantile="0.95"} > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MLflow latency"
+          description: "MLflow 95th percentile latency is above 5 seconds"
+
+      - alert: MLflowHighErrorRate
+        expr: rate(mlflow_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High MLflow error rate"
+          description: "MLflow error rate is above 10%"

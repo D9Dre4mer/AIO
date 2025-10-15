@@ -1,0 +1,2357 @@
+{
+  "adaboost_087d4763_01f0812c": {
+    "timestamp": 1758686469.7270706,
+    "file_path": "cache/models\\adaboost\\087d4763\\01f0812c8954022da56c0d5fbabac7b2e345f6d48278b1d28205f6e26c066c77",
+    "cache_name": "adaboost_087d4763_01f0812c",
+    "model_key": "adaboost",
+    "dataset_id": "087d4763",
+    "config_hash": "01f0812c8954022da56c0d5fbabac7b2e345f6d48278b1d28205f6e26c066c77",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.45,
+      "test_accuracy": 0.45,
+      "test_metrics": {
+        "accuracy": 0.45,
+        "precision": 0.5494239834166288,
+        "recall": 0.45,
+        "f1_score": 0.40681050017594766
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "adaboost_087d4763_06bb0f18": {
+    "timestamp": 1758686257.1240702,
+    "file_path": "cache/models\\adaboost\\087d4763\\06bb0f187aa6a2ab71c178a297b74041e046dca8d6b70647686d9fb337b21377",
+    "cache_name": "adaboost_087d4763_06bb0f18",
+    "model_key": "adaboost",
+    "dataset_id": "087d4763",
+    "config_hash": "06bb0f187aa6a2ab71c178a297b74041e046dca8d6b70647686d9fb337b21377",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.45,
+      "test_accuracy": 0.45,
+      "test_metrics": {
+        "accuracy": 0.45,
+        "precision": 0.5494239834166288,
+        "recall": 0.45,
+        "f1_score": 0.40681050017594766
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "adaboost_80396c7e_39494473": {
+    "timestamp": 1758683588.5458317,
+    "file_path": "cache/models\\adaboost\\80396c7e\\39494473337097beaac23b429bb6c847ff0f9f53696ada44b4fe451f03b3802f",
+    "cache_name": "adaboost_80396c7e_39494473",
+    "model_key": "adaboost",
+    "dataset_id": "80396c7e",
+    "config_hash": "39494473337097beaac23b429bb6c847ff0f9f53696ada44b4fe451f03b3802f",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.43,
+      "test_accuracy": 0.43,
+      "test_metrics": {
+        "accuracy": 0.43,
+        "precision": 0.4883012447264739,
+        "recall": 0.43,
+        "f1_score": 0.39630251941758077
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "adaboost_80396c7e_958c93c9": {
+    "timestamp": 1758683664.342115,
+    "file_path": "cache/models\\adaboost\\80396c7e\\958c93c96c076ac9639f008a1d7dac47ca3ca019b3cdd8545a54195852039068",
+    "cache_name": "adaboost_80396c7e_958c93c9",
+    "model_key": "adaboost",
+    "dataset_id": "80396c7e",
+    "config_hash": "958c93c96c076ac9639f008a1d7dac47ca3ca019b3cdd8545a54195852039068",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.43,
+      "test_accuracy": 0.43,
+      "test_metrics": {
+        "accuracy": 0.43,
+        "precision": 0.4883012447264739,
+        "recall": 0.43,
+        "f1_score": 0.39630251941758077
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "adaboost_80396c7e_a0d775b3": {
+    "timestamp": 1758683713.7186873,
+    "file_path": "cache/models\\adaboost\\80396c7e\\a0d775b33b8429b5c25888cd60c1f69103ce865a0124f8a47fde98b310dc1070",
+    "cache_name": "adaboost_80396c7e_a0d775b3",
+    "model_key": "adaboost",
+    "dataset_id": "80396c7e",
+    "config_hash": "a0d775b33b8429b5c25888cd60c1f69103ce865a0124f8a47fde98b310dc1070",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.43,
+      "test_accuracy": 0.43,
+      "test_metrics": {
+        "accuracy": 0.43,
+        "precision": 0.4883012447264739,
+        "recall": 0.43,
+        "f1_score": 0.39630251941758077
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "adaboost_80396c7e_f7cd08b8": {
+    "timestamp": 1758683754.7150667,
+    "file_path": "cache/models\\adaboost\\80396c7e\\f7cd08b80d4aa28fa0a2a830e12b8781015b1c46cdb733330df82b818626fee9",
+    "cache_name": "adaboost_80396c7e_f7cd08b8",
+    "model_key": "adaboost",
+    "dataset_id": "80396c7e",
+    "config_hash": "f7cd08b80d4aa28fa0a2a830e12b8781015b1c46cdb733330df82b818626fee9",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.43,
+      "test_accuracy": 0.43,
+      "test_metrics": {
+        "accuracy": 0.43,
+        "precision": 0.4883012447264739,
+        "recall": 0.43,
+        "f1_score": 0.39630251941758077
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "adaboost_9f20e655_01f0812c": {
+    "timestamp": 1758687722.4159274,
+    "file_path": "cache/models\\adaboost\\9f20e655\\01f0812c8954022da56c0d5fbabac7b2e345f6d48278b1d28205f6e26c066c77",
+    "cache_name": "adaboost_9f20e655_01f0812c",
+    "model_key": "adaboost",
+    "dataset_id": "9f20e655",
+    "config_hash": "01f0812c8954022da56c0d5fbabac7b2e345f6d48278b1d28205f6e26c066c77",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 50,
+      "learning_rate": 1.0,
+      "algorithm": "SAMME.R",
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.67,
+      "test_accuracy": 0.67,
+      "test_metrics": {
+        "accuracy": 0.67,
+        "precision": 0.6569488560421416,
+        "recall": 0.67,
+        "f1_score": 0.654102624011863
+      }
+    },
+    "config": {
+      "model_name": "adaboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "catboost_087d4763_09f607cc": {
+    "timestamp": 1758685992.5920215,
+    "file_path": "cache/models\\catboost\\087d4763\\09f607ccfbc2081cda391e4a4672d4382588e1669586e434c6dac3672219639c",
+    "cache_name": "catboost_087d4763_09f607cc",
+    "model_key": "catboost",
+    "dataset_id": "087d4763",
+    "config_hash": "09f607ccfbc2081cda391e4a4672d4382588e1669586e434c6dac3672219639c",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.cbm",
+      "params.json"
+    ],
+    "params": {
+      "iterations": 100,
+      "depth": 6,
+      "learning_rate": 0.1,
+      "l2_leaf_reg": 3.0,
+      "border_count": 128,
+      "random_seed": 42,
+      "verbose": false,
+      "task_type": "GPU"
+    },
+    "metrics": {
+      "validation_accuracy": 0.56,
+      "test_accuracy": 0.56,
+      "test_metrics": {
+        "accuracy": 0.56,
+        "precision": 0.5457468126838836,
+        "recall": 0.56,
+        "f1_score": 0.5187675934968691
+      }
+    },
+    "config": {
+      "model_name": "catboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "catboost_087d4763_3c419881": {
+    "timestamp": 1758686613.1537685,
+    "file_path": "cache/models\\catboost\\087d4763\\3c419881afe2d906bbc59d2cbaf45d7d9e1b09d7b5f6ff013650d2daab4044c0",
+    "cache_name": "catboost_087d4763_3c419881",
+    "model_key": "catboost",
+    "dataset_id": "087d4763",
+    "config_hash": "3c419881afe2d906bbc59d2cbaf45d7d9e1b09d7b5f6ff013650d2daab4044c0",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.cbm",
+      "params.json"
+    ],
+    "params": {
+      "iterations": 100,
+      "depth": 6,
+      "learning_rate": 0.1,
+      "l2_leaf_reg": 3.0,
+      "border_count": 128,
+      "random_seed": 42,
+      "train_dir": null,
+      "logging_level": "Silent",
+      "task_type": "GPU"
+    },
+    "metrics": {
+      "validation_accuracy": 0.56,
+      "test_accuracy": 0.56,
+      "test_metrics": {
+        "accuracy": 0.56,
+        "precision": 0.5457468126838836,
+        "recall": 0.56,
+        "f1_score": 0.5187675934968691
+      }
+    },
+    "config": {
+      "model_name": "catboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "catboost_9f20e655_3c419881": {
+    "timestamp": 1758688361.0674279,
+    "file_path": "cache/models\\catboost\\9f20e655\\3c419881afe2d906bbc59d2cbaf45d7d9e1b09d7b5f6ff013650d2daab4044c0",
+    "cache_name": "catboost_9f20e655_3c419881",
+    "model_key": "catboost",
+    "dataset_id": "9f20e655",
+    "config_hash": "3c419881afe2d906bbc59d2cbaf45d7d9e1b09d7b5f6ff013650d2daab4044c0",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.cbm",
+      "params.json"
+    ],
+    "params": {
+      "iterations": 100,
+      "depth": 6,
+      "learning_rate": 0.1,
+      "l2_leaf_reg": 3.0,
+      "border_count": 128,
+      "random_seed": 42,
+      "train_dir": null,
+      "logging_level": "Silent",
+      "task_type": "GPU"
+    },
+    "metrics": {
+      "validation_accuracy": 0.78,
+      "test_accuracy": 0.78,
+      "test_metrics": {
+        "accuracy": 0.78,
+        "precision": 0.7885214486638539,
+        "recall": 0.78,
+        "f1_score": 0.7636193264803662
+      }
+    },
+    "config": {
+      "model_name": "catboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "decision_tree_087d4763_0de500d3": {
+    "timestamp": 1758686613.1598022,
+    "file_path": "cache/models\\decision_tree\\087d4763\\0de500d304f8c791fb643a435011bfa436b6b392ad2c98fa40581afbdcc17651",
+    "cache_name": "decision_tree_087d4763_0de500d3",
+    "model_key": "decision_tree",
+    "dataset_id": "087d4763",
+    "config_hash": "0de500d304f8c791fb643a435011bfa436b6b392ad2c98fa40581afbdcc17651",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.575,
+      "test_accuracy": 0.575,
+      "test_metrics": {
+        "accuracy": 0.575,
+        "precision": 0.580231930601698,
+        "recall": 0.575,
+        "f1_score": 0.5590119683580812
+      }
+    },
+    "config": {
+      "model_name": "decision_tree",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "decision_tree_087d4763_a096e48b": {
+    "timestamp": 1758684890.5606127,
+    "file_path": "cache/models\\decision_tree\\087d4763\\a096e48b7786042cdd8ce5d25f8f5034d6c6e9752589551ede0ff02aeb8be2f5",
+    "cache_name": "decision_tree_087d4763_a096e48b",
+    "model_key": "decision_tree",
+    "dataset_id": "087d4763",
+    "config_hash": "a096e48b7786042cdd8ce5d25f8f5034d6c6e9752589551ede0ff02aeb8be2f5",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.575,
+      "test_accuracy": 0.575,
+      "test_metrics": {
+        "accuracy": 0.575,
+        "precision": 0.580231930601698,
+        "recall": 0.575,
+        "f1_score": 0.5590119683580812
+      }
+    },
+    "config": {
+      "model_name": "decision_tree",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "decision_tree_9f20e655_0de500d3": {
+    "timestamp": 1758688361.0754285,
+    "file_path": "cache/models\\decision_tree\\9f20e655\\0de500d304f8c791fb643a435011bfa436b6b392ad2c98fa40581afbdcc17651",
+    "cache_name": "decision_tree_9f20e655_0de500d3",
+    "model_key": "decision_tree",
+    "dataset_id": "9f20e655",
+    "config_hash": "0de500d304f8c791fb643a435011bfa436b6b392ad2c98fa40581afbdcc17651",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.615,
+      "test_accuracy": 0.615,
+      "test_metrics": {
+        "accuracy": 0.615,
+        "precision": 0.6134712176196865,
+        "recall": 0.615,
+        "f1_score": 0.6117910104398158
+      }
+    },
+    "config": {
+      "model_name": "decision_tree",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "decision_tree_9f20e655_a096e48b": {
+    "timestamp": 1758684890.5781815,
+    "file_path": "cache/models\\decision_tree\\9f20e655\\a096e48b7786042cdd8ce5d25f8f5034d6c6e9752589551ede0ff02aeb8be2f5",
+    "cache_name": "decision_tree_9f20e655_a096e48b",
+    "model_key": "decision_tree",
+    "dataset_id": "9f20e655",
+    "config_hash": "a096e48b7786042cdd8ce5d25f8f5034d6c6e9752589551ede0ff02aeb8be2f5",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "random_state": 42
+    },
+    "metrics": {
+      "validation_accuracy": 0.615,
+      "test_accuracy": 0.615,
+      "test_metrics": {
+        "accuracy": 0.615,
+        "precision": 0.6134712176196865,
+        "recall": 0.615,
+        "f1_score": 0.6117910104398158
+      }
+    },
+    "config": {
+      "model_name": "decision_tree",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "ensemble_bow_087d4763_0222dc70": {
+    "timestamp": 1758688373.673065,
+    "file_path": "cache/models\\ensemble_bow\\087d4763\\0222dc707485bbfebacef24cc900a54fd9a190608ccd64d0e6f3ebaa6393437c",
+    "cache_name": "ensemble_bow_087d4763_0222dc70",
+    "model_key": "ensemble_bow",
+    "dataset_id": "087d4763",
+    "config_hash": "0222dc707485bbfebacef24cc900a54fd9a190608ccd64d0e6f3ebaa6393437c",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "knn",
+        "decision_tree",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "bow"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.77,
+      "test_metrics": {
+        "precision": 0.7550994505069266,
+        "recall": 0.77,
+        "f1_score": 0.7495362884436161
+      }
+    },
+    "config": {
+      "model_name": "ensemble_bow",
+      "base_models": [
+        "knn",
+        "decision_tree",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "embedding": "bow"
+    }
+  },
+  "ensemble_embeddings_9f20e655_aa73883a": {
+    "timestamp": 1758688373.6980715,
+    "file_path": "cache/models\\ensemble_embeddings\\9f20e655\\aa73883ace69fc73ef1babfa7bc5f1e68df41fec8b5b5c1de2e65509cea785ac",
+    "cache_name": "ensemble_embeddings_9f20e655_aa73883a",
+    "model_key": "ensemble_embeddings",
+    "dataset_id": "9f20e655",
+    "config_hash": "aa73883ace69fc73ef1babfa7bc5f1e68df41fec8b5b5c1de2e65509cea785ac",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "knn",
+        "decision_tree",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "embeddings"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.755,
+      "test_metrics": {
+        "precision": 0.7538693180623041,
+        "recall": 0.755,
+        "f1_score": 0.7501190027788134
+      }
+    },
+    "config": {
+      "model_name": "ensemble_embeddings",
+      "base_models": [
+        "knn",
+        "decision_tree",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "embedding": "embeddings"
+    }
+  },
+  "ensemble_tfidf_087d4763_41e1a9a8": {
+    "timestamp": 1758687514.916075,
+    "file_path": "cache/models\\ensemble_tfidf\\087d4763\\41e1a9a8c8d6df1ca739b9888b182b6ddd366ca0cdbfea2ef6c1af8e3285d78d",
+    "cache_name": "ensemble_tfidf_087d4763_41e1a9a8",
+    "model_key": "ensemble_tfidf",
+    "dataset_id": "087d4763",
+    "config_hash": "41e1a9a8c8d6df1ca739b9888b182b6ddd366ca0cdbfea2ef6c1af8e3285d78d",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "knn",
+        "decision_tree",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "tfidf"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.745,
+      "test_metrics": {
+        "precision": 0.6984416950201051,
+        "recall": 0.745,
+        "f1_score": 0.7123229371446788
+      }
+    },
+    "config": {
+      "model_name": "ensemble_tfidf",
+      "base_models": [
+        "knn",
+        "decision_tree",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "embedding": "tfidf"
+    }
+  },
+  "gradient_boosting_087d4763_2b73d62c": {
+    "timestamp": 1758686266.2300148,
+    "file_path": "cache/models\\gradient_boosting\\087d4763\\2b73d62cf40a8e681ab5b16864a8b4fa0f3af4a9d61e0da8b737272f0e0c9ff7",
+    "cache_name": "gradient_boosting_087d4763_2b73d62c",
+    "model_key": "gradient_boosting",
+    "dataset_id": "087d4763",
+    "config_hash": "2b73d62cf40a8e681ab5b16864a8b4fa0f3af4a9d61e0da8b737272f0e0c9ff7",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.65,
+      "test_accuracy": 0.65,
+      "test_metrics": {
+        "accuracy": 0.65,
+        "precision": 0.6691882392969348,
+        "recall": 0.65,
+        "f1_score": 0.639087634446616
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "gradient_boosting_087d4763_b9ef0554": {
+    "timestamp": 1758686477.0663843,
+    "file_path": "cache/models\\gradient_boosting\\087d4763\\b9ef05544bf170cb665caba81e4d2b06f4315d86e377ba8d971fc0f0845e2cf9",
+    "cache_name": "gradient_boosting_087d4763_b9ef0554",
+    "model_key": "gradient_boosting",
+    "dataset_id": "087d4763",
+    "config_hash": "b9ef05544bf170cb665caba81e4d2b06f4315d86e377ba8d971fc0f0845e2cf9",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.65,
+      "test_accuracy": 0.65,
+      "test_metrics": {
+        "accuracy": 0.65,
+        "precision": 0.6691882392969348,
+        "recall": 0.65,
+        "f1_score": 0.639087634446616
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "gradient_boosting_80396c7e_15473c19": {
+    "timestamp": 1758683722.1494114,
+    "file_path": "cache/models\\gradient_boosting\\80396c7e\\15473c195d5b56c3e325ecc7ea95a54269fcfe45062080b34ada0cbb2cc3a1ae",
+    "cache_name": "gradient_boosting_80396c7e_15473c19",
+    "model_key": "gradient_boosting",
+    "dataset_id": "80396c7e",
+    "config_hash": "15473c195d5b56c3e325ecc7ea95a54269fcfe45062080b34ada0cbb2cc3a1ae",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.54,
+      "test_accuracy": 0.54,
+      "test_metrics": {
+        "accuracy": 0.54,
+        "precision": 0.5662941176470588,
+        "recall": 0.54,
+        "f1_score": 0.5391477272727273
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "gradient_boosting_80396c7e_37f56d1b": {
+    "timestamp": 1758683588.5770724,
+    "file_path": "cache/models\\gradient_boosting\\80396c7e\\37f56d1b8de8a9eff9b52c47927d25fe68fa5ac58aec4db2c0861baa5bb2e98b",
+    "cache_name": "gradient_boosting_80396c7e_37f56d1b",
+    "model_key": "gradient_boosting",
+    "dataset_id": "80396c7e",
+    "config_hash": "37f56d1b8de8a9eff9b52c47927d25fe68fa5ac58aec4db2c0861baa5bb2e98b",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.54,
+      "test_accuracy": 0.54,
+      "test_metrics": {
+        "accuracy": 0.54,
+        "precision": 0.5662941176470588,
+        "recall": 0.54,
+        "f1_score": 0.5391477272727273
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "gradient_boosting_80396c7e_495b970d": {
+    "timestamp": 1758683761.5558913,
+    "file_path": "cache/models\\gradient_boosting\\80396c7e\\495b970d5399603eea50118c32a58b38df643c359241f2be8d32a412099239ab",
+    "cache_name": "gradient_boosting_80396c7e_495b970d",
+    "model_key": "gradient_boosting",
+    "dataset_id": "80396c7e",
+    "config_hash": "495b970d5399603eea50118c32a58b38df643c359241f2be8d32a412099239ab",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.54,
+      "test_accuracy": 0.54,
+      "test_metrics": {
+        "accuracy": 0.54,
+        "precision": 0.5662941176470588,
+        "recall": 0.54,
+        "f1_score": 0.5391477272727273
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "gradient_boosting_80396c7e_be4ec9a8": {
+    "timestamp": 1758683672.1515868,
+    "file_path": "cache/models\\gradient_boosting\\80396c7e\\be4ec9a8df6702537c692114a34410f73cbdfd36088b1f21eff5a2f0ef6dc9c6",
+    "cache_name": "gradient_boosting_80396c7e_be4ec9a8",
+    "model_key": "gradient_boosting",
+    "dataset_id": "80396c7e",
+    "config_hash": "be4ec9a8df6702537c692114a34410f73cbdfd36088b1f21eff5a2f0ef6dc9c6",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.54,
+      "test_accuracy": 0.54,
+      "test_metrics": {
+        "accuracy": 0.54,
+        "precision": 0.5662941176470588,
+        "recall": 0.54,
+        "f1_score": 0.5391477272727273
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "gradient_boosting_9f20e655_b9ef0554": {
+    "timestamp": 1758688091.5048473,
+    "file_path": "cache/models\\gradient_boosting\\9f20e655\\b9ef05544bf170cb665caba81e4d2b06f4315d86e377ba8d971fc0f0845e2cf9",
+    "cache_name": "gradient_boosting_9f20e655_b9ef0554",
+    "model_key": "gradient_boosting",
+    "dataset_id": "9f20e655",
+    "config_hash": "b9ef05544bf170cb665caba81e4d2b06f4315d86e377ba8d971fc0f0845e2cf9",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3,
+      "subsample": 1.0,
+      "max_features": null,
+      "random_state": 42,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.765,
+      "test_accuracy": 0.765,
+      "test_metrics": {
+        "accuracy": 0.765,
+        "precision": 0.7621915946822664,
+        "recall": 0.765,
+        "f1_score": 0.7601610730086646
+      }
+    },
+    "config": {
+      "model_name": "gradient_boosting",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "kmeans_087d4763_ff66cdf2": {
+    "timestamp": 1758684864.6228688,
+    "file_path": "cache/models\\kmeans\\087d4763\\ff66cdf2d56a5fd74e2cc95a0383dcf7d6b02f06475fbdd3500221dabf5b30ea",
+    "cache_name": "kmeans_087d4763_ff66cdf2",
+    "model_key": "kmeans",
+    "dataset_id": "087d4763",
+    "config_hash": "ff66cdf2d56a5fd74e2cc95a0383dcf7d6b02f06475fbdd3500221dabf5b30ea",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_clusters": 5
+    },
+    "metrics": {
+      "validation_accuracy": 0.32,
+      "test_accuracy": 0.32,
+      "test_metrics": {
+        "accuracy": 0.32,
+        "precision": 0.22375,
+        "recall": 0.32,
+        "f1_score": 0.20825396825396822
+      }
+    },
+    "config": {
+      "model_name": "kmeans",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "kmeans_9f20e655_ff66cdf2": {
+    "timestamp": 1758684864.6595962,
+    "file_path": "cache/models\\kmeans\\9f20e655\\ff66cdf2d56a5fd74e2cc95a0383dcf7d6b02f06475fbdd3500221dabf5b30ea",
+    "cache_name": "kmeans_9f20e655_ff66cdf2",
+    "model_key": "kmeans",
+    "dataset_id": "9f20e655",
+    "config_hash": "ff66cdf2d56a5fd74e2cc95a0383dcf7d6b02f06475fbdd3500221dabf5b30ea",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_clusters": 5
+    },
+    "metrics": {
+      "validation_accuracy": 0.675,
+      "test_accuracy": 0.675,
+      "test_metrics": {
+        "accuracy": 0.675,
+        "precision": 0.6138913857677902,
+        "recall": 0.675,
+        "f1_score": 0.6292986808544555
+      }
+    },
+    "config": {
+      "model_name": "kmeans",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "knn_087d4763_a278742c": {
+    "timestamp": 1758686613.1678026,
+    "file_path": "cache/models\\knn\\087d4763\\a278742cc7607552a1b02dcd80425c100e3c880dc739d8f618e5c2851a9dca83",
+    "cache_name": "knn_087d4763_a278742c",
+    "model_key": "knn",
+    "dataset_id": "087d4763",
+    "config_hash": "a278742cc7607552a1b02dcd80425c100e3c880dc739d8f618e5c2851a9dca83",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_neighbors": 5
+    },
+    "metrics": {
+      "validation_accuracy": 0.315,
+      "test_accuracy": 0.315,
+      "test_metrics": {
+        "accuracy": 0.315,
+        "precision": 0.6491884816753927,
+        "recall": 0.315,
+        "f1_score": 0.1965752278588161
+      }
+    },
+    "config": {
+      "model_name": "knn",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "knn_087d4763_ca87a305": {
+    "timestamp": 1758684890.605036,
+    "file_path": "cache/models\\knn\\087d4763\\ca87a30547baf403a488ce2705f404f9e36c05772b1794ec4b0610a931d50741",
+    "cache_name": "knn_087d4763_ca87a305",
+    "model_key": "knn",
+    "dataset_id": "087d4763",
+    "config_hash": "ca87a30547baf403a488ce2705f404f9e36c05772b1794ec4b0610a931d50741",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_neighbors": 5
+    },
+    "metrics": {
+      "validation_accuracy": 0.315,
+      "test_accuracy": 0.315,
+      "test_metrics": {
+        "accuracy": 0.315,
+        "precision": 0.6491884816753927,
+        "recall": 0.315,
+        "f1_score": 0.1965752278588161
+      }
+    },
+    "config": {
+      "model_name": "knn",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "knn_9f20e655_a278742c": {
+    "timestamp": 1758688361.083429,
+    "file_path": "cache/models\\knn\\9f20e655\\a278742cc7607552a1b02dcd80425c100e3c880dc739d8f618e5c2851a9dca83",
+    "cache_name": "knn_9f20e655_a278742c",
+    "model_key": "knn",
+    "dataset_id": "9f20e655",
+    "config_hash": "a278742cc7607552a1b02dcd80425c100e3c880dc739d8f618e5c2851a9dca83",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_neighbors": 5
+    },
+    "metrics": {
+      "validation_accuracy": 0.75,
+      "test_accuracy": 0.75,
+      "test_metrics": {
+        "accuracy": 0.75,
+        "precision": 0.7431283220605315,
+        "recall": 0.75,
+        "f1_score": 0.726785974757036
+      }
+    },
+    "config": {
+      "model_name": "knn",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "knn_9f20e655_ca87a305": {
+    "timestamp": 1758684890.6190553,
+    "file_path": "cache/models\\knn\\9f20e655\\ca87a30547baf403a488ce2705f404f9e36c05772b1794ec4b0610a931d50741",
+    "cache_name": "knn_9f20e655_ca87a305",
+    "model_key": "knn",
+    "dataset_id": "9f20e655",
+    "config_hash": "ca87a30547baf403a488ce2705f404f9e36c05772b1794ec4b0610a931d50741",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_neighbors": 5
+    },
+    "metrics": {
+      "validation_accuracy": 0.75,
+      "test_accuracy": 0.75,
+      "test_metrics": {
+        "accuracy": 0.75,
+        "precision": 0.7431283220605315,
+        "recall": 0.75,
+        "f1_score": 0.726785974757036
+      }
+    },
+    "config": {
+      "model_name": "knn",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "lightgbm_087d4763_4b480dda": {
+    "timestamp": 1758686481.8118434,
+    "file_path": "cache/models\\lightgbm\\087d4763\\4b480dda59bd55312d4b40fbda759fda6e5eb1fb56ea8a9cfa5e006125826a3a",
+    "cache_name": "lightgbm_087d4763_4b480dda",
+    "model_key": "lightgbm",
+    "dataset_id": "087d4763",
+    "config_hash": "4b480dda59bd55312d4b40fbda759fda6e5eb1fb56ea8a9cfa5e006125826a3a",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.txt",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "num_leaves": 31,
+      "learning_rate": 0.1,
+      "feature_fraction": 1.0,
+      "bagging_fraction": 1.0,
+      "min_child_samples": 20,
+      "lambda_l1": 0.0,
+      "lambda_l2": 0.0,
+      "random_state": 42,
+      "verbosity": -1,
+      "device_type": "gpu"
+    },
+    "metrics": {
+      "validation_accuracy": 0.33,
+      "test_accuracy": 0.33,
+      "test_metrics": {
+        "accuracy": 0.33,
+        "precision": 0.5079093567251463,
+        "recall": 0.33,
+        "f1_score": 0.24350290955397583
+      }
+    },
+    "config": {
+      "model_name": "lightgbm",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "lightgbm_087d4763_7d0acd66": {
+    "timestamp": 1758686273.390279,
+    "file_path": "cache/models\\lightgbm\\087d4763\\7d0acd6633c1b02dff3fb25161cf218b7a496ff211a05953821202b836fe760a",
+    "cache_name": "lightgbm_087d4763_7d0acd66",
+    "model_key": "lightgbm",
+    "dataset_id": "087d4763",
+    "config_hash": "7d0acd6633c1b02dff3fb25161cf218b7a496ff211a05953821202b836fe760a",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.txt",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "num_leaves": 31,
+      "learning_rate": 0.1,
+      "feature_fraction": 1.0,
+      "bagging_fraction": 1.0,
+      "min_child_samples": 20,
+      "lambda_l1": 0.0,
+      "lambda_l2": 0.0,
+      "random_state": 42,
+      "verbosity": -1,
+      "device_type": "gpu"
+    },
+    "metrics": {
+      "validation_accuracy": 0.33,
+      "test_accuracy": 0.33,
+      "test_metrics": {
+        "accuracy": 0.33,
+        "precision": 0.5079093567251463,
+        "recall": 0.33,
+        "f1_score": 0.24350290955397583
+      }
+    },
+    "config": {
+      "model_name": "lightgbm",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "lightgbm_9f20e655_4b480dda": {
+    "timestamp": 1758688342.5033853,
+    "file_path": "cache/models\\lightgbm\\9f20e655\\4b480dda59bd55312d4b40fbda759fda6e5eb1fb56ea8a9cfa5e006125826a3a",
+    "cache_name": "lightgbm_9f20e655_4b480dda",
+    "model_key": "lightgbm",
+    "dataset_id": "9f20e655",
+    "config_hash": "4b480dda59bd55312d4b40fbda759fda6e5eb1fb56ea8a9cfa5e006125826a3a",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.txt",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "num_leaves": 31,
+      "learning_rate": 0.1,
+      "feature_fraction": 1.0,
+      "bagging_fraction": 1.0,
+      "min_child_samples": 20,
+      "lambda_l1": 0.0,
+      "lambda_l2": 0.0,
+      "random_state": 42,
+      "verbosity": -1,
+      "device_type": "gpu"
+    },
+    "metrics": {
+      "validation_accuracy": 0.785,
+      "test_accuracy": 0.785,
+      "test_metrics": {
+        "accuracy": 0.785,
+        "precision": 0.7804206886579844,
+        "recall": 0.785,
+        "f1_score": 0.7660610479517964
+      }
+    },
+    "config": {
+      "model_name": "lightgbm",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "linear_svc_087d4763_ff4c11af": {
+    "timestamp": 1758684890.6442554,
+    "file_path": "cache/models\\linear_svc\\087d4763\\ff4c11afda62d78397241932b3d71c7867745aa5098cae4326c5a50aacc54858",
+    "cache_name": "linear_svc_087d4763_ff4c11af",
+    "model_key": "linear_svc",
+    "dataset_id": "087d4763",
+    "config_hash": "ff4c11afda62d78397241932b3d71c7867745aa5098cae4326c5a50aacc54858",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "random_state": 42,
+      "max_iter": 2000,
+      "C": 1.0,
+      "loss": "squared_hinge",
+      "dual": true
+    },
+    "metrics": {
+      "validation_accuracy": 0.74,
+      "test_accuracy": 0.74,
+      "test_metrics": {
+        "accuracy": 0.74,
+        "precision": 0.7242126465084213,
+        "recall": 0.74,
+        "f1_score": 0.7260088542914452
+      }
+    },
+    "config": {
+      "model_name": "linear_svc",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "linear_svc_9f20e655_ff4c11af": {
+    "timestamp": 1758684890.6624753,
+    "file_path": "cache/models\\linear_svc\\9f20e655\\ff4c11afda62d78397241932b3d71c7867745aa5098cae4326c5a50aacc54858",
+    "cache_name": "linear_svc_9f20e655_ff4c11af",
+    "model_key": "linear_svc",
+    "dataset_id": "9f20e655",
+    "config_hash": "ff4c11afda62d78397241932b3d71c7867745aa5098cae4326c5a50aacc54858",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "random_state": 42,
+      "max_iter": 2000,
+      "C": 1.0,
+      "loss": "squared_hinge",
+      "dual": true
+    },
+    "metrics": {
+      "validation_accuracy": 0.8,
+      "test_accuracy": 0.8,
+      "test_metrics": {
+        "accuracy": 0.8,
+        "precision": 0.7963263799971547,
+        "recall": 0.8,
+        "f1_score": 0.7903974322066426
+      }
+    },
+    "config": {
+      "model_name": "linear_svc",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "logistic_regression_087d4763_ea52fa65": {
+    "timestamp": 1758684890.6860178,
+    "file_path": "cache/models\\logistic_regression\\087d4763\\ea52fa659d853e171b2ef461a4340f776fe8ad1721890fe52a39f3170e4c122a",
+    "cache_name": "logistic_regression_087d4763_ea52fa65",
+    "model_key": "logistic_regression",
+    "dataset_id": "087d4763",
+    "config_hash": "ea52fa659d853e171b2ef461a4340f776fe8ad1721890fe52a39f3170e4c122a",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "max_iter": 2000,
+      "multi_class": "multinomial",
+      "n_jobs": -1,
+      "random_state": 42,
+      "C": 1.0,
+      "solver": "lbfgs"
+    },
+    "metrics": {
+      "validation_accuracy": 0.76,
+      "test_accuracy": 0.76,
+      "test_metrics": {
+        "accuracy": 0.76,
+        "precision": 0.6843201663201662,
+        "recall": 0.76,
+        "f1_score": 0.7096289236243487
+      }
+    },
+    "config": {
+      "model_name": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "logistic_regression_9f20e655_ea52fa65": {
+    "timestamp": 1758684890.7023213,
+    "file_path": "cache/models\\logistic_regression\\9f20e655\\ea52fa659d853e171b2ef461a4340f776fe8ad1721890fe52a39f3170e4c122a",
+    "cache_name": "logistic_regression_9f20e655_ea52fa65",
+    "model_key": "logistic_regression",
+    "dataset_id": "9f20e655",
+    "config_hash": "ea52fa659d853e171b2ef461a4340f776fe8ad1721890fe52a39f3170e4c122a",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "max_iter": 2000,
+      "multi_class": "multinomial",
+      "n_jobs": -1,
+      "random_state": 42,
+      "C": 1.0,
+      "solver": "lbfgs"
+    },
+    "metrics": {
+      "validation_accuracy": 0.78,
+      "test_accuracy": 0.78,
+      "test_metrics": {
+        "accuracy": 0.78,
+        "precision": 0.8250803571428571,
+        "recall": 0.78,
+        "f1_score": 0.7423060649609322
+      }
+    },
+    "config": {
+      "model_name": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "naive_bayes_087d4763_0d992fb7": {
+    "timestamp": 1758684890.726243,
+    "file_path": "cache/models\\naive_bayes\\087d4763\\0d992fb7f5bc7a3d59b866c854fcefbef03a9384512fabcda11e4f2829b92076",
+    "cache_name": "naive_bayes_087d4763_0d992fb7",
+    "model_key": "naive_bayes",
+    "dataset_id": "087d4763",
+    "config_hash": "0d992fb7f5bc7a3d59b866c854fcefbef03a9384512fabcda11e4f2829b92076",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {},
+    "metrics": {
+      "validation_accuracy": 0.72,
+      "test_accuracy": 0.72,
+      "test_metrics": {
+        "accuracy": 0.72,
+        "precision": 0.6112644850282749,
+        "recall": 0.72,
+        "f1_score": 0.6608733411397345
+      }
+    },
+    "config": {
+      "model_name": "naive_bayes",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "naive_bayes_087d4763_39b29db5": {
+    "timestamp": 1758686613.1749446,
+    "file_path": "cache/models\\naive_bayes\\087d4763\\39b29db52d11aa137f4200ede4fdd4a31001a4b3c4ece96edd1cea44d68746fa",
+    "cache_name": "naive_bayes_087d4763_39b29db5",
+    "model_key": "naive_bayes",
+    "dataset_id": "087d4763",
+    "config_hash": "39b29db52d11aa137f4200ede4fdd4a31001a4b3c4ece96edd1cea44d68746fa",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {},
+    "metrics": {
+      "validation_accuracy": 0.72,
+      "test_accuracy": 0.72,
+      "test_metrics": {
+        "accuracy": 0.72,
+        "precision": 0.6112644850282749,
+        "recall": 0.72,
+        "f1_score": 0.6608733411397345
+      }
+    },
+    "config": {
+      "model_name": "naive_bayes",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "naive_bayes_9f20e655_0d992fb7": {
+    "timestamp": 1758684890.7427976,
+    "file_path": "cache/models\\naive_bayes\\9f20e655\\0d992fb7f5bc7a3d59b866c854fcefbef03a9384512fabcda11e4f2829b92076",
+    "cache_name": "naive_bayes_9f20e655_0d992fb7",
+    "model_key": "naive_bayes",
+    "dataset_id": "9f20e655",
+    "config_hash": "0d992fb7f5bc7a3d59b866c854fcefbef03a9384512fabcda11e4f2829b92076",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {},
+    "metrics": {
+      "validation_accuracy": 0.73,
+      "test_accuracy": 0.73,
+      "test_metrics": {
+        "accuracy": 0.73,
+        "precision": 0.7888152070750647,
+        "recall": 0.73,
+        "f1_score": 0.7451058446333986
+      }
+    },
+    "config": {
+      "model_name": "naive_bayes",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "naive_bayes_9f20e655_39b29db5": {
+    "timestamp": 1758688373.706071,
+    "file_path": "cache/models\\naive_bayes\\9f20e655\\39b29db52d11aa137f4200ede4fdd4a31001a4b3c4ece96edd1cea44d68746fa",
+    "cache_name": "naive_bayes_9f20e655_39b29db5",
+    "model_key": "naive_bayes",
+    "dataset_id": "9f20e655",
+    "config_hash": "39b29db52d11aa137f4200ede4fdd4a31001a4b3c4ece96edd1cea44d68746fa",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {},
+    "metrics": {
+      "validation_accuracy": 0.73,
+      "test_accuracy": 0.73,
+      "test_metrics": {
+        "accuracy": 0.73,
+        "precision": 0.7888152070750647,
+        "recall": 0.73,
+        "f1_score": 0.7451058446333986
+      }
+    },
+    "config": {
+      "model_name": "naive_bayes",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_087d4763_3d084188": {
+    "timestamp": 1758686257.1393538,
+    "file_path": "cache/models\\random_forest\\087d4763\\3d08418899cfeb3f9eae9c8bc5aba90d06edfdb459f3b8df5173b6c02de6a9d1",
+    "cache_name": "random_forest_087d4763_3d084188",
+    "model_key": "random_forest",
+    "dataset_id": "087d4763",
+    "config_hash": "3d08418899cfeb3f9eae9c8bc5aba90d06edfdb459f3b8df5173b6c02de6a9d1",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.67,
+      "test_accuracy": 0.67,
+      "test_metrics": {
+        "accuracy": 0.67,
+        "precision": 0.6578300865800866,
+        "recall": 0.67,
+        "f1_score": 0.6476547620272564
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_087d4763_7e48028e": {
+    "timestamp": 1758686469.7365851,
+    "file_path": "cache/models\\random_forest\\087d4763\\7e48028e921b0c7cf8a6a95bca76c5c1c76300ed01044311aa64954516cb8087",
+    "cache_name": "random_forest_087d4763_7e48028e",
+    "model_key": "random_forest",
+    "dataset_id": "087d4763",
+    "config_hash": "7e48028e921b0c7cf8a6a95bca76c5c1c76300ed01044311aa64954516cb8087",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.67,
+      "test_accuracy": 0.67,
+      "test_metrics": {
+        "accuracy": 0.67,
+        "precision": 0.6578300865800866,
+        "recall": 0.67,
+        "f1_score": 0.6476547620272564
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_80396c7e_05da5791": {
+    "timestamp": 1758683754.7221222,
+    "file_path": "cache/models\\random_forest\\80396c7e\\05da57916fb5c1bf1d262e89f6226e34c3d986db108bd87015220e2642194d9c",
+    "cache_name": "random_forest_80396c7e_05da5791",
+    "model_key": "random_forest",
+    "dataset_id": "80396c7e",
+    "config_hash": "05da57916fb5c1bf1d262e89f6226e34c3d986db108bd87015220e2642194d9c",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.52,
+      "test_accuracy": 0.52,
+      "test_metrics": {
+        "accuracy": 0.52,
+        "precision": 0.5804120879120879,
+        "recall": 0.52,
+        "f1_score": 0.5213935185185185
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_80396c7e_40f89412": {
+    "timestamp": 1758683713.7287252,
+    "file_path": "cache/models\\random_forest\\80396c7e\\40f89412bc711947bba45f8b3f2adc5eba2f8e439053899437a89998d1203c00",
+    "cache_name": "random_forest_80396c7e_40f89412",
+    "model_key": "random_forest",
+    "dataset_id": "80396c7e",
+    "config_hash": "40f89412bc711947bba45f8b3f2adc5eba2f8e439053899437a89998d1203c00",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.52,
+      "test_accuracy": 0.52,
+      "test_metrics": {
+        "accuracy": 0.52,
+        "precision": 0.5804120879120879,
+        "recall": 0.52,
+        "f1_score": 0.5213935185185185
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_80396c7e_8e2a0ad8": {
+    "timestamp": 1758683574.7072792,
+    "file_path": "cache/models\\random_forest\\80396c7e\\8e2a0ad8f0ce8febb975dbc4e249f27c7c0d4f001fac0ef4b73840c466fa9162",
+    "cache_name": "random_forest_80396c7e_8e2a0ad8",
+    "model_key": "random_forest",
+    "dataset_id": "80396c7e",
+    "config_hash": "8e2a0ad8f0ce8febb975dbc4e249f27c7c0d4f001fac0ef4b73840c466fa9162",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.52,
+      "test_accuracy": 0.52,
+      "test_metrics": {
+        "accuracy": 0.52,
+        "precision": 0.5804120879120879,
+        "recall": 0.52,
+        "f1_score": 0.5213935185185185
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_80396c7e_d5c0c6b6": {
+    "timestamp": 1758683664.350666,
+    "file_path": "cache/models\\random_forest\\80396c7e\\d5c0c6b6ce13201a16804ecafcae2ac610eb9bdd50bdf295b06cf663135fd47c",
+    "cache_name": "random_forest_80396c7e_d5c0c6b6",
+    "model_key": "random_forest",
+    "dataset_id": "80396c7e",
+    "config_hash": "d5c0c6b6ce13201a16804ecafcae2ac610eb9bdd50bdf295b06cf663135fd47c",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.52,
+      "test_accuracy": 0.52,
+      "test_metrics": {
+        "accuracy": 0.52,
+        "precision": 0.5804120879120879,
+        "recall": 0.52,
+        "f1_score": 0.5213935185185185
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "random_forest_9f20e655_7e48028e": {
+    "timestamp": 1758687715.5624986,
+    "file_path": "cache/models\\random_forest\\9f20e655\\7e48028e921b0c7cf8a6a95bca76c5c1c76300ed01044311aa64954516cb8087",
+    "cache_name": "random_forest_9f20e655_7e48028e",
+    "model_key": "random_forest",
+    "dataset_id": "9f20e655",
+    "config_hash": "7e48028e921b0c7cf8a6a95bca76c5c1c76300ed01044311aa64954516cb8087",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": null,
+      "max_features": "sqrt",
+      "min_samples_split": 2,
+      "min_samples_leaf": 1,
+      "bootstrap": true,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbose": 0
+    },
+    "metrics": {
+      "validation_accuracy": 0.755,
+      "test_accuracy": 0.755,
+      "test_metrics": {
+        "accuracy": 0.755,
+        "precision": 0.7603827913279133,
+        "recall": 0.755,
+        "f1_score": 0.7147752346292492
+      }
+    },
+    "config": {
+      "model_name": "random_forest",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "stacking_ensemble_tfidf_087d4763_41e1a9a8": {
+    "timestamp": 1758697307.7833774,
+    "file_path": "cache/models\\stacking_ensemble_tfidf\\087d4763\\41e1a9a8c8d6df1ca739b9888b182b6ddd366ca0cdbfea2ef6c1af8e3285d78d",
+    "cache_name": "stacking_ensemble_tfidf_087d4763_41e1a9a8",
+    "model_key": "stacking_ensemble_tfidf",
+    "dataset_id": "087d4763",
+    "config_hash": "41e1a9a8c8d6df1ca739b9888b182b6ddd366ca0cdbfea2ef6c1af8e3285d78d",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "decision_tree",
+        "naive_bayes",
+        "knn"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "tfidf"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.745,
+      "test_metrics": {
+        "precision": 0.6977025656210074,
+        "recall": 0.745,
+        "f1_score": 0.7122422931409205
+      }
+    },
+    "config": {
+      "model_name": "ensemble_tfidf",
+      "base_models": [
+        "decision_tree",
+        "naive_bayes",
+        "knn"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "embedding": "tfidf"
+    }
+  },
+  "stacking_ensemble_tfidf_087d4763_e07028b6": {
+    "timestamp": 1758697453.5201094,
+    "file_path": "cache/models\\stacking_ensemble_tfidf\\087d4763\\e07028b6fc85f7963819d602e182948cf7ca2deba516c139963af8926434f5fc",
+    "cache_name": "stacking_ensemble_tfidf_087d4763_e07028b6",
+    "model_key": "stacking_ensemble_tfidf",
+    "dataset_id": "087d4763",
+    "config_hash": "e07028b6fc85f7963819d602e182948cf7ca2deba516c139963af8926434f5fc",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "decision_tree",
+        "knn",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "tfidf"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.745,
+      "test_metrics": {
+        "precision": 0.6984416950201051,
+        "recall": 0.745,
+        "f1_score": 0.7123229371446788
+      }
+    },
+    "config": {
+      "model_name": "ensemble_tfidf",
+      "base_models": [
+        "decision_tree",
+        "knn",
+        "naive_bayes"
+      ],
+      "final_estimator": "logistic_regression",
+      "cv_folds": 5,
+      "embedding": "tfidf"
+    }
+  },
+  "svm_087d4763_dd56d2e2": {
+    "timestamp": 1758684890.768159,
+    "file_path": "cache/models\\svm\\087d4763\\dd56d2e2881afd79b091d95a95487f872467fcec494b4ee46ffcc810c0b5e7d3",
+    "cache_name": "svm_087d4763_dd56d2e2",
+    "model_key": "svm",
+    "dataset_id": "087d4763",
+    "config_hash": "dd56d2e2881afd79b091d95a95487f872467fcec494b4ee46ffcc810c0b5e7d3",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "C": 1.0,
+      "kernel": "rbf",
+      "gamma": "scale",
+      "random_state": 42,
+      "max_iter": 1000,
+      "tol": 0.001,
+      "auto_fast": true
+    },
+    "metrics": {
+      "validation_accuracy": 0.28,
+      "test_accuracy": 0.28,
+      "test_metrics": {
+        "accuracy": 0.28,
+        "precision": 0.3610050251256281,
+        "recall": 0.28,
+        "f1_score": 0.12892207439587292
+      }
+    },
+    "config": {
+      "model_name": "svm",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "svm_9f20e655_dd56d2e2": {
+    "timestamp": 1758684890.783216,
+    "file_path": "cache/models\\svm\\9f20e655\\dd56d2e2881afd79b091d95a95487f872467fcec494b4ee46ffcc810c0b5e7d3",
+    "cache_name": "svm_9f20e655_dd56d2e2",
+    "model_key": "svm",
+    "dataset_id": "9f20e655",
+    "config_hash": "dd56d2e2881afd79b091d95a95487f872467fcec494b4ee46ffcc810c0b5e7d3",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "C": 1.0,
+      "kernel": "rbf",
+      "gamma": "scale",
+      "random_state": 42,
+      "max_iter": 1000,
+      "tol": 0.001,
+      "auto_fast": true
+    },
+    "metrics": {
+      "validation_accuracy": 0.75,
+      "test_accuracy": 0.75,
+      "test_metrics": {
+        "accuracy": 0.75,
+        "precision": 0.6339153810191678,
+        "recall": 0.75,
+        "f1_score": 0.6864843679407246
+      }
+    },
+    "config": {
+      "model_name": "svm",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "voting_ensemble_tfidf_087d4763_41e1a9a8": {
+    "timestamp": 1758697313.2510736,
+    "file_path": "cache/models\\voting_ensemble_tfidf\\087d4763\\41e1a9a8c8d6df1ca739b9888b182b6ddd366ca0cdbfea2ef6c1af8e3285d78d",
+    "cache_name": "voting_ensemble_tfidf_087d4763_41e1a9a8",
+    "model_key": "voting_ensemble_tfidf",
+    "dataset_id": "087d4763",
+    "config_hash": "41e1a9a8c8d6df1ca739b9888b182b6ddd366ca0cdbfea2ef6c1af8e3285d78d",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "decision_tree",
+        "naive_bayes",
+        "knn"
+      ],
+      "final_estimator": "voting",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "tfidf"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.59,
+      "test_metrics": {
+        "precision": 0.6009619047619048,
+        "recall": 0.59,
+        "f1_score": 0.5717803495198492
+      }
+    },
+    "config": {
+      "model_name": "ensemble_tfidf",
+      "base_models": [
+        "decision_tree",
+        "naive_bayes",
+        "knn"
+      ],
+      "final_estimator": "voting",
+      "cv_folds": 5,
+      "embedding": "tfidf"
+    }
+  },
+  "voting_ensemble_tfidf_087d4763_43a0afa8": {
+    "timestamp": 1758697453.5276246,
+    "file_path": "cache/models\\voting_ensemble_tfidf\\087d4763\\43a0afa8c5e8291a957faa133bc03f5e56cb0adab387a2bc781e116c025916de",
+    "cache_name": "voting_ensemble_tfidf_087d4763_43a0afa8",
+    "model_key": "voting_ensemble_tfidf",
+    "dataset_id": "087d4763",
+    "config_hash": "43a0afa8c5e8291a957faa133bc03f5e56cb0adab387a2bc781e116c025916de",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "fingerprint.json",
+      "label_mapping.json",
+      "metrics.json",
+      "model.joblib",
+      "params.json"
+    ],
+    "params": {
+      "base_models": [
+        "knn",
+        "naive_bayes",
+        "decision_tree"
+      ],
+      "final_estimator": "voting",
+      "cv_folds": 5,
+      "random_state": 42,
+      "embedding": "tfidf"
+    },
+    "metrics": {
+      "validation_accuracy": null,
+      "test_accuracy": 0.59,
+      "test_metrics": {
+        "precision": 0.6009619047619048,
+        "recall": 0.59,
+        "f1_score": 0.5717803495198492
+      }
+    },
+    "config": {
+      "model_name": "ensemble_tfidf",
+      "base_models": [
+        "knn",
+        "naive_bayes",
+        "decision_tree"
+      ],
+      "final_estimator": "voting",
+      "cv_folds": 5,
+      "embedding": "tfidf"
+    }
+  },
+  "xgboost_087d4763_63ac21f4": {
+    "timestamp": 1758685997.4050114,
+    "file_path": "cache/models\\xgboost\\087d4763\\63ac21f4a6ac7ea941b9ca4ff0e118ec92d25839fcb49a05b6d9d6cf32119bc0",
+    "cache_name": "xgboost_087d4763_63ac21f4",
+    "model_key": "xgboost",
+    "dataset_id": "087d4763",
+    "config_hash": "63ac21f4a6ac7ea941b9ca4ff0e118ec92d25839fcb49a05b6d9d6cf32119bc0",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.json",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": 6,
+      "eta": 0.3,
+      "subsample": 1.0,
+      "colsample_bytree": 1.0,
+      "min_child_weight": 1,
+      "reg_lambda": 1.0,
+      "reg_alpha": 0.0,
+      "random_state": 42,
+      "verbosity": 0,
+      "tree_method": "gpu_hist",
+      "predictor": "gpu_predictor"
+    },
+    "metrics": {
+      "validation_accuracy": 0.5,
+      "test_accuracy": 0.5,
+      "test_metrics": {
+        "accuracy": 0.5,
+        "precision": 0.6469356955380577,
+        "recall": 0.5,
+        "f1_score": 0.484724472986179
+      }
+    },
+    "config": {
+      "model_name": "xgboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "xgboost_087d4763_9421d359": {
+    "timestamp": 1758686477.074901,
+    "file_path": "cache/models\\xgboost\\087d4763\\9421d3591b004c26ee54804bd42c1e061da48562ad88f2094052ad0d8a9b0f3d",
+    "cache_name": "xgboost_087d4763_9421d359",
+    "model_key": "xgboost",
+    "dataset_id": "087d4763",
+    "config_hash": "9421d3591b004c26ee54804bd42c1e061da48562ad88f2094052ad0d8a9b0f3d",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.json",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": 6,
+      "eta": 0.3,
+      "subsample": 1.0,
+      "colsample_bytree": 1.0,
+      "min_child_weight": 1,
+      "reg_lambda": 1.0,
+      "reg_alpha": 0.0,
+      "random_state": 42,
+      "verbosity": 0,
+      "tree_method": "gpu_hist",
+      "predictor": "gpu_predictor"
+    },
+    "metrics": {
+      "validation_accuracy": 0.645,
+      "test_accuracy": 0.645,
+      "test_metrics": {
+        "accuracy": 0.645,
+        "precision": 0.6594973569365049,
+        "recall": 0.645,
+        "f1_score": 0.6303258218175942
+      }
+    },
+    "config": {
+      "model_name": "xgboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "xgboost_9f20e655_9421d359": {
+    "timestamp": 1758688322.5946434,
+    "file_path": "cache/models\\xgboost\\9f20e655\\9421d3591b004c26ee54804bd42c1e061da48562ad88f2094052ad0d8a9b0f3d",
+    "cache_name": "xgboost_9f20e655_9421d359",
+    "model_key": "xgboost",
+    "dataset_id": "9f20e655",
+    "config_hash": "9421d3591b004c26ee54804bd42c1e061da48562ad88f2094052ad0d8a9b0f3d",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.json",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": 6,
+      "eta": 0.3,
+      "subsample": 1.0,
+      "colsample_bytree": 1.0,
+      "min_child_weight": 1,
+      "reg_lambda": 1.0,
+      "reg_alpha": 0.0,
+      "random_state": 42,
+      "verbosity": 0,
+      "tree_method": "gpu_hist",
+      "predictor": "gpu_predictor"
+    },
+    "metrics": {
+      "validation_accuracy": 0.785,
+      "test_accuracy": 0.785,
+      "test_metrics": {
+        "accuracy": 0.785,
+        "precision": 0.794249245852187,
+        "recall": 0.785,
+        "f1_score": 0.7800639180631086
+      }
+    },
+    "config": {
+      "model_name": "xgboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  },
+  "xgboost_dca26605_63ac21f4": {
+    "timestamp": 1758685949.0833254,
+    "file_path": "cache/models\\xgboost\\dca26605\\63ac21f4a6ac7ea941b9ca4ff0e118ec92d25839fcb49a05b6d9d6cf32119bc0",
+    "cache_name": "xgboost_dca26605_63ac21f4",
+    "model_key": "xgboost",
+    "dataset_id": "dca26605",
+    "config_hash": "63ac21f4a6ac7ea941b9ca4ff0e118ec92d25839fcb49a05b6d9d6cf32119bc0",
+    "cache_type": "per_model",
+    "files": [
+      "config.json",
+      "eval_predictions.parquet",
+      "fingerprint.json",
+      "metrics.json",
+      "model.json",
+      "params.json"
+    ],
+    "params": {
+      "n_estimators": 100,
+      "max_depth": 6,
+      "eta": 0.3,
+      "subsample": 1.0,
+      "colsample_bytree": 1.0,
+      "min_child_weight": 1,
+      "reg_lambda": 1.0,
+      "reg_alpha": 0.0,
+      "random_state": 42,
+      "verbosity": 0,
+      "tree_method": "gpu_hist",
+      "predictor": "gpu_predictor"
+    },
+    "metrics": {
+      "validation_accuracy": 0.45,
+      "test_accuracy": 0.45,
+      "test_metrics": {
+        "accuracy": 0.45,
+        "precision": 0.46842105263157896,
+        "recall": 0.45,
+        "f1_score": 0.32275132275132273
+      }
+    },
+    "config": {
+      "model_name": "xgboost",
+      "cv_folds": 5,
+      "random_state": 42
+    }
+  }
+}

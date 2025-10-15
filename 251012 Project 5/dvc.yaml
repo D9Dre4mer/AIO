@@ -1,0 +1,57 @@
+stages:
+  ingest:
+    cmd: python -m src.ingest.main
+    deps:
+    - data/
+    - src/ingest/
+    outs:
+    - data/processed/
+    params:
+    - params.yaml:ingest
+    metrics:
+    - metrics/ingest.json
+
+  fe:
+    cmd: python -m src.fe.main
+    deps:
+    - data/processed/
+    - src/fe/
+    outs:
+    - data/features/
+    params:
+    - params.yaml:fe
+    metrics:
+    - metrics/fe.json
+
+  train:
+    cmd: python -m src.train.main
+    deps:
+    - data/features/
+    - src/train/
+    outs:
+    - models/
+    params:
+    - params.yaml:train
+    metrics:
+    - metrics/train.json
+
+  eval:
+    cmd: python -m src.eval.main
+    deps:
+    - models/
+    - data/features/
+    - src/eval/
+    outs:
+    - artifacts/
+    params:
+    - params.yaml:eval
+    metrics:
+    - metrics/eval.json
+
+  serve:
+    cmd: python -m src.serve.main
+    deps:
+    - models/
+    - src/serve/
+    params:
+    - params.yaml:serve

@@ -1,0 +1,53 @@
+# Global parameters
+seed: 42
+test_size: 0.2
+validation_size: 0.2
+
+# Ingest parameters
+ingest:
+  max_samples: 100000
+  categories_limit: 5
+  cache_dir: "./cache"
+
+# Feature engineering parameters
+fe:
+  bow_max_features: 30000
+  tfidf_max_features: 30000
+  svd_components: 400
+  embedding_model: "sentence-transformers/allenai-specter"
+
+# Training parameters
+train:
+  cv_folds: 5
+  models:
+    - "kmeans"
+    - "knn"
+    - "decision_tree"
+    - "naive_bayes"
+    - "random_forest"
+    - "xgboost"
+    - "lightgbm"
+    - "catboost"
+  optuna:
+    n_trials: 100
+    timeout: null
+    direction: "maximize"
+
+# Evaluation parameters
+eval:
+  metrics:
+    - "accuracy"
+    - "precision"
+    - "recall"
+    - "f1"
+    - "confusion_matrix"
+  generate_report: true
+  generate_model_card: true
+
+# Serving parameters
+serve:
+  host: "0.0.0.0"
+  port: 8000
+  model_name: "app_model"
+  model_stage: "Staging"
+  workers: 1

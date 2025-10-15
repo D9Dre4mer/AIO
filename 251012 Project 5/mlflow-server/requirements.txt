@@ -1,0 +1,30 @@
+# MLflow Server Requirements
+# Core MLflow packages
+mlflow==3.4.0
+mlflow-skinny==3.4.0
+
+# Database support
+sqlalchemy>=1.4.0
+psycopg2-binary>=2.8.6  # PostgreSQL support
+pymysql>=1.0.2          # MySQL support
+
+# Authentication and security
+mlflow[extras]==3.4.0   # Includes authentication plugins
+
+# Monitoring and logging
+prometheus-client>=0.16.0
+gunicorn>=20.1.0
+
+# Additional ML libraries for model serving
+scikit-learn>=1.0.0
+pandas>=1.3.0
+numpy>=1.21.0
+
+# Cloud storage support (optional)
+boto3>=1.26.0           # AWS S3
+azure-storage-blob>=12.0.0  # Azure Blob Storage
+google-cloud-storage>=2.7.0  # Google Cloud Storage
+
+# Development and testing
+pytest>=7.0.0
+pytest-cov>=4.0.0

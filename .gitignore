@@ -45,3 +45,4 @@ ENV/
 .cursorignore
 *.csv
 *.zip
+*.pdf
