@@ -154,3 +154,49 @@ node_modules/
 # Backup files
 *.backup
 *.bak
+
+# Project 5 specific patterns
+# Large datasets (uncomment if needed)
+# *.csv
+# *.zip
+# *.tar.gz
+
+# Model artifacts
+*.pkl
+*.joblib
+*.h5
+*.pb
+*.onnx
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Conda environments
+.conda/
+
+# Streamlit cache
+.streamlit/
+
+# MLflow artifacts
+mlruns/
+mlflow.db
+mlartifacts/
+
+# DVC cache
+.dvc/cache/
+
+# Large data files in Project 5
+251012 Project 5/data/*.csv
+251012 Project 5/data/*.zip
+251012 Project 5/data/archive.zip
+251012 Project 5/data/heart+disease.zip
+
+# Project 5 artifacts
+251012 Project 5/artifacts/
+251012 Project 5/cache/
+251012 Project 5/mlruns/
+251012 Project 5/metrics/
+
+# Project 5 monitoring data
+251012 Project 5/monitoring/grafana/data/
+251012 Project 5/monitoring/prometheus/data/

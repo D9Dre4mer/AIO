@@ -52,42 +52,51 @@ Dựa trên phân tích từ SHAP values và confusion matrices, chúng ta nhậ
 \hline
 \multicolumn{7}{|c|}{\textbf{Tree-Based Models}} \\
 \hline
-CatBoost & StandardScaler & 93.33 & \textbf{93.55} & 0.935 & 17.61 & 1 \\
-CatBoost & MinMaxScaler & 93.33 & \textbf{93.55} & 0.935 & 16.53 & 2 \\
-CatBoost & RobustScaler & 93.33 & \textbf{93.55} & 0.935 & 15.42 & 3 \\
-Random Forest & StandardScaler & 96.67 & 87.10 & 0.871 & 2.47 & 4 \\
-Random Forest & MinMaxScaler & 96.67 & 87.10 & 0.871 & 2.53 & 5 \\
-Random Forest & RobustScaler & 96.67 & 87.10 & 0.871 & 2.48 & 6 \\
-XGBoost & StandardScaler & 93.33 & 87.10 & 0.871 & 3.67 & 7 \\
-XGBoost & MinMaxScaler & 93.33 & 87.10 & 0.871 & 3.39 & 8 \\
-XGBoost & RobustScaler & 93.33 & 87.10 & 0.871 & 3.45 & 9 \\
+CatBoost & StandardScaler & 93.33 & \textbf{93.55} & 0.936 & 16.2 & 1 \\
+CatBoost & MinMaxScaler & 93.33 & \textbf{93.55} & 0.936 & 15.6 & 2 \\
+CatBoost & RobustScaler & 93.33 & \textbf{93.55} & 0.936 & 12.6 & 3 \\
+Random Forest & StandardScaler & 96.67 & \textbf{87.10} & 0.871 & 2.7 & 4 \\
+Random Forest & MinMaxScaler & 96.67 & \textbf{87.10} & 0.871 & 2.6 & 5 \\
+Random Forest & RobustScaler & 96.67 & \textbf{87.10} & 0.871 & 1.7 & 6 \\
+XGBoost & StandardScaler & 93.33 & \textbf{87.10} & 0.871 & 3.5 & 7 \\
+XGBoost & MinMaxScaler & 93.33 & \textbf{87.10} & 0.871 & 3.4 & 8 \\
+XGBoost & RobustScaler & 93.33 & \textbf{87.10} & 0.871 & 2.7 & 9 \\
+Gradient Boosting & MinMaxScaler & 93.33 & \textbf{83.87} & 0.839 & 4.5 & 10 \\
+AdaBoost & StandardScaler & 96.67 & \textbf{80.65} & 0.807 & 1.2 & 11 \\
+AdaBoost & MinMaxScaler & 96.67 & \textbf{80.65} & 0.807 & 1.2 & 12 \\
+AdaBoost & RobustScaler & 96.67 & \textbf{80.65} & 0.807 & 0.8 & 13 \\
+LightGBM & StandardScaler & 100.00 & \textbf{80.65} & 0.804 & 3.7 & 14 \\
+LightGBM & MinMaxScaler & 100.00 & \textbf{80.65} & 0.804 & 3.7 & 15 \\
+LightGBM & RobustScaler & 100.00 & \textbf{80.65} & 0.804 & 3.1 & 16 \\
+Gradient Boosting & StandardScaler & 93.33 & \textbf{80.65} & 0.807 & 4.0 & 17 \\
+Gradient Boosting & RobustScaler & 93.33 & \textbf{80.65} & 0.806 & 2.0 & 18 \\
 \hline
 \multicolumn{7}{|c|}{\textbf{Classical Machine Learning}} \\
 \hline
-SVM & RobustScaler & 93.33 & \textbf{90.32} & 0.903 & 0.031 & \textbf{Winner Performance} \\
-Decision Tree & MinMaxScaler & 73.33 & 74.19 & 0.741 & 0.023 & Baseline Speed \\
-Decision Tree & StandardScaler & 70.00 & 74.19 & 0.741 & 0.022 & Fastest Training \\
-Decision Tree & RobustScaler & 70.00 & 74.19 & 0.741 & 0.020 & Ultra-fast \\
-Logistic Regression & StandardScaler & 93.33 & 80.65 & 0.807 & 0.048 & Stable Linear \\
-Logistic Regression & MinMaxScaler & 90.00 & 80.65 & 0.807 & 0.045 & MinMax Optimal \\
-Logistic Regression & RobustScaler & 93.33 & 80.65 & 0.807 & 0.040 & Robust Baseline \\
-KNN & StandardScaler & 93.33 & 87.10 & 0.870 & 0.033 & Distance Optimal \\
-KNN & RobustScaler & 93.33 & 80.65 & 0.807 & 0.023 & Moderate Distance \\
-KNN & MinMaxScaler & 86.67 & 74.19 & 0.742 & 0.022 & Distance Sensitive \\
-Naive Bayes & StandardScaler & 90.00 & 83.87 & 0.839 & 0.016 & Fastest Probabilistic \\
-Naive Bayes & MinMaxScaler & 90.00 & 83.87 & 0.839 & 0.016 & Speed Champion \\
-Naive Bayes & RobustScaler & 90.00 & 83.87 & 0.839 & 0.015 & Ultra-efficient \\
-SVM & StandardScaler & 96.67 & 83.87 & 0.839 & 0.033 & Moderate SVM \\
-SVM & MinMaxScaler & 53.33 & 54.84 & 0.388 & 0.027 & Scaler Failure \\
+SVM & MinMaxScaler & 93.33 & \textbf{90.32} & 0.903 & 0.0 & Winner Performance \\
+KNN & RobustScaler & 93.33 & \textbf{87.10} & 0.870 & 0.0 & Distance Optimal \\
+Naive Bayes & StandardScaler & 90.00 & \textbf{83.87} & 0.839 & 0.0 & Fastest Probabilistic \\
+Naive Bayes & MinMaxScaler & 90.00 & \textbf{83.87} & 0.839 & 0.0 & Speed Champion \\
+Naive Bayes & RobustScaler & 90.00 & \textbf{83.87} & 0.839 & 0.0 & Ultra-efficient \\
+SVM & RobustScaler & 96.67 & \textbf{83.87} & 0.839 & 0.0 & Moderate SVM \\
+Logistic Regression & StandardScaler & 90.00 & \textbf{80.65} & 0.807 & 0.0 & Stable Linear \\
+Logistic Regression & MinMaxScaler & 93.33 & \textbf{80.65} & 0.807 & 0.0 & MinMax Optimal \\
+Logistic Regression & RobustScaler & 93.33 & \textbf{80.65} & 0.807 & 0.0 & Robust Baseline \\
+KNN & MinMaxScaler & 93.33 & \textbf{80.65} & 0.807 & 0.0 & Moderate Distance \\
+KNN & StandardScaler & 86.67 & \textbf{74.19} & 0.742 & 0.0 & Distance Sensitive \\
+Decision Tree & StandardScaler & 73.33 & \textbf{74.19} & 0.741 & 0.0 & Baseline Speed \\
+Decision Tree & MinMaxScaler & 70.00 & \textbf{74.19} & 0.741 & 0.0 & Fastest Training \\
+Decision Tree & RobustScaler & 70.00 & \textbf{74.19} & 0.741 & 0.0 & Ultra-fast \\
+SVM & StandardScaler & 53.33 & \textbf{54.84} & 0.388 & 0.0 & Scaler Failure \\
 \hline
 \multicolumn{7}{|c|}{\textbf{Ensemble Methods}} \\
 \hline
-Stacking Ensemble & StandardScaler & 87.10 & 87.10 & 0.871 & 7.73 & Meta-learning \\
-Stacking Ensemble & RobustScaler & 87.10 & 87.10 & 0.871 & 7.23 & Hierarchical \\
-Stacking Ensemble & MinMaxScaler & 83.87 & 83.87 & 0.838 & 6.01 & Ensemble Stable \\
-Voting Ensemble & RobustScaler & 87.10 & 87.10 & 0.871 & 1.90 & Democratic \\
-Voting Ensemble & StandardScaler & 83.87 & 83.87 & 0.839 & 2.03 & Majority Voting \\
-Voting Ensemble & MinMaxScaler & 83.87 & 83.87 & 0.838 & 1.57 & Fast Ensemble \\
+Voting Ensemble Hard & MinMaxScaler & 87.10 & \textbf{87.10} & 0.871 & 2.1 & Democratic \\
+Stacking Ensemble Logistic Regression & RobustScaler & 87.10 & \textbf{87.10} & 0.871 & 7.6 & Hierarchical \\
+Stacking Ensemble Logistic Regression & MinMaxScaler & 87.10 & \textbf{87.10} & 0.871 & 7.3 & Meta-learning \\
+Stacking Ensemble Logistic Regression & StandardScaler & 83.87 & \textbf{83.87} & 0.838 & 6.4 & Ensemble Stable \\
+Voting Ensemble Hard & StandardScaler & 83.87 & \textbf{83.87} & 0.839 & 1.7 & Majority Voting \\
+Voting Ensemble Hard & RobustScaler & 83.87 & \textbf{83.87} & 0.839 & 2.0 & Fast Ensemble \\
 \hline
 \end{tabular}%
 }
@@ -102,53 +111,53 @@ Voting Ensemble & MinMaxScaler & 83.87 & 83.87 & 0.838 & 1.57 & Fast Ensemble \\
 \hline
 \textbf{Mô hình} & \textbf{Scaler} & \textbf{Validation Accuracy (\%)} & \textbf{Test Accuracy (\%)} & \textbf{F1-Score} & \textbf{Training Time (s)} & \textbf{Rank Performance} \\
 \hline
-\multicolumn{7}{|c|}{\textbf{Tree-Based Models - Perfect Performance Tier}} \\
+\multicolumn{7}{|c|}{\textbf{Tree-Based Models}} \\
 \hline
-Random Forest & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 3.17 & Perfect \\
-Random Forest & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 3.49 & Ultimate \\
-Random Forest & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 3.73 & Maximum \\
-LightGBM & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 6.37 & Optimal \\
-LightGBM & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 6.19 & Excellent \\
-LightGBM & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 6.34 & Superior \\
-CatBoost & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 19.72 & Champion \\
-CatBoost & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 19.96 & Excellence \\
-CatBoost & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 19.60 & Outstanding \\
-Gradient Boosting & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 3.93 & Superior \\
-Gradient Boosting & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 3.92 & Perfect \\
-Gradient Boosting & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 3.96 & Optimal \\
-Decision Tree & StandardScaler & 98.04 & 99.03 & 0.990 & 0.033 & Near-perfect \\
-Decision Tree & MinMaxScaler & 98.04 & 99.03 & 0.990 & 0.032 & Excellent Speed \\
-Decision Tree & RobustScaler & 98.04 & 99.03 & 0.990 & 0.028 & Ultra-fast \\
-XGBoost & StandardScaler & 100.00 & 96.12 & 0.962 & 4.69 & High Performance \\
-XGBoost & MinMaxScaler & 100.00 & 96.12 & 0.962 & 4.63 & Strong \\
-XGBoost & RobustScaler & 100.00 & 96.12 & 0.962 & 4.15 & Robust \\
+Random Forest & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 2.1 & Perfect \\
+Random Forest & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 3.5 & Ultimate \\
+Random Forest & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 3.3 & Maximum \\
+Gradient Boosting & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 2.7 & Optimal \\
+Gradient Boosting & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 2.7 & Excellent \\
+Gradient Boosting & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 5.7 & Superior \\
+LightGBM & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 8.1 & Champion \\
+LightGBM & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 7.9 & Excellence \\
+LightGBM & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 8.0 & Outstanding \\
+CatBoost & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 17.2 & Superior \\
+CatBoost & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 16.7 & Perfect \\
+CatBoost & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 22.9 & Optimal \\
+XGBoost & StandardScaler & 100.00 & \textbf{96.12} & 0.961 & 4.7 & High Performance \\
+XGBoost & MinMaxScaler & 100.00 & \textbf{96.12} & 0.961 & 3.9 & Strong \\
+XGBoost & RobustScaler & 100.00 & \textbf{96.12} & 0.961 & 4.8 & Robust \\
+AdaBoost & StandardScaler & 89.22 & \textbf{85.44} & 0.854 & 0.9 & Moderate \\
+AdaBoost & MinMaxScaler & 89.22 & \textbf{85.44} & 0.854 & 0.9 & Consistent \\
+AdaBoost & RobustScaler & 89.22 & \textbf{85.44} & 0.854 & 1.4 & Adaptive \\
 \hline
-\multicolumn{7}{|c|}{\textbf{Classical Machine Learning - Moderate Performance}} \\
+\multicolumn{7}{|c|}{\textbf{Classical Machine Learning}} \\
 \hline
-AdaBoost & StandardScaler & 89.22 & 85.44 & 0.854 & 1.25 & Moderate \\
-AdaBoost & MinMaxScaler & 89.22 & 85.44 & 0.854 & 1.32 & Consistent \\
-AdaBoost & RobustScaler & 89.22 & 85.44 & 0.854 & 1.33 & Adaptive \\
-Logistic Regression & MinMaxScaler & 80.39 & 81.55 & 0.814 & 0.095 & Best Linear \\
-Logistic Regression & StandardScaler & 81.37 & 80.58 & 0.804 & 0.047 & Standard Linear \\
-Logistic Regression & RobustScaler & 81.37 & 80.58 & 0.804 & 0.052 & Robust Linear \\
-KNN & RobustScaler & 89.22 & 84.47 & 0.845 & 0.061 & Distance Good \\
-KNN & MinMaxScaler & 88.24 & 82.52 & 0.825 & 0.055 & Moderate Distance \\
-KNN & StandardScaler & 89.22 & 83.50 & 0.835 & 0.056 & Standard Distance \\
-Naive Bayes & StandardScaler & 83.33 & 82.52 & 0.825 & 0.015 & Fastest \\
-Naive Bayes & MinMaxScaler & 83.33 & 82.52 & 0.825 & 0.017 & Speed Leader \\
-Naive Bayes & RobustScaler & 83.33 & 82.52 & 0.825 & 0.019 & Ultra-efficient \\
-SVM & RobustScaler & 75.49 & 80.58 & 0.797 & 0.032 & Scaler Dependent \\
-SVM & StandardScaler & 76.47 & 78.64 & 0.783 & 0.030 & Moderate SVM \\
-SVM & MinMaxScaler & 50.98 & 51.46 & 0.350 & 0.034 & Scaler Failure \\
+Decision Tree & StandardScaler & 98.04 & \textbf{99.03} & 0.990 & 0.0 & Near-perfect \\
+Decision Tree & MinMaxScaler & 98.04 & \textbf{99.03} & 0.990 & 0.0 & Excellent Speed \\
+Decision Tree & RobustScaler & 98.04 & \textbf{99.03} & 0.990 & 0.0 & Ultra-fast \\
+KNN & MinMaxScaler & 89.22 & \textbf{84.47} & 0.845 & 0.0 & Distance Good \\
+KNN & RobustScaler & 89.22 & \textbf{83.50} & 0.835 & 0.1 & Moderate Distance \\
+KNN & StandardScaler & 88.24 & \textbf{82.52} & 0.825 & 0.0 & Standard Distance \\
+Naive Bayes & StandardScaler & 83.33 & \textbf{82.52} & 0.825 & 0.0 & Fastest \\
+Naive Bayes & MinMaxScaler & 83.33 & \textbf{82.52} & 0.825 & 0.0 & Speed Leader \\
+Naive Bayes & RobustScaler & 83.33 & \textbf{82.52} & 0.825 & 0.0 & Ultra-efficient \\
+Logistic Regression & StandardScaler & 80.39 & \textbf{81.55} & 0.814 & 0.0 & Best Linear \\
+Logistic Regression & MinMaxScaler & 81.37 & \textbf{80.58} & 0.804 & 0.0 & Standard Linear \\
+Logistic Regression & RobustScaler & 81.37 & \textbf{80.58} & 0.804 & 0.1 & Robust Linear \\
+SVM & MinMaxScaler & 75.49 & \textbf{80.58} & 0.797 & 0.0 & Scaler Dependent \\
+SVM & RobustScaler & 76.47 & \textbf{78.64} & 0.783 & 0.1 & Moderate SVM \\
+SVM & StandardScaler & 50.98 & \textbf{51.46} & 0.350 & 0.0 & Scaler Failure \\
 \hline
 \multicolumn{7}{|c|}{\textbf{Ensemble Methods}} \\
 \hline
-Stacking Ensemble & StandardScaler & 0.00 & \textbf{100.00} & 1.000 & 23.56 & Perfect Ensemble \\
-Stacking Ensemble & RobustScaler & 0.00 & \textbf{100.00} & 1.000 & 22.78 & Ultimate Meta \\
-Stacking Ensemble & MinMaxScaler & 0.00 & \textbf{100.00} & 1.000 & 23.80 & Maximum Learning \\
-Voting Ensemble & RobustScaler & 0.00 & 98.06 & 0.981 & 6.14 & Democratic \\
-Voting Ensemble & MinMaxScaler & 0.00 & 98.06 & 0.981 & 5.92 & Majority \\
-Voting Ensemble & StandardScaler & 0.00 & 96.12 & 0.962 & 6.34 & Voting Good \\
+Stacking Ensemble Logistic Regression & StandardScaler & 100.00 & \textbf{100.00} & 1.000 & 22.7 & Perfect Ensemble \\
+Stacking Ensemble Logistic Regression & MinMaxScaler & 100.00 & \textbf{100.00} & 1.000 & 25.9 & Ultimate Meta \\
+Stacking Ensemble Logistic Regression & RobustScaler & 100.00 & \textbf{100.00} & 1.000 & 20.0 & Maximum Learning \\
+Voting Ensemble Hard & MinMaxScaler & 98.06 & \textbf{98.06} & 0.981 & 5.0 & Democratic \\
+Voting Ensemble Hard & StandardScaler & 98.06 & \textbf{98.06} & 0.981 & 5.1 & Majority \\
+Voting Ensemble Hard & RobustScaler & 96.12 & \textbf{96.12} & 0.961 & 5.2 & Voting Good \\
 \hline
 \end{tabular}%
 }
