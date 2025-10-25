@@ -38,6 +38,15 @@ except ImportError:
         from .session_manager import SessionManager
     except ImportError:
         from session_manager import SessionManager
+
+# Import MLflow integration
+try:
+    from src.mlflow_integration import MLflowTracker, ModelRegistry, log_experiment_results
+    MLFLOW_AVAILABLE = True
+except ImportError:
+    MLFLOW_AVAILABLE = False
+    print("Warning: MLflow integration not available")
+
 # from training_pipeline import StreamlitTrainingPipeline
 
 # FIXED: Create global SessionManager instance for persistence
@@ -819,6 +828,32 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
         import os
         import pandas as pd
         
+        # Initialize MLflow tracker if available
+        mlflow_tracker = None
+        if MLFLOW_AVAILABLE:
+            try:
+                # Get MLflow config from Step 3
+                step3_data = session_manager.get_step_data(3) or {}
+                mlflow_config = step3_data.get('mlflow_config', {})
+                
+                if mlflow_config.get('enabled', True):  # Default to enabled
+                    # Set tracking URI if provided
+                    if mlflow_config.get('tracking_uri'):
+                        import mlflow
+                        mlflow.set_tracking_uri(mlflow_config['tracking_uri'])
+                    
+                    experiment_name = mlflow_config.get('experiment_name', 'streamlit_ml_training')
+                    mlflow_tracker = MLflowTracker(experiment_name=experiment_name)
+                    with log_container:
+                        st.info(f"🔬 MLflow experiment tracking enabled: {experiment_name}")
+                else:
+                    with log_container:
+                        st.info("ℹ️ MLflow tracking disabled by user configuration")
+            except Exception as e:
+                with log_container:
+                    st.warning(f"⚠️ MLflow tracking failed: {e}")
+                mlflow_tracker = None
+        
         with log_container:
             st.info(f"Starting train_models_with_scaling for {scaler_name}")
         
@@ -967,21 +1002,79 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 from collections import Counter
                 support = sum(Counter(y_test).values())  # Total support
                 
-                scaler_results[model_name] = {
-                    'model': final_model,
-                    'accuracy': test_accuracy,  # Use test accuracy as final metric
-                    'validation_accuracy': best_score,  # Keep validation accuracy for reference
-                    'f1_score': f1,
-                    'precision': precision,
-                    'recall': recall,
-                    'support': support,
-                    'cv_mean': cv_mean,  # Validation score (no double validation)
-                    'cv_std': cv_std,    # No CV std (avoid double validation)
-                    'training_time': training_time,
-                    'params': best_params,
-                    'status': 'success',
-                    'cached': False
-                }
+                       scaler_results[model_name] = {
+                           'model': final_model,
+                           'accuracy': test_accuracy,  # Use test accuracy as final metric
+                           'validation_accuracy': best_score,  # Keep validation accuracy for reference
+                           'f1_score': f1,
+                           'precision': precision,
+                           'recall': recall,
+                           'support': support,
+                           'cv_mean': cv_mean,  # Validation score (no double validation)
+                           'cv_std': cv_std,    # No CV std (avoid double validation)
+                           'training_time': training_time,
+                           'params': best_params,
+                           'status': 'success',
+                           'cached': False
+                       }
+                       
+                       # Log to MLflow if available
+                       if mlflow_tracker:
+                           try:
+                               with mlflow_tracker.start_run(run_name=f"{model_name}_{scaler_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+                                   # Log parameters
+                                   mlflow_params = {
+                                       'model_name': model_name,
+                                       'scaler_name': scaler_name,
+                                       'optuna_enabled': optuna_enabled,
+                                       'optuna_trials': optuna_config.get('trials', 0) if optuna_enabled else 0,
+                                       'train_size': len(X_train_scaled),
+                                       'val_size': len(X_val_scaled),
+                                       'test_size': len(X_test_scaled),
+                                       'num_features': X_train_scaled.shape[1],
+                                       'num_classes': len(set(y_train)),
+                                       **best_params
+                                   }
+                                   mlflow_tracker.log_params(mlflow_params)
+                                   
+                                   # Log metrics
+                                   mlflow_metrics = {
+                                       'test_accuracy': test_accuracy,
+                                       'validation_accuracy': best_score,
+                                       'f1_score': f1,
+                                       'precision': precision,
+                                       'recall': recall,
+                                       'training_time': training_time,
+                                       'cv_mean': cv_mean,
+                                       'cv_std': cv_std
+                                   }
+                                   mlflow_tracker.log_metrics(mlflow_metrics)
+                                   
+                                   # Log model with auto-registration if enabled
+                                   step3_data = session_manager.get_step_data(3) or {}
+                                   mlflow_config = step3_data.get('mlflow_config', {})
+                                   auto_register = mlflow_config.get('auto_register_models', True)
+                                   
+                                   registered_model_name = f"{model_name}_{scaler_name}" if auto_register else None
+                                   mlflow_tracker.log_model(final_model, f"models/{model_name}_{scaler_name}", 
+                                                          registered_model_name=registered_model_name)
+                                   
+                                   # Log model info
+                                   model_info = {
+                                       'model_name': model_name,
+                                       'scaler_name': scaler_name,
+                                       'best_params': best_params,
+                                       'metrics': mlflow_metrics,
+                                       'timestamp': datetime.now().isoformat()
+                                   }
+                                   mlflow_tracker.log_dict(model_info, f"model_info_{model_name}_{scaler_name}.json")
+                                   
+                                   with log_container:
+                                       st.success(f"🔬 MLflow logged: {model_name}_{scaler_name}")
+                                       
+                           except Exception as mlflow_error:
+                               with log_container:
+                                   st.warning(f"⚠️ MLflow logging failed for {model_name}: {mlflow_error}")
                 
                 with log_container:
                     st.success(f"✅ {model_name} ({scaler_name}): Val={best_score:.4f}, Test={test_accuracy:.4f} ({training_time:.2f}s)")
@@ -3255,6 +3348,48 @@ def render_optuna_configuration():
     """Render Optuna optimization configuration"""
     st.subheader("🎯 Optuna Hyperparameter Optimization")
     
+    # MLflow Configuration
+    if MLFLOW_AVAILABLE:
+        st.markdown("---")
+        st.subheader("🔬 MLflow Experiment Tracking")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            enable_mlflow = st.checkbox("Enable MLflow Tracking", value=True, key="enable_mlflow")
+            mlflow_experiment_name = st.text_input(
+                "Experiment Name:",
+                value="streamlit_ml_training",
+                key="mlflow_experiment_name",
+                help="Name for MLflow experiment"
+            )
+        
+        with col2:
+            mlflow_tracking_uri = st.text_input(
+                "Tracking URI:",
+                value="http://localhost:5000",
+                key="mlflow_tracking_uri",
+                help="MLflow tracking server URI"
+            )
+            auto_register_models = st.checkbox("Auto-register Models", value=True, key="auto_register_models")
+        
+        # Save MLflow configuration
+        mlflow_config = {
+            'enabled': enable_mlflow,
+            'experiment_name': mlflow_experiment_name,
+            'tracking_uri': mlflow_tracking_uri,
+            'auto_register_models': auto_register_models
+        }
+        
+        session_manager.update_step_data(3, 'mlflow_config', mlflow_config)
+        
+        if enable_mlflow:
+            st.success("✅ MLflow tracking will be enabled for all training runs")
+        else:
+            st.info("ℹ️ MLflow tracking disabled")
+    
+    st.markdown("---")
+    
     # Enable/Disable Optuna
     enable_optuna = st.checkbox("Enable Optuna Optimization", value=False, key="enable_optuna")
     
@@ -4457,33 +4592,214 @@ def render_step4_wireframe():
     render_navigation_buttons()
 
 def render_step5_wireframe():
-    """Render Step 5 - SHAP Visualization & Confusion Matrix"""
+    """Render Step 5 - Results Analysis & Model Registry"""
     
     # Step title
     st.markdown("""
     <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-        📍 STEP 5/5: SHAP Visualization & Confusion Matrix
+        📍 STEP 5/5: Results Analysis & Model Registry
     </h2>
     """, unsafe_allow_html=True)
     
-    # Create tabs for SHAP and Confusion Matrix
-    tab1, tab2, tab3 = st.tabs([
-        "🔍 SHAP Analysis", 
-        "📊 Confusion Matrix", 
-        "📈 Model Comparison"
-    ])
-    
-    with tab1:
-        render_shap_analysis()
-    
-    with tab2:
-        render_confusion_matrix()
-    
-    with tab3:
-        render_model_comparison()
+    # Create tabs for different analysis types
+    if MLFLOW_AVAILABLE:
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "🔍 SHAP Analysis", 
+            "📊 Confusion Matrix",
+            "📈 Model Comparison",
+            "🔬 MLflow Experiments"
+        ])
+        
+        with tab1:
+            render_shap_analysis()
+        
+        with tab2:
+            render_confusion_matrix()
+        
+        with tab3:
+            render_model_comparison()
+            
+        with tab4:
+            render_mlflow_experiments()
+    else:
+        tab1, tab2, tab3 = st.tabs([
+            "🔍 SHAP Analysis", 
+            "📊 Confusion Matrix",
+            "📈 Model Comparison"
+        ])
+        
+        with tab1:
+            render_shap_analysis()
+        
+        with tab2:
+            render_confusion_matrix()
+        
+        with tab3:
+            render_model_comparison()
     
     # Navigation buttons
     render_navigation_buttons()
+
+
+def render_mlflow_experiments():
+    """Render MLflow experiments and model registry interface"""
+    
+    if not MLFLOW_AVAILABLE:
+        st.error("❌ MLflow integration not available. Please install MLflow and ensure src/mlflow_integration.py exists.")
+        return
+    
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, #0d5f3c 0%, #16a085 100%); padding: 1rem; border-radius: 10px; color: white; text-align: center; margin-bottom: 2rem;">
+        <h3>🔬 MLflow Experiment Tracking & Model Registry</h3>
+        <p>View experiments, compare models, and manage model versions</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    try:
+        import mlflow
+        from mlflow.tracking import MlflowClient
+        
+        # Initialize MLflow client
+        client = MlflowClient()
+        
+        # Get experiments
+        experiments = client.search_experiments()
+        
+        if not experiments:
+            st.info("ℹ️ No experiments found. Run some training to see experiments here.")
+            return
+        
+        # Experiment selection
+        experiment_names = [exp.name for exp in experiments]
+        selected_experiment = st.selectbox(
+            "Select Experiment:",
+            experiment_names,
+            help="Choose an experiment to view runs and models"
+        )
+        
+        if selected_experiment:
+            # Get experiment details
+            experiment = next(exp for exp in experiments if exp.name == selected_experiment)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Experiment ID", experiment.experiment_id)
+            with col2:
+                st.metric("Artifact Location", experiment.artifact_location.split('/')[-1] if experiment.artifact_location else "N/A")
+            with col3:
+                st.metric("Lifecycle Stage", experiment.lifecycle_stage)
+            
+            # Get runs for this experiment
+            runs = client.search_runs(experiment_ids=[experiment.experiment_id], max_results=50)
+            
+            if runs:
+                st.subheader(f"📊 Runs in {selected_experiment}")
+                
+                # Create runs dataframe
+                runs_data = []
+                for run in runs:
+                    runs_data.append({
+                        'Run ID': run.info.run_id[:8],
+                        'Name': run.data.tags.get('mlflow.runName', 'N/A'),
+                        'Status': run.info.status,
+                        'Start Time': run.info.start_time,
+                        'Accuracy': run.data.metrics.get('test_accuracy', 0),
+                        'F1 Score': run.data.metrics.get('f1_score', 0),
+                        'Training Time': run.data.metrics.get('training_time', 0),
+                        'Model Name': run.data.tags.get('model_name', 'N/A'),
+                        'Scaler': run.data.tags.get('scaler_name', 'N/A')
+                    })
+                
+                runs_df = pd.DataFrame(runs_data)
+                runs_df['Start Time'] = pd.to_datetime(runs_df['Start Time'], unit='ms')
+                
+                # Display runs table
+                st.dataframe(runs_df, use_container_width=True)
+                
+                # Model comparison chart
+                if len(runs_df) > 1:
+                    st.subheader("📈 Model Performance Comparison")
+                    
+                    # Create comparison chart
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    
+                    # Group by model name and scaler
+                    comparison_data = runs_df.groupby(['Model Name', 'Scaler']).agg({
+                        'Accuracy': 'mean',
+                        'F1 Score': 'mean',
+                        'Training Time': 'mean'
+                    }).reset_index()
+                    
+                    # Create bar chart
+                    x_pos = range(len(comparison_data))
+                    width = 0.35
+                    
+                    ax.bar([x - width/2 for x in x_pos], comparison_data['Accuracy'], width, label='Accuracy', alpha=0.8)
+                    ax.bar([x + width/2 for x in x_pos], comparison_data['F1 Score'], width, label='F1 Score', alpha=0.8)
+                    
+                    ax.set_xlabel('Model + Scaler')
+                    ax.set_ylabel('Score')
+                    ax.set_title('Model Performance Comparison')
+                    ax.set_xticks(x_pos)
+                    ax.set_xticklabels([f"{row['Model Name']}\n{row['Scaler']}" for _, row in comparison_data.iterrows()], rotation=45)
+                    ax.legend()
+                    ax.grid(True, alpha=0.3)
+                    
+                    st.pyplot(fig)
+                
+                # Model Registry
+                st.subheader("🏛️ Model Registry")
+                
+                # Get registered models
+                registered_models = client.search_registered_models()
+                
+                if registered_models:
+                    for model in registered_models:
+                        with st.expander(f"📦 {model.name} ({len(model.latest_versions)} versions)", expanded=False):
+                            st.write(f"**Description:** {model.description or 'No description'}")
+                            st.write(f"**Created:** {model.creation_timestamp}")
+                            st.write(f"**Last Modified:** {model.last_updated_timestamp}")
+                            
+                            # Show versions
+                            if model.latest_versions:
+                                st.write("**Versions:**")
+                                for version in model.latest_versions:
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        st.write(f"Version: {version.version}")
+                                    with col2:
+                                        st.write(f"Stage: {version.current_stage}")
+                                    with col3:
+                                        st.write(f"Status: {version.status}")
+                                    with col4:
+                                        if st.button(f"Load", key=f"load_{model.name}_{version.version}"):
+                                            try:
+                                                model_uri = f"models:/{model.name}/{version.version}"
+                                                loaded_model = mlflow.sklearn.load_model(model_uri)
+                                                st.success(f"✅ Model {model.name} v{version.version} loaded successfully!")
+                                                st.session_state[f"loaded_model_{model.name}_{version.version}"] = loaded_model
+                                            except Exception as e:
+                                                st.error(f"❌ Failed to load model: {e}")
+                else:
+                    st.info("ℹ️ No registered models found. Models will be automatically registered after training.")
+                
+                # MLflow UI link
+                st.subheader("🔗 MLflow UI")
+                mlflow_ui_url = "http://localhost:5000"
+                st.markdown(f"""
+                <div style="background: var(--secondary-background-color); padding: 1rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                    <p><strong>🌐 Access MLflow UI:</strong></p>
+                    <p><a href="{mlflow_ui_url}" target="_blank">{mlflow_ui_url}</a></p>
+                    <p><em>Make sure MLflow server is running: <code>mlflow ui</code></em></p>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            else:
+                st.info("ℹ️ No runs found in this experiment.")
+        
+    except Exception as e:
+        st.error(f"❌ Error accessing MLflow: {e}")
+        st.info("💡 Make sure MLflow server is running: `mlflow ui`")
     
     # Get data from previous steps
     # Use global session_manager instance
