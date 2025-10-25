@@ -7,13 +7,7 @@ Each step is a separate module that handles its specific functionality.
 Created: 2025-01-27
 """
 
-try:
-    from wizard_ui.steps.step1_dataset import DatasetSelectionStep
-except ImportError:
-    try:
-        from .step1_dataset import DatasetSelectionStep
-    except ImportError:
-        from step1_dataset import DatasetSelectionStep
+from .step1_dataset import DatasetSelectionStep
 
 __version__ = "1.0.0"
 

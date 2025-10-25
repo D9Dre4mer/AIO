@@ -1,0 +1,20 @@
+{
+  "wizard_step": 1,
+  "wizard_data": {},
+  "wizard_progress": {},
+  "wizard_config": {
+    "auto_advance": true,
+    "validation_enabled": true,
+    "progress_tracking": true,
+    "session_persistence": true
+  },
+  "step_data": {
+    "step1": {},
+    "step2": {},
+    "step3": {},
+    "step4": {},
+    "step5": {}
+  },
+  "last_updated": "2025-10-02T18:30:00.000Z",
+  "session_id": "fresh_start_session"
+}

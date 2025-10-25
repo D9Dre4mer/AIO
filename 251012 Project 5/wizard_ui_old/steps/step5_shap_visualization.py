@@ -12,16 +12,10 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-try:
-    from wizard_ui.session_manager import SessionManager
-except ImportError:
-    try:
-        from ..session_manager import SessionManager
-    except ImportError:
-        from session_manager import SessionManager
+from ..session_manager import SessionManager
 from config import SHAP_ENABLE, SHAP_SAMPLE_SIZE, SHAP_OUTPUT_DIR
-# from visualization import generate_comprehensive_shap_analysis
-# from confusion_matrix_cache import confusion_matrix_cache
+from visualization import generate_comprehensive_shap_analysis
+from confusion_matrix_cache import confusion_matrix_cache
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +26,7 @@ class SHAPVisualizationStep:
     def __init__(self):
         """Initialize Step 5"""
         self.session_manager = SessionManager()
-        self.confusion_matrix_cache = {}  # Empty cache for now
+        self.confusion_matrix_cache = confusion_matrix_cache
     
     def render(self) -> None:
         """Render the complete Step 5 interface"""

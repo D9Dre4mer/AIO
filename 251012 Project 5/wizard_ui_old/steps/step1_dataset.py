@@ -7,21 +7,10 @@ Created: 2025-01-27
 import streamlit as st
 import pandas as pd
 import logging
-import os
 
-try:
-    from wizard_ui.components.file_upload import FileUploadComponent
-    from wizard_ui.components.dataset_preview import DatasetPreviewComponent
-    from wizard_ui.session_manager import SessionManager
-except ImportError:
-    try:
-        from ..components.file_upload import FileUploadComponent
-        from ..components.dataset_preview import DatasetPreviewComponent
-        from ..session_manager import SessionManager
-    except ImportError:
-        from components.file_upload import FileUploadComponent
-        from components.dataset_preview import DatasetPreviewComponent
-        from session_manager import SessionManager
+from ..components.file_upload import FileUploadComponent
+from ..components.dataset_preview import DatasetPreviewComponent
+from ..session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -36,42 +25,31 @@ class DatasetSelectionStep:
         self.session_manager = SessionManager()
     
     def render(self) -> None:
-        """Render the complete Step 1 interface exactly as per app_old.py"""
+        """Render the complete Step 1 interface"""
+        st.title("📊 Step 1: Dataset Selection & Upload")
         
-        # Step title - simplified without big container
         st.markdown("""
-        <h2 style="text-align: left; color: var(--text-color); margin: 2rem 0 1rem 0; font-size: 1.8rem;">
-            📍 STEP 1/5: Dataset Selection & Upload
-        </h2>
-        """, unsafe_allow_html=True)
+        **What you'll do here:**
+        1. 📁 Upload your dataset file (CSV, Excel, JSON, TXT)
+        2. 📊 Preview and validate your data
+        3. 🔍 Understand your dataset structure
+        4. ✅ Confirm data quality for modeling
+        """)
         
-        # Dataset Source Selection - simplified
-        st.markdown("""
-        <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">🎯 Choose Dataset Source:</h3>
-        """, unsafe_allow_html=True)
+        # Create tabs for different input modes
+        tab1, tab2 = st.tabs(["📁 Single File Upload", "🗂️ Multi-Input Data"])
         
-        # Simple selection dropdown
-        dataset_source = st.selectbox(
-            "Select your dataset source:",
-            [
-                "Use Sample Dataset (Data Folder)",
-                "File Path (File Path)",
-                "Upload Custom File (CSV/JSON/Excel)"
-            ],
-            index=0,
-            label_visibility="collapsed"
-        )
+        with tab1:
+            # File upload section
+            uploaded_file = self._render_file_upload()
+            
+            # Dataset preview and validation
+            if uploaded_file:
+                self._render_dataset_processing(uploaded_file)
         
-        # Handle different dataset sources
-        if "File Path" in dataset_source:
-            self._render_file_path_section()
-        elif "Sample Dataset" in dataset_source:
-            self._render_sample_dataset_section()
-        elif "Upload Custom File" in dataset_source:
-            self._render_custom_file_upload()
-        
-        # Sampling Configuration Section (moved from Step 2)
-        self._render_sampling_configuration()
+        with tab2:
+            # Multi-input data section
+            self._render_multi_input_section()
         
         # Step completion
         self._render_step_completion()
@@ -513,309 +491,3 @@ class DatasetSelectionStep:
         base_score -= len(validation_result.get('issues', [])) * 0.2
         
         return max(0.0, min(5.0, base_score))
-    
-    def _render_file_path_section(self):
-        """Render file path input section"""
-        file_path = st.text_input(
-            "File path to your dataset:",
-            placeholder="e.g., C:/Users/username/documents/dataset.csv",
-            help="Enter the full path to your dataset file (CSV, Excel, JSON, or TXT)",
-            label_visibility="collapsed"
-        )
-        
-        if file_path:
-            if st.button("📂 Load File from Path", type="primary"):
-                try:
-                    # Check if file exists
-                    if os.path.exists(file_path):
-                        # Add loading indicator for file reading
-                        with st.spinner("🔄 Reading file from path..."):
-                            # Read file based on extension
-                            file_extension = file_path.split('.')[-1].lower()
-                            
-                            if file_extension == 'csv':
-                                df = pd.read_csv(file_path)
-                            elif file_extension in ['xlsx', 'xls']:
-                                df = pd.read_excel(file_path)
-                            elif file_extension == 'json':
-                                df = pd.read_json(file_path)
-                            elif file_extension == 'txt':
-                                with open(file_path, 'r', encoding='utf-8') as f:
-                                    lines = f.readlines()[:100]
-                                df = pd.DataFrame({'text': lines})
-                            else:
-                                st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
-                                return
-                        
-                        st.success(f"✅ File loaded successfully from: {file_path}")
-                        
-                        # Store in session with loading indicator
-                        with st.spinner("💾 Saving to session..."):
-                            self.session_manager.update_step_data(1, 'dataframe', df)
-                            self.session_manager.update_step_data(1, 'file_path', file_path)
-                            
-                            # Store default sampling configuration
-                            dataset_size = len(df)
-                            if dataset_size <= 10:
-                                default_samples = dataset_size
-                            elif dataset_size < 1000:
-                                default_samples = dataset_size
-                            else:
-                                default_samples = min(100000, dataset_size)
-                            
-                            default_sampling_config = {
-                                'num_samples': default_samples,
-                                'sampling_strategy': 'Stratified (Recommended)'
-                            }
-                            
-                            self.session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
-                            self.session_manager.update_step_data(1, 'dataset_size', dataset_size)
-                        
-                        # Show file preview with loading indicator
-                        with st.spinner("📊 Generating file preview..."):
-                            self._show_file_preview(df, file_extension)
-                        
-                    else:
-                        st.error("❌ File not found. Please check the path and try again.")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error loading file: {str(e)}")
-                    st.exception(e)  # Show full error details
-    
-    def _render_sample_dataset_section(self):
-        """Render sample dataset selection section"""
-        import glob
-        
-        # Định nghĩa thư mục data (thay đổi từ cache sang data)
-        data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data")
-        allowed_exts = ['.csv', '.xlsx', '.xls', '.json', '.txt']
-
-        # Lấy danh sách file hợp lệ trong thư mục data
-        if os.path.exists(data_dir):
-            files = []
-            for ext in allowed_exts:
-                files.extend(glob.glob(os.path.join(data_dir, f"*{ext}")))
-            files = sorted(files)
-        else:
-            files = []
-
-        if not files:
-            st.warning("⚠️ Không tìm thấy sample dataset trong thư mục data.")
-        else:
-            # Hiển thị danh sách file sample
-            file_names = [os.path.basename(f) for f in files]
-            selected_file = st.selectbox(
-                "Chọn sample dataset từ data:",
-                file_names,
-                help="Chọn một file mẫu từ thư mục data của dự án"
-            )
-
-            if selected_file:
-                file_path = os.path.join(data_dir, selected_file)
-                file_extension = selected_file.split('.')[-1].lower()
-                try:
-                    # Add loading indicator for sample dataset
-                    with st.spinner(f"🔄 Loading sample dataset '{selected_file}'..."):
-                        if file_extension == 'csv':
-                            df = pd.read_csv(file_path)
-                        elif file_extension in ['xlsx', 'xls']:
-                            df = pd.read_excel(file_path)
-                        elif file_extension == 'json':
-                            df = pd.read_json(file_path)
-                        elif file_extension == 'txt':
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                lines = f.readlines()[:100]
-                            df = pd.DataFrame({'text': lines})
-                        else:
-                            st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
-                            return
-
-                    st.toast(f"✅ Sample dataset '{selected_file}' loaded from data.")
-
-                    # Store in session with loading indicator
-                    with st.spinner("💾 Saving to session..."):
-                        self.session_manager.update_step_data(1, 'dataframe', df)
-                        self.session_manager.update_step_data(1, 'file_path', file_path)
-
-                        # Store default sampling configuration
-                        dataset_size = len(df)
-                        if dataset_size <= 10:
-                            default_samples = dataset_size
-                        elif dataset_size < 1000:
-                            default_samples = dataset_size
-                        else:
-                            default_samples = min(100000, dataset_size)
-                        
-                        default_sampling_config = {
-                            'num_samples': default_samples,
-                            'sampling_strategy': 'Stratified (Recommended)'
-                        }
-                        
-                        self.session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
-                        self.session_manager.update_step_data(1, 'dataset_size', dataset_size)
-
-                    # Show file preview with loading indicator
-                    with st.spinner("📊 Generating file preview..."):
-                        self._show_file_preview(df, file_extension)
-                        
-                except Exception as e:
-                    st.toast(f"❌ Error loading sample dataset: {str(e)}")
-                    st.exception(e)  # Show full error details
-    
-    def _render_custom_file_upload(self):
-        """Render custom file upload section"""
-        uploaded_file = st.file_uploader(
-            "Choose Files",
-            type=['csv', 'xlsx', 'xls', 'json', 'txt'],
-            help="Upload your dataset file"
-        )
-        
-        # Process uploaded file
-        if uploaded_file:
-            self._process_uploaded_file(uploaded_file)
-    
-    def _process_uploaded_file(self, uploaded_file):
-        """Process uploaded file exactly as in app_old.py"""
-        try:
-            # Add loading indicator for file processing
-            with st.spinner("🔄 Processing uploaded file..."):
-                # Read file based on extension
-                file_extension = uploaded_file.name.split('.')[-1].lower()
-                
-                if file_extension == 'csv':
-                    df = pd.read_csv(uploaded_file)
-                elif file_extension in ['xlsx', 'xls']:
-                    df = pd.read_excel(uploaded_file)
-                elif file_extension == 'json':
-                    df = pd.read_json(uploaded_file)
-                elif file_extension == 'txt':
-                    content = uploaded_file.read().decode('utf-8')
-                    lines = content.split('\n')[:100]
-                    df = pd.DataFrame({'text': lines})
-                else:
-                    st.error("❌ Unsupported file format. Please use CSV, Excel, JSON, or TXT files.")
-                    return
-            
-            st.success(f"✅ File '{uploaded_file.name}' processed successfully!")
-            
-            # Store in session with loading indicator
-            with st.spinner("💾 Saving to session..."):
-                self.session_manager.update_step_data(1, 'dataframe', df)
-                self.session_manager.update_step_data(1, 'uploaded_file_name', uploaded_file.name)
-                
-                # Store default sampling configuration
-                dataset_size = len(df)
-                if dataset_size <= 10:
-                    default_samples = dataset_size
-                elif dataset_size < 1000:
-                    default_samples = dataset_size
-                else:
-                    default_samples = min(100000, dataset_size)
-                
-                default_sampling_config = {
-                    'num_samples': default_samples,
-                    'sampling_strategy': 'Stratified (Recommended)'
-                }
-                
-                self.session_manager.update_step_data(1, 'sampling_config', default_sampling_config)
-                self.session_manager.update_step_data(1, 'dataset_size', dataset_size)
-            
-            # Show file preview with loading indicator
-            with st.spinner("📊 Generating file preview..."):
-                self._show_file_preview(df, file_extension)
-                
-        except Exception as e:
-            st.error(f"❌ Error processing uploaded file: {str(e)}")
-            st.exception(e)  # Show full error details
-    
-    def _show_file_preview(self, df, file_extension):
-        """Show file preview exactly as in app_old.py"""
-        st.markdown("---")
-        st.markdown("""
-        <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">📊 File Preview:</h3>
-        """, unsafe_allow_html=True)
-        
-        # Basic info
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Rows", len(df))
-        with col2:
-            st.metric("Columns", len(df.columns))
-        with col3:
-            st.metric("File Type", file_extension.upper())
-        
-        # Show first few rows
-        st.subheader("📋 First 5 rows:")
-        st.dataframe(df.head(), use_container_width=True)
-        
-        # Show column info
-        st.subheader("📊 Column Information:")
-        col_info = pd.DataFrame({
-            'Column': df.columns,
-            'Type': df.dtypes,
-            'Non-Null Count': df.count(),
-            'Null Count': df.isnull().sum()
-        })
-        st.dataframe(col_info, use_container_width=True)
-    
-    def _render_sampling_configuration(self):
-        """Render sampling configuration section exactly as in app_old.py"""
-        # Check if we have a dataframe loaded
-        step_data = self.session_manager.get_step_data(1)
-        if 'dataframe' not in step_data or step_data['dataframe'] is None:
-            return
-        
-        df = step_data['dataframe']
-        dataset_size = len(df)
-        
-        st.markdown("---")
-        st.markdown("""
-        <h3 style="color: var(--text-color); margin: 1.5rem 0 1rem 0;">📊 Sampling Configuration:</h3>
-        """, unsafe_allow_html=True)
-        
-        # Sampling strategy selection
-        sampling_strategy = st.selectbox(
-            "Choose sampling strategy:",
-            [
-                "Stratified (Recommended)",
-                "Random",
-                "First N rows",
-                "Last N rows"
-            ],
-            index=0,
-            help="Stratified sampling maintains class distribution for better model performance"
-        )
-        
-        # Number of samples
-        if dataset_size <= 10:
-            max_samples = dataset_size
-            default_samples = dataset_size
-        elif dataset_size < 1000:
-            max_samples = dataset_size
-            default_samples = dataset_size
-        else:
-            max_samples = min(100000, dataset_size)
-            default_samples = min(10000, dataset_size)
-        
-        num_samples = st.slider(
-            f"Number of samples (max: {max_samples:,})",
-            min_value=1,
-            max_value=max_samples,
-            value=default_samples,
-            step=100 if max_samples > 1000 else 1,
-            help=f"Dataset has {dataset_size:,} rows. Choose how many to use for training."
-        )
-        
-        # Store sampling configuration
-        sampling_config = {
-            'num_samples': num_samples,
-            'sampling_strategy': sampling_strategy
-        }
-        
-        self.session_manager.update_step_data(1, 'sampling_config', sampling_config)
-        
-        # Show sampling preview
-        if num_samples < dataset_size:
-            st.info(f"📊 Will use {num_samples:,} samples out of {dataset_size:,} total rows ({num_samples/dataset_size*100:.1f}%)")
-        else:
-            st.success(f"📊 Using all {dataset_size:,} rows in the dataset")

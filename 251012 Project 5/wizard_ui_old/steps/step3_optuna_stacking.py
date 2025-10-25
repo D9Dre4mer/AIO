@@ -8,13 +8,7 @@ import streamlit as st
 import logging
 from typing import Dict, List
 
-try:
-    from wizard_ui.session_manager import SessionManager
-except ImportError:
-    try:
-        from ..session_manager import SessionManager
-    except ImportError:
-        from session_manager import SessionManager
+from ..session_manager import SessionManager
 from config import (
     OPTUNA_ENABLE, OPTUNA_TRIALS, OPTUNA_TIMEOUT, OPTUNA_DIRECTION,
     STACKING_ENABLE, STACKING_REQUIRE_MIN_BASE_MODELS, STACKING_BASE_MODELS,
