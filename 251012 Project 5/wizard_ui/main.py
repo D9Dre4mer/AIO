@@ -3741,16 +3741,13 @@ def render_vectorization_configuration():
             with st.expander(f"ℹ️ {method_name} Details", expanded=False):
                 st.write(f"**Description:** {method_info['description']}")
                 
-                col_pros, col_cons = st.columns(2)
-                with col_pros:
-                    st.write("**✅ Pros:**")
-                    for pro in method_info['pros']:
-                        st.write(f"• {pro}")
+                st.write("**✅ Pros:**")
+                for pro in method_info['pros']:
+                    st.write(f"• {pro}")
                 
-                with col_cons:
-                    st.write("**❌ Cons:**")
-                    for con in method_info['cons']:
-                        st.write(f"• {con}")
+                st.write("**❌ Cons:**")
+                for con in method_info['cons']:
+                    st.write(f"• {con}")
     
     # Advanced configuration for selected methods
     if selected_methods:
