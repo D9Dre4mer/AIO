@@ -1051,79 +1051,79 @@ def train_models_with_scaling(X_train_scaled, X_val_scaled, X_test_scaled, y_tra
                 from collections import Counter
                 support = sum(Counter(y_test).values())  # Total support
                 
-                       scaler_results[model_name] = {
-                           'model': final_model,
-                           'accuracy': test_accuracy,  # Use test accuracy as final metric
-                           'validation_accuracy': best_score,  # Keep validation accuracy for reference
-                           'f1_score': f1,
-                           'precision': precision,
-                           'recall': recall,
-                           'support': support,
-                           'cv_mean': cv_mean,  # Validation score (no double validation)
-                           'cv_std': cv_std,    # No CV std (avoid double validation)
-                           'training_time': training_time,
-                           'params': best_params,
-                           'status': 'success',
-                           'cached': False
-                       }
-                       
-                       # Log to MLflow if available
-                       if mlflow_tracker:
-                           try:
-                               with mlflow_tracker.start_run(run_name=f"{model_name}_{scaler_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
-                                   # Log parameters
-                                   mlflow_params = {
-                                       'model_name': model_name,
-                                       'scaler_name': scaler_name,
-                                       'optuna_enabled': optuna_enabled,
-                                       'optuna_trials': optuna_config.get('trials', 0) if optuna_enabled else 0,
-                                       'train_size': len(X_train_scaled),
-                                       'val_size': len(X_val_scaled),
-                                       'test_size': len(X_test_scaled),
-                                       'num_features': X_train_scaled.shape[1],
-                                       'num_classes': len(set(y_train)),
-                                       **best_params
-                                   }
-                                   mlflow_tracker.log_params(mlflow_params)
-                                   
-                                   # Log metrics
-                                   mlflow_metrics = {
-                                       'test_accuracy': test_accuracy,
-                                       'validation_accuracy': best_score,
-                                       'f1_score': f1,
-                                       'precision': precision,
-                                       'recall': recall,
-                                       'training_time': training_time,
-                                       'cv_mean': cv_mean,
-                                       'cv_std': cv_std
-                                   }
-                                   mlflow_tracker.log_metrics(mlflow_metrics)
-                                   
-                                   # Log model with auto-registration if enabled
-                                   step3_data = session_manager.get_step_data(3) or {}
-                                   mlflow_config = step3_data.get('mlflow_config', {})
-                                   auto_register = mlflow_config.get('auto_register_models', True)
-                                   
-                                   registered_model_name = f"{model_name}_{scaler_name}" if auto_register else None
-                                   mlflow_tracker.log_model(final_model, f"models/{model_name}_{scaler_name}", 
-                                                          registered_model_name=registered_model_name)
-                                   
-                                   # Log model info
-                                   model_info = {
-                                       'model_name': model_name,
-                                       'scaler_name': scaler_name,
-                                       'best_params': best_params,
-                                       'metrics': mlflow_metrics,
-                                       'timestamp': datetime.now().isoformat()
-                                   }
-                                   mlflow_tracker.log_dict(model_info, f"model_info_{model_name}_{scaler_name}.json")
-                                   
-                                   with log_container:
-                                       st.success(f"🔬 MLflow logged: {model_name}_{scaler_name}")
-                                       
-                           except Exception as mlflow_error:
-                               with log_container:
-                                   st.warning(f"⚠️ MLflow logging failed for {model_name}: {mlflow_error}")
+                scaler_results[model_name] = {
+                    'model': final_model,
+                    'accuracy': test_accuracy,  # Use test accuracy as final metric
+                    'validation_accuracy': best_score,  # Keep validation accuracy for reference
+                    'f1_score': f1,
+                    'precision': precision,
+                    'recall': recall,
+                    'support': support,
+                    'cv_mean': cv_mean,  # Validation score (no double validation)
+                    'cv_std': cv_std,    # No CV std (avoid double validation)
+                    'training_time': training_time,
+                    'params': best_params,
+                    'status': 'success',
+                    'cached': False
+                }
+                
+                # Log to MLflow if available
+                if mlflow_tracker:
+                    try:
+                        with mlflow_tracker.start_run(run_name=f"{model_name}_{scaler_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"):
+                            # Log parameters
+                            mlflow_params = {
+                                'model_name': model_name,
+                                'scaler_name': scaler_name,
+                                'optuna_enabled': optuna_enabled,
+                                'optuna_trials': optuna_config.get('trials', 0) if optuna_enabled else 0,
+                                'train_size': len(X_train_scaled),
+                                'val_size': len(X_val_scaled),
+                                'test_size': len(X_test_scaled),
+                                'num_features': X_train_scaled.shape[1],
+                                'num_classes': len(set(y_train)),
+                                **best_params
+                            }
+                            mlflow_tracker.log_params(mlflow_params)
+                            
+                            # Log metrics
+                            mlflow_metrics = {
+                                'test_accuracy': test_accuracy,
+                                'validation_accuracy': best_score,
+                                'f1_score': f1,
+                                'precision': precision,
+                                'recall': recall,
+                                'training_time': training_time,
+                                'cv_mean': cv_mean,
+                                'cv_std': cv_std
+                            }
+                            mlflow_tracker.log_metrics(mlflow_metrics)
+                            
+                            # Log model with auto-registration if enabled
+                            step3_data = session_manager.get_step_data(3) or {}
+                            mlflow_config = step3_data.get('mlflow_config', {})
+                            auto_register = mlflow_config.get('auto_register_models', True)
+                            
+                            registered_model_name = f"{model_name}_{scaler_name}" if auto_register else None
+                            mlflow_tracker.log_model(final_model, f"models/{model_name}_{scaler_name}", 
+                                                   registered_model_name=registered_model_name)
+                            
+                            # Log model info
+                            model_info = {
+                                'model_name': model_name,
+                                'scaler_name': scaler_name,
+                                'best_params': best_params,
+                                'metrics': mlflow_metrics,
+                                'timestamp': datetime.now().isoformat()
+                            }
+                            mlflow_tracker.log_dict(model_info, f"model_info_{model_name}_{scaler_name}.json")
+                            
+                            with log_container:
+                                st.success(f"🔬 MLflow logged: {model_name}_{scaler_name}")
+                                
+                    except Exception as mlflow_error:
+                        with log_container:
+                            st.warning(f"⚠️ MLflow logging failed for {model_name}: {mlflow_error}")
                 
                 with log_container:
                     st.success(f"✅ {model_name} ({scaler_name}): Val={best_score:.4f}, Test={test_accuracy:.4f} ({training_time:.2f}s)")
