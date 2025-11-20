@@ -43,11 +43,17 @@ except ImportError:
 
 # Import MLflow integration
 try:
+    import mlflow
     from src.mlflow_integration import MLflowTracker, ModelRegistry, log_experiment_results
     MLFLOW_AVAILABLE = True
 except ImportError:
-    MLFLOW_AVAILABLE = False
-    print("Warning: MLflow integration not available")
+    try:
+        import mlflow
+        MLFLOW_AVAILABLE = True
+        print("Warning: MLflow available but integration module not found")
+    except ImportError:
+        MLFLOW_AVAILABLE = False
+        print("Warning: MLflow integration not available")
 
 # Import DVC integration
 try:
@@ -2489,6 +2495,37 @@ def render_sidebar():
             session_manager.set_current_step(i)
             st.sidebar.success(f"🚀 Navigated to Step {i}: {step_name}")
             st.rerun()
+    
+    # Add MLflow UI button if MLflow is available
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 🔬 MLflow")
+    st.sidebar.info(f"MLFLOW_AVAILABLE: {MLFLOW_AVAILABLE}")
+    
+    if MLFLOW_AVAILABLE:
+        
+        if st.sidebar.button("🚀 Open MLflow UI", key="open_mlflow_ui"):
+            # Get MLflow tracking URI
+            try:
+                import mlflow
+                tracking_uri = mlflow.get_tracking_uri()
+                if tracking_uri:
+                    st.sidebar.success(f"🔗 MLflow UI: {tracking_uri}")
+                    st.sidebar.markdown(f"[Open MLflow UI]({tracking_uri})")
+                else:
+                    st.sidebar.info("ℹ️ MLflow tracking URI not configured")
+            except Exception as e:
+                st.sidebar.error(f"❌ Error accessing MLflow: {str(e)}")
+        
+        # Show MLflow status
+        try:
+            import mlflow
+            tracking_uri = mlflow.get_tracking_uri()
+            if tracking_uri:
+                st.sidebar.info(f"📍 MLflow URI: {tracking_uri}")
+            else:
+                st.sidebar.warning("⚠️ MLflow not configured")
+        except:
+            st.sidebar.warning("⚠️ MLflow not available")
         
 
 def get_current_step(session_manager):
