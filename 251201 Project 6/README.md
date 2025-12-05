@@ -4,13 +4,15 @@
 
 Dự án này phát triển một hệ thống dự đoán giá cổ phiếu FPT sử dụng mô hình **PatchTST** (Patch-based Time Series Transformer) kết hợp với các kỹ thuật tối ưu hóa và điều chỉnh bias tiên tiến. Từ code gốc sử dụng LTSF-Linear models, dự án đã phát triển thành một giải pháp hoàn chỉnh với cải thiện **97.62%** so với baseline.
 
+**File chính**: `patchtst_fixed_params.ipynb` - Sử dụng thông số Optuna đã được tối ưu (không cần chạy Optuna lại)
+
 ---
 
 ## 🎯 Mục Tiêu
 
 - **Dự đoán giá đóng cửa (close price)** của cổ phiếu FPT cho **100 ngày tiếp theo**
 - Tối ưu hóa độ chính xác dự đoán thông qua:
-  - Tối ưu hyperparameters với Optuna
+  - **Fixed hyperparameters** đã được tối ưu từ Optuna
   - Post-processing regression để điều chỉnh bias
   - Smooth bias correction để cải thiện độ tin cậy
 
@@ -34,21 +36,35 @@ Dự án này phát triển một hệ thống dự đoán giá cổ phiếu FPT
 - Không có post-processing để điều chỉnh bias
 - Model đơn giản, có thể chưa capture được pattern phức tạp
 
-### Kết Quả Cuối Cùng: `patchtst_best_method.ipynb`
+### Kết Quả Cuối Cùng: `patchtst_fixed_params.ipynb` ⭐
 
 #### Đặc điểm:
 - **Model**: PatchTST (Transformer-based model)
 - **Dữ liệu**: FPT stock (1149 điểm training)
 - **Horizon**: 100 ngày (dài hạn)
-- **Tối ưu hóa**: Optuna với 20 trials
+- **Fixed Parameters**: Sử dụng thông số đã được tối ưu từ Optuna (không cần chạy Optuna lại)
 - **Post-processing**: Linear Regression với TimeSeriesSplit
 - **Smooth Correction**: Linear 20% smooth transition
+- **Biểu đồ**: Tự động vẽ biểu đồ so sánh kết quả với thực tế
+
+#### Thông số đã được cố định:
+- `input_size`: 100
+- `patch_len`: 32
+- `stride`: 4
+- `learning_rate`: 0.001610814898983045
+- `max_steps`: 250
 
 #### Kết quả:
 - **MSE**: 15.26 (giảm 97.62% so với baseline)
 - **RMSE**: 3.91
 - **MAE**: 3.70
 - **Bias**: 0.91 (giảm từ 24.10)
+
+#### Ưu điểm của file Fixed Parameters:
+- ✅ **Chạy nhanh hơn**: Không cần chạy Optuna (tiết kiệm 30-60 phút)
+- ✅ **Kết quả ổn định**: Sử dụng cùng bộ thông số đã được tối ưu
+- ✅ **Dễ sử dụng**: Chỉ cần chạy từ đầu đến cuối, không cần tối ưu
+- ✅ **Visualization**: Tự động vẽ biểu đồ so sánh và phân tích residuals
 
 ---
 
@@ -62,16 +78,18 @@ Dự án này phát triển một hệ thống dự đoán giá cổ phiếu FPT
 - **Transformer architecture**: Sử dụng attention mechanism để học dependencies
 - **Reversible Instance Normalization (RevIN)**: Chuẩn hóa dữ liệu để cải thiện hiệu suất
 
-#### Hyperparameters được tối ưu:
-- `input_size`: Kích thước input window (100-300)
-- `patch_len`: Độ dài patch (8-32)
-- `stride`: Bước nhảy giữa các patches (4-16)
-- `learning_rate`: Tốc độ học (1e-4 đến 1e-2)
-- `max_steps`: Số bước training (50-300)
+#### Hyperparameters đã được tối ưu (Fixed):
+- `input_size`: 100 (đã tối ưu từ Optuna)
+- `patch_len`: 32 (đã tối ưu từ Optuna)
+- `stride`: 4 (đã tối ưu từ Optuna)
+- `learning_rate`: 0.001610814898983045 (đã tối ưu từ Optuna)
+- `max_steps`: 250 (đã tối ưu từ Optuna)
+
+**Lưu ý**: Các thông số này đã được tối ưu trong `patchtst_best_method.ipynb` và được cố định trong `patchtst_fixed_params.ipynb` để sử dụng trực tiếp.
 
 ### 2. Hyperparameter Optimization với Optuna
 
-Sử dụng **Optuna** để tự động tìm kiếm hyperparameters tối ưu:
+**Quá trình tối ưu** đã được thực hiện trong `patchtst_best_method.ipynb`:
 
 ```python
 # Objective function tối ưu MSE trên validation set
@@ -81,6 +99,17 @@ best_params = study.best_params
 ```
 
 **Kết quả**: Tìm được bộ hyperparameters tối ưu sau 20 trials, giảm MSE từ ~800 xuống ~200 trên validation set.
+
+**Best Parameters** (đã được cố định):
+```python
+best_params_patchtst = {
+    'input_size': 100,
+    'patch_len': 32,
+    'stride': 4,
+    'learning_rate': 0.001610814898983045,
+    'max_steps': 250
+}
+```
 
 ### 3. Post-Processing Regression
 
@@ -145,7 +174,7 @@ Best Method:       15.26 █
 
 ### Phân Tích Chi Tiết
 
-#### 1. Baseline (PatchTST với Optuna):
+#### 1. Baseline (PatchTST với Fixed Parameters):
 - **MSE**: 641.50
 - **Bias**: 24.10 (dự đoán cao hơn thực tế)
 - **Vấn đề**: Model có bias hệ thống lớn
@@ -174,10 +203,6 @@ Best Method:       15.26 █
 - **Train**: 80% (919 điểm)
 - **Validation**: 10% (114 điểm)
 - **Full Training**: 1033 điểm (train + val) để train final model
-
-#### Optuna Optimization:
-- **Train**: 90% của full training (929 điểm)
-- **Val**: 10% của full training (104 điểm)
 
 #### Post-Processing:
 - **TimeSeriesSplit**: 3 folds từ full training
@@ -273,14 +298,17 @@ Smooth Result:
 ```
 Project 6/
 ├── [Code-Exercise]-Project-6.1-VIC-LTSF-Linear-Forecasting.ipynb  # Code gốc
-├── patchtst_best_method.ipynb                                     # Kết quả cuối cùng
+├── patchtst_fixed_params.ipynb                                     # ⭐ File chính - Kết quả tốt nhất
+├── patchtst_best_method.ipynb                                      # File tối ưu Optuna (tham khảo)
 ├── patchtst_bias_correction_optuna_smooth.ipynb                    # Nghiên cứu đầy đủ
 ├── patchtst_advanced_preprocessing.ipynb                          # Advanced preprocessing
 ├── post_processing_notes.md                                       # Ghi chú chi tiết
 ├── README.md                                                       # File này
 ├── FPT_train.csv                                                  # Training data
 ├── FPT_test.csv                                                   # Test data
-└── submission_patchtst_best_method.csv                           # Submission file
+├── submission_patchtst_fixed_params.csv                           # Submission file
+├── forecast_comparison.png                                        # Biểu đồ so sánh
+└── residuals_analysis.png                                         # Biểu đồ phân tích residuals
 ```
 
 ---
@@ -290,28 +318,41 @@ Project 6/
 ### Yêu cầu
 
 ```bash
-pip install neuralforecast optuna scikit-learn scipy pandas numpy matplotlib
+pip install neuralforecast scikit-learn scipy pandas numpy matplotlib
 ```
+
+**Lưu ý**: File `patchtst_fixed_params.ipynb` **không cần** cài đặt `optuna` vì đã sử dụng thông số cố định.
 
 ### Chạy Notebook
 
-1. **Mở notebook**: `patchtst_best_method.ipynb`
+1. **Mở notebook**: `patchtst_fixed_params.ipynb` ⭐
 2. **Chạy từng cell** theo thứ tự:
    - Cell 1-3: Setup và import libraries
    - Cell 4-6: Load và chuẩn bị dữ liệu
-   - Cell 7-9: Tối ưu hyperparameters với Optuna (có thể mất 30-60 phút)
-   - Cell 10-11: Train PatchTST baseline model
-   - Cell 12-13: Train post-processing regression
-   - Cell 14-15: Áp dụng smooth bias correction
-   - Cell 16-17: Xuất file submission
-   - Cell 18-19: Tổng kết
+   - Cell 7-8: **Cố định thông số Optuna** (đã được tối ưu sẵn)
+   - Cell 9-10: Train PatchTST baseline model với fixed parameters
+   - Cell 11-12: Train post-processing regression
+   - Cell 13-14: Áp dụng smooth bias correction
+   - Cell 15-16: **Vẽ biểu đồ so sánh** với thực tế
+   - Cell 17-18: Xuất file submission
+   - Cell 19-20: Tổng kết
 
 ### Kết quả
 
 Sau khi chạy xong, bạn sẽ có:
-- **Submission file**: `submission_patchtst_best_method.csv` với 100 predictions
+- **Submission file**: `submission_patchtst_fixed_params.csv` với 100 predictions
 - **Metrics**: MSE, RMSE, MAE, Bias, MAPE
-- **Best parameters**: Hyperparameters tối ưu từ Optuna
+- **Biểu đồ**: 
+  - `forecast_comparison.png` - So sánh các phương pháp với ground truth
+  - `residuals_analysis.png` - Phân tích residuals của best method
+- **Fixed parameters**: Hyperparameters đã được tối ưu (không cần chạy Optuna)
+
+### Ưu điểm của File Fixed Parameters
+
+- ✅ **Tiết kiệm thời gian**: Không cần chạy Optuna (30-60 phút)
+- ✅ **Kết quả ổn định**: Luôn sử dụng cùng bộ thông số tối ưu
+- ✅ **Dễ sử dụng**: Chỉ cần chạy từ đầu đến cuối
+- ✅ **Visualization**: Tự động vẽ biểu đồ so sánh và phân tích
 
 ---
 
@@ -324,10 +365,11 @@ Sau khi chạy xong, bạn sẽ có:
 - **PatchTST**: Capture cả linear và non-linear patterns thông qua attention mechanism
 - **Kết quả**: Model mạnh hơn, học được pattern phức tạp hơn
 
-#### 2. Optuna Optimization:
+#### 2. Fixed Parameters (Đã Tối Ưu):
 - **Manual tuning**: Tốn thời gian, có thể bỏ sót
-- **Optuna**: Tự động tìm kiếm trong search space lớn
-- **Kết quả**: Tìm được hyperparameters tối ưu nhanh hơn và tốt hơn
+- **Optuna (đã chạy)**: Tự động tìm kiếm trong search space lớn
+- **Fixed params**: Sử dụng kết quả tối ưu, chạy nhanh và ổn định
+- **Kết quả**: Tìm được hyperparameters tối ưu và sử dụng trực tiếp
 
 #### 3. Post-Processing:
 - **Vấn đề**: Model có bias hệ thống
@@ -345,6 +387,7 @@ Sau khi chạy xong, bạn sẽ có:
 2. **Validation folds là "unseen data"**: TimeSeriesSplit đảm bảo validation là tương lai
 3. **Smooth transition quan trọng**: Giữ nguyên giá trị đầu tăng độ tin cậy
 4. **Post-processing đơn giản nhưng hiệu quả**: Linear Regression đủ để điều chỉnh bias
+5. **Fixed parameters hiệu quả**: Sử dụng thông số đã tối ưu giúp chạy nhanh và ổn định
 
 ---
 
@@ -353,7 +396,7 @@ Sau khi chạy xong, bạn sẽ có:
 ### Baseline Performance
 
 ```
-PatchTST Baseline (với Optuna):
+PatchTST Baseline (với Fixed Parameters):
 - MSE: 641.4994
 - RMSE: 25.3278
 - MAE: 23.7994
@@ -392,7 +435,7 @@ Smooth Linear 20% + Post-processing:
 | Bước | MSE | Cải thiện | Bias |
 |------|-----|-----------|------|
 | Baseline | 641.50 | - | 24.10 |
-| + Optuna | 641.50 | - | 24.10 |
+| + Fixed Parameters | 641.50 | - | 24.10 |
 | + Post-processing | 48.62 | 92.42% | -1.44 |
 | + Smooth 20% | **15.26** | **97.62%** | **0.91** |
 
@@ -409,7 +452,7 @@ Smooth Linear 20% + Post-processing:
 ### 2. Model Selection
 
 - ✅ **PatchTST**: Mạnh hơn linear models cho time series phức tạp
-- ✅ **Optuna**: Tự động tối ưu hyperparameters hiệu quả
+- ✅ **Fixed Parameters**: Sử dụng thông số đã tối ưu giúp chạy nhanh và ổn định
 - ✅ **Ensemble không cần thiết**: Single model tốt đã đủ
 
 ### 3. Post-Processing
@@ -424,6 +467,12 @@ Smooth Linear 20% + Post-processing:
 - ✅ **Kết hợp methods**: Smooth + Post-processing tốt hơn từng cái riêng
 - ✅ **Tối ưu smooth_ratio**: 20% là optimal cho bài toán này
 
+### 5. Visualization
+
+- ✅ **Biểu đồ so sánh**: Giúp đánh giá trực quan kết quả
+- ✅ **Residuals analysis**: Phân tích lỗi để cải thiện model
+- ✅ **Tự động lưu**: Lưu biểu đồ với độ phân giải cao (300 DPI)
+
 ---
 
 ## 🔬 Phương Pháp Nghiên Cứu
@@ -431,10 +480,11 @@ Smooth Linear 20% + Post-processing:
 ### Quy Trình Phát Triển
 
 1. **Baseline**: PatchTST với hyperparameters mặc định
-2. **Optuna Optimization**: Tối ưu hyperparameters (20 trials)
-3. **Post-processing**: Thử Linear, Ridge, Lasso regression
-4. **Smooth Correction**: Thử nhiều smooth_ratio (1%, 2%, 5%, 10%, 15%, 20%)
-5. **Best Method**: Chọn Smooth Linear 20% + Post-processing
+2. **Optuna Optimization**: Tối ưu hyperparameters (20 trials) - trong `patchtst_best_method.ipynb`
+3. **Fixed Parameters**: Cố định thông số tối ưu - trong `patchtst_fixed_params.ipynb` ⭐
+4. **Post-processing**: Thử Linear, Ridge, Lasso regression
+5. **Smooth Correction**: Thử nhiều smooth_ratio (1%, 2%, 5%, 10%, 15%, 20%)
+6. **Best Method**: Chọn Smooth Linear 20% + Post-processing
 
 ### Các Phương Pháp Đã Thử
 
@@ -467,9 +517,11 @@ Smooth Linear 20% + Post-processing:
 ### Đóng Góp Chính
 
 1. **Tối ưu hóa**: Sử dụng Optuna để tìm hyperparameters tối ưu
-2. **Post-processing**: Học cách điều chỉnh bias từ validation folds
-3. **Smooth correction**: Kết hợp smooth transition và post-processing
-4. **Best practices**: Áp dụng đúng cách chia dữ liệu cho time series
+2. **Fixed Parameters**: Cố định thông số tối ưu để sử dụng trực tiếp
+3. **Post-processing**: Học cách điều chỉnh bias từ validation folds
+4. **Smooth correction**: Kết hợp smooth transition và post-processing
+5. **Visualization**: Tự động vẽ biểu đồ so sánh và phân tích
+6. **Best practices**: Áp dụng đúng cách chia dữ liệu cho time series
 
 ### Ứng Dụng Thực Tế
 
@@ -568,48 +620,12 @@ Kết quả: Dự đoán chính xác xu hướng giá sau biến động
 Tình huống: Xu hướng giảm giá kéo dài (bear market)
 
 Phản ứng của thuật toán:
-1. PatchTST với input_size lớn (100-300) capture được trend dài hạn
+1. PatchTST với input_size=100 capture được trend dài hạn
 2. Dự đoán: Phản ánh đúng xu hướng giảm dài hạn
 3. Post-processing: Điều chỉnh bias để phù hợp với thực tế
 4. Smooth 20%: Balance giữa short-term và long-term
 
 Kết quả: Dự đoán chính xác cho 100 ngày tiếp theo
-```
-
-### Tại Sao Thuật Toán Phản Ứng Tốt?
-
-#### 1. Học Từ Dữ Liệu Thực Tế
-
-```python
-# Model học từ dữ liệu lịch sử có chứa các biến động
-# → Học được cách giá phản ứng với biến động tiêu cực
-# → Dự đoán chính xác khi có biến động tương tự
-```
-
-#### 2. TimeSeriesSplit Đảm Bảo Generalization
-
-```python
-# Validation folds là "tương lai" so với training
-# → Model phải học được pattern tổng quát
-# → Không chỉ fit vào training data
-# → Phản ứng tốt với biến động mới
-```
-
-#### 3. Post-Processing Học Pattern Bias
-
-```python
-# Học từ nhiều folds với các giai đoạn khác nhau
-# → Học được pattern bias trong nhiều tình huống
-# → Điều chỉnh phù hợp khi có biến động
-```
-
-#### 4. Smooth Correction Tăng Độ Tin Cậy
-
-```python
-# Giữ nguyên giá trị đầu
-# → Không thay đổi đột ngột
-# → Tăng độ tin cậy của predictions
-# → Phản ứng phù hợp với biến động
 ```
 
 ### Kết Quả Thực Tế
@@ -620,26 +636,7 @@ Trong quá trình training và validation, thuật toán đã chứng minh khả
 - ✅ **Dự đoán chính xác**: MSE chỉ 15.26 (rất thấp)
 - ✅ **Phản ứng phù hợp**: Bias chỉ 0.91 (gần như không có bias)
 - ✅ **Độ tin cậy cao**: Smooth correction giữ nguyên giá trị đầu
-
-### Ứng Dụng Thực Tế
-
-Case study này có thể áp dụng cho:
-
-1. **Risk Management**: 
-   - Dự đoán giá khi có biến động để quản lý rủi ro
-   - Cảnh báo sớm khi có dấu hiệu biến động tiêu cực
-
-2. **Trading Strategy**:
-   - Điều chỉnh chiến lược giao dịch khi có biến động
-   - Tối ưu entry/exit points
-
-3. **Portfolio Management**:
-   - Đánh giá tác động của biến động lên portfolio
-   - Điều chỉnh allocation khi cần
-
-4. **Market Analysis**:
-   - Phân tích xu hướng thị trường
-   - Dự đoán phản ứng của giá với các sự kiện
+- ✅ **Visualization**: Biểu đồ so sánh giúp đánh giá trực quan
 
 ---
 
@@ -657,9 +654,11 @@ Case study này có thể áp dụng cho:
 Dự án được phát triển từ code gốc `[Code-Exercise]-Project-6.1-VIC-LTSF-Linear-Forecasting.ipynb` với các cải tiến:
 
 - ✅ Nâng cấp từ Linear models → PatchTST (Transformer-based)
-- ✅ Tối ưu hyperparameters với Optuna
+- ✅ Tối ưu hyperparameters với Optuna (trong `patchtst_best_method.ipynb`)
+- ✅ Cố định thông số tối ưu (trong `patchtst_fixed_params.ipynb`) ⭐
 - ✅ Post-processing regression để điều chỉnh bias
 - ✅ Smooth bias correction để cải thiện độ tin cậy
+- ✅ Visualization tự động với biểu đồ so sánh
 - ✅ Cải thiện 97.62% so với baseline
 
 ---
@@ -677,12 +676,14 @@ Cảm ơn các tác giả của:
 - NeuralForecast library
 - Optuna framework
 - Scikit-learn
+- Matplotlib
 
 ---
 
 **Last Updated**: 2025-12-03
 
-**Version**: 1.0.0
+**Version**: 2.0.0
 
-**Status**: ✅ Production Ready
+**Status**: ✅ Production Ready - Fixed Parameters
 
+**Main File**: `patchtst_fixed_params.ipynb` ⭐

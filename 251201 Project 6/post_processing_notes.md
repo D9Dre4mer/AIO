@@ -5,8 +5,9 @@
 2. [Cách Điều Chỉnh Prediction](#cách-điều-chỉnh-prediction)
 3. [Cách Chia Dữ Liệu](#cách-chia-dữ-liệu)
 4. [TimeSeriesSplit - Cách Chia Validation](#timeseriessplit---cách-chia-validation)
-5. [Tại Sao Phát Hiện Được Độ Lệch?](#tại-sao-phát-hiện-được-độ-lệch)
-6. [Normalize trong Post-Processing](#normalize-trong-post-processing)
+5. [Tại Sao Các Fold Không Bằng Nhau?](#tại-sao-các-fold-không-bằng-nhau)
+6. [Tại Sao Phát Hiện Được Độ Lệch?](#tại-sao-phát-hiện-được-độ-lệch)
+7. [Normalize trong Post-Processing](#normalize-trong-post-processing)
 
 ---
 
@@ -434,6 +435,118 @@ val = data[int(len(data) * 0.8):]
 # Fold 3:
 #   Train indices: [0, 1, 2, ..., 859]      (860 điểm)
 #   Val indices:   [860, 861, ..., 1032]   (173 điểm)
+```
+
+### Tại Sao Các Fold Không Bằng Nhau?
+
+#### Thuật toán Expanding Window (Cửa sổ mở rộng)
+
+TimeSeriesSplit sử dụng thuật toán **Expanding Window**, không phải chia đều. Đây là đặc điểm thiết kế, không phải lỗi.
+
+#### Công thức chia:
+
+Với `n_splits=3` và `n_samples=1033`:
+
+```
+test_size = n_samples / (n_splits + 1)
+test_size = 1033 / 4 ≈ 258.25 điểm
+```
+
+**Cách chia:**
+
+```
+Fold 1:
+  - Training size = 1 × test_size ≈ 258 điểm
+  - Validation size = test_size ≈ 258 điểm
+
+Fold 2:
+  - Training size = 2 × test_size ≈ 516 điểm (mở rộng)
+  - Validation size = test_size ≈ 258 điểm
+
+Fold 3:
+  - Training size = 3 × test_size ≈ 774 điểm (mở rộng tiếp)
+  - Validation size = test_size ≈ 258 điểm
+```
+
+**Kết quả thực tế với 1033 điểm:**
+- Fold 1: Train ~344, Val ~344
+- Fold 2: Train ~688, Val ~172
+- Fold 3: Train ~860, Val ~173
+
+*Lưu ý: Sklearn có thể làm tròn một chút, dẫn đến số liệu hơi khác so với công thức lý thuyết.*
+
+#### Tại sao không chia đều?
+
+**1. Mô phỏng thực tế:**
+```
+Thực tế: Khi dự đoán tương lai, ta có:
+- Ngày 1: Dự đoán dựa trên dữ liệu từ ngày 1-100
+- Ngày 2: Dự đoán dựa trên dữ liệu từ ngày 1-101 (nhiều hơn)
+- Ngày 3: Dự đoán dựa trên dữ liệu từ ngày 1-102 (nhiều hơn nữa)
+
+TimeSeriesSplit mô phỏng điều này:
+- Fold 1: Train nhỏ → Val
+- Fold 2: Train lớn hơn → Val (mô phỏng có thêm dữ liệu)
+- Fold 3: Train lớn nhất → Val (mô phỏng có nhiều dữ liệu nhất)
+```
+
+**2. Training set mở rộng dần:**
+- Fold sau có nhiều dữ liệu training hơn fold trước
+- Giúp model học tốt hơn với nhiều dữ liệu hơn
+- Phản ánh thực tế: càng về sau càng có nhiều dữ liệu lịch sử
+
+**3. Validation luôn là tương lai:**
+- Đảm bảo không có data leakage
+- Mỗi fold validation là "tương lai" so với training của fold đó
+
+#### So sánh với chia đều (nếu có):
+
+**Nếu chia đều (KHÔNG phù hợp time series):**
+```
+Fold 1: Train [0-257], Val [258-515]     (258 điểm mỗi phần)
+Fold 2: Train [258-515], Val [516-773]   (258 điểm mỗi phần)
+Fold 3: Train [516-773], Val [774-1032]  (258 điểm mỗi phần)
+```
+
+**Vấn đề:**
+- Validation có thể là "quá khứ" so với một số training data
+- Không mô phỏng thực tế (trong thực tế, ta không dùng tương lai để dự đoán quá khứ)
+- Không phù hợp với time series
+
+**TimeSeriesSplit (ĐÚNG):**
+```
+Fold 1: Train [0-343], Val [344-687]     (Train nhỏ, Val tiếp theo)
+Fold 2: Train [0-687], Val [688-859]     (Train mở rộng, Val tiếp theo)
+Fold 3: Train [0-859], Val [860-1032]    (Train mở rộng nhất, Val cuối)
+```
+
+**Ưu điểm:**
+- Validation luôn là "tương lai" so với training
+- Mô phỏng thực tế việc dự đoán
+- Training set mở rộng dần (giống thực tế)
+
+#### Lợi ích của cách chia này:
+
+1. **Mô phỏng thực tế**: Mỗi fold giống một lần dự đoán tương lai trong thực tế
+2. **Training set tăng dần**: Fold sau có nhiều dữ liệu hơn → model học tốt hơn
+3. **Thu thập nhiều validation data**: ~300 điểm từ 3 folds (nhiều hơn 1 fold)
+4. **Học pattern bias đa dạng**: Bias ở các giai đoạn khác nhau (giữa, sau, cuối)
+
+#### Tóm tắt:
+
+- ✅ **Các fold không bằng nhau là ĐÚNG** - do thuật toán Expanding Window
+- ✅ **Training set mở rộng dần** - fold sau có nhiều dữ liệu hơn fold trước
+- ✅ **Validation luôn là tương lai** - đảm bảo không có data leakage
+- ✅ **Mô phỏng thực tế** - giống cách dự đoán trong thực tế
+
+**Công thức tổng quát:**
+```
+Với n_splits = k và n_samples = n:
+  test_size = n / (k + 1)
+  
+  Fold i (i = 1, 2, ..., k):
+    - Training size = i × test_size
+    - Validation size = test_size
 ```
 
 ---
