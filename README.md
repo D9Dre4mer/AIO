@@ -54,7 +54,81 @@ Below is a brief overview of the projects included in this repository:
   - **Performance Optimization**: Memory management, caching, garbage collection
 - **Status**: ✅ Completed with comprehensive features
 
+### **[Project 5]**: Production-Ready MLOps System
+- **Technology Stack**: Python, MLflow, DVC, FastAPI, Docker, Prefect, Prometheus, Grafana, Optuna
+- **Key Features**:
+  - **Experiment Tracking**: MLflow with Postgres backend & S3 artifact storage
+  - **Data Management**: DVC with S3 remote for version control
+  - **Model Serving**: FastAPI with MLflow Model Registry integration
+  - **Hyperparameter Optimization**: Optuna with MLflow nested runs
+  - **Orchestration**: Prefect flows for automated pipelines
+  - **Monitoring**: Prometheus/Grafana with Evidently drift detection
+  - **CI/CD**: GitHub Actions with canary deployment & rollback
+  - **Environment Management**: conda-lock for reproducibility
+  - **Streamlit UI**: Interactive dashboard with MLflow integration
+  - **Data Validation**: Great Expectations and Pandera
+- **Status**: ✅ Completed - Production Ready
+
+### **[Project 6]**: Time Series Forecasting with PatchTST
+- **Technology Stack**: Python, NeuralForecast, PatchTST, Optuna, scikit-learn
+- **Key Features**:
+  - **Advanced Model**: PatchTST (Patch-based Time Series Transformer)
+  - **Stock Price Forecasting**: FPT stock price prediction for 100 days ahead
+  - **Hyperparameter Optimization**: Optuna with fixed optimal parameters
+  - **Post-Processing**: Linear Regression with TimeSeriesSplit for bias correction
+  - **Smooth Bias Correction**: 20% smooth transition for improved reliability
+  - **Performance Metrics**: 97.62% MSE improvement over baseline
+  - **Visualization**: Automatic comparison plots and residual analysis
+  - **Walk-Forward Validation**: TimeSeriesSplit for realistic evaluation
+- **Status**: ✅ Completed with advanced forecasting techniques
+
 ## 🚀 Key Highlights
+
+### **Project 6 - Time Series Forecasting**
+This project demonstrates advanced time series forecasting techniques with PatchTST:
+
+#### **📈 Forecasting Components**
+- **PatchTST Model**: Transformer-based architecture for time series
+- **Fixed Optimal Parameters**: Pre-optimized hyperparameters (no Optuna needed)
+- **Post-Processing Regression**: Bias correction using Linear Regression
+- **Smooth Correction**: 20% smooth transition for reliability
+- **Long-term Forecasting**: 100-day ahead predictions
+
+#### **📊 Performance Results**
+- **MSE**: 15.26 (97.62% improvement over baseline)
+- **RMSE**: 3.91 (84.57% improvement)
+- **MAE**: 3.70 (84.45% improvement)
+- **Bias**: 0.91 (96.22% reduction)
+- **MAPE**: 3.54% (84.84% improvement)
+
+#### **🔬 Technical Methods**
+- **TimeSeriesSplit**: Walk-forward validation (3 folds)
+- **Optuna Optimization**: Hyperparameter tuning (20 trials)
+- **Bias Correction**: Learning correction formula from validation folds
+- **Smooth Transition**: Balancing reliability and accuracy
+
+### **Project 5 - Production MLOps System**
+This project demonstrates production-ready MLOps practices:
+
+#### **🔄 MLOps Components**
+- **MLflow Integration**: Experiment tracking, model registry, artifact storage
+- **DVC Pipeline**: Data version control with S3 remote
+- **FastAPI Serving**: RESTful API with health checks and metrics
+- **Prefect Orchestration**: Automated pipeline scheduling
+- **Monitoring Stack**: Prometheus + Grafana dashboards
+- **Drift Detection**: Evidently for data quality monitoring
+
+#### **🚀 Deployment Features**
+- **Docker Compose**: Development stack (Postgres, MinIO, MLflow)
+- **CI/CD Pipeline**: GitHub Actions with automated testing
+- **Canary Deployment**: Gradual rollout with rollback capability
+- **Environment Management**: Conda-lock for reproducibility
+
+#### **📊 Data & Model Management**
+- **Data Validation**: Great Expectations + Pandera
+- **Model Registry**: Versioned models with staging/production
+- **Artifact Storage**: S3-compatible MinIO for model artifacts
+- **Streamlit UI**: Interactive dashboard with MLflow integration
 
 ### **Project 4 - Comprehensive ML Platform**
 This project demonstrates advanced machine learning techniques with multiple datasets and comprehensive model evaluation:
@@ -157,40 +231,52 @@ Each project includes comprehensive documentation:
 
 ### **Core Technologies**
 - **Python 3.10+**: Primary programming language
-- **Machine Learning**: scikit-learn, transformers, faiss-cpu
-- **Web Framework**: Streamlit for interactive interfaces
+- **Machine Learning**: scikit-learn, transformers, faiss-cpu, neuralforecast
+- **Web Framework**: Streamlit, FastAPI for interactive interfaces
 - **API Integration**: Google Gmail API, OAuth 2.0
 - **Data Processing**: pandas, numpy, nltk
+- **MLOps**: MLflow, DVC, Prefect, Docker
+- **Time Series**: PatchTST, NeuralForecast, Optuna
 
 ### **AI/ML Libraries**
 - **Transformers**: Hugging Face models for embeddings
 - **FAISS**: Facebook AI Similarity Search for KNN
 - **scikit-learn**: Traditional ML algorithms (TF-IDF, Naive Bayes)
 - **Vector Operations**: Efficient similarity computations
+- **NeuralForecast**: Time series forecasting models (PatchTST, NLinear, DLinear)
+- **Optuna**: Hyperparameter optimization framework
+- **MLflow**: Experiment tracking and model registry
 
 ### **Development Tools**
-- **Version Control**: Git with detailed commit history
+- **Version Control**: Git with detailed commit history, DVC for data versioning
 - **Documentation**: Markdown with comprehensive guides
-- **Testing**: Modular architecture for easy testing
+- **Testing**: Modular architecture, pytest, unit tests
 - **Performance**: GPU acceleration and caching optimization
+- **Containerization**: Docker, Docker Compose
+- **CI/CD**: GitHub Actions with automated pipelines
+- **Monitoring**: Prometheus, Grafana, Evidently
 
 ## 🎯 Learning Outcomes
 
 ### **Technical Skills Developed**
-- **Machine Learning**: KNN, TF-IDF, Transformer models
-- **API Integration**: Gmail API, OAuth authentication
+- **Machine Learning**: KNN, TF-IDF, Transformer models, Time Series Forecasting
+- **API Integration**: Gmail API, OAuth authentication, FastAPI RESTful services
 - **Caching Systems**: Advanced cache management strategies
 - **Performance Optimization**: GPU acceleration, batch processing
 - **User Feedback Integration**: Corrections handling and learning
 - **System Architecture**: Modular design and component interaction
+- **MLOps**: Experiment tracking, model serving, CI/CD pipelines
+- **Time Series**: PatchTST, hyperparameter optimization, bias correction
 
 ### **Software Engineering Practices**
 - **Modular Architecture**: Clean separation of concerns
-- **Configuration Management**: Centralized settings
+- **Configuration Management**: Centralized settings, environment variables
 - **Error Handling**: Robust exception management
 - **Logging Systems**: Comprehensive debugging support
 - **Documentation**: Detailed technical documentation
-- **Performance Monitoring**: Real-time system verification
+- **Performance Monitoring**: Real-time system verification, Prometheus metrics
+- **DevOps**: Docker containerization, CI/CD pipelines, automated testing
+- **Data Versioning**: DVC for data and model version control
 
 ## 🚀 Getting Started
 
@@ -255,6 +341,45 @@ python main.py --run-email-classifier
 streamlit run app.py
 ```
 
+### **Project 6 - Time Series Forecasting**
+```bash
+# Navigate to project directory
+cd "251201 Project 6"
+
+# Install dependencies
+pip install neuralforecast scikit-learn scipy pandas numpy matplotlib
+
+# Open and run the main notebook
+# patchtst_fixed_params.ipynb - Uses pre-optimized parameters
+```
+
+### **Project 5 - MLOps Production System**
+```bash
+# Navigate to project directory
+cd "251012 Project 5"
+
+# Setup environment
+conda activate <your_env_name>
+pip install -r requirements.txt
+
+# Start infrastructure (Postgres + MinIO + MLflow)
+docker compose -f infra/docker-compose.dev.yml up -d --build
+
+# Run training with MLflow tracking
+python -m src.train.main
+
+# Start FastAPI server
+uvicorn src.serve.app:app --host 0.0.0.0 --port 8000 --reload
+
+# Start Streamlit UI
+streamlit run app.py --server.port 8501
+
+# Access services
+# MLflow UI: http://localhost:5000
+# FastAPI Docs: http://localhost:8000/docs
+# Streamlit UI: http://localhost:8501
+```
+
 ### **Project 1.2 - RAG Chatbot**
 ```bash
 # Navigate to project directory
@@ -281,6 +406,8 @@ python rag_chatbot_app.py
 | Project 2.2 | ✅ Completed | Advanced ML, Gmail API, Cache System | Comprehensive Docs |
 | Project 3.1 | ✅ Completed | Topic Modeling, Text Classification | Comprehensive Docs |
 | Project 4 | ✅ Completed | Multi-dataset ML Platform, Interactive Wizard | Comprehensive Docs |
+| Project 5 | ✅ Completed | MLOps, MLflow, FastAPI, Docker, CI/CD | Comprehensive Docs |
+| Project 6 | ✅ Completed | Time Series Forecasting, PatchTST, 97.62% Improvement | Comprehensive Docs |
 
 ## 🤝 Collaboration
 
