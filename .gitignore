@@ -46,3 +46,8 @@ ENV/
 *.csv
 *.zip
 *.pdf
+/260101 Project 7/HMDB51
+/260101 Project 7/checkpoints
+/260101 Project 7/kaggle_data
+/260101 Project 7/note
+/260101 Project 7/test
