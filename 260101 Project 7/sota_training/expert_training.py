@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Tuple, Optional
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from .training import train_one_epoch, evaluate
 from .adaptive_lr_scheduler import get_adaptive_lr_scheduler
@@ -492,22 +493,22 @@ def _train_group_head_stage(
     best_overall: float,
 ) -> Tuple[float, float, int]:
     """
-    Stage G: train only group head on full dataset.
+    Stage G: train only group head to predict the correct group (supervised).
 
-    This assumes expert heads are already trained (Stage B) and kept frozen here.
+    Target is group index (0..num_groups-1) derived from class label using
+    label_subsets.
     """
     freeze_all_backbone_layers(model)
     freeze_all_heads(model)
     freeze_group_head(model)
     unfreeze_group_head_only(model)
 
-    if hasattr(model, "hard_routing_enabled"):
-        model.hard_routing_enabled = False
     if hasattr(model, "active_expert_idx"):
         model.active_expert_idx = None
 
     max_epochs = int(config.get('group_head_epochs', 10))
     lr = float(config.get('group_head_lr', 1e-3))
+    target_acc = float(config.get('group_target_acc', 0.99))
 
     optimizer = torch.optim.AdamW(
         [{"params": list(model.group_head.parameters()), "lr": lr}],
@@ -531,48 +532,126 @@ def _train_group_head_stage(
     patience = int(config.get('group_head_patience', 10))
     patience_counter = 0
     best_stage = 0.0
+    grad_accum_steps = int(config.get('grad_accum_steps', 1))
+
+    # Build label->group mapping
+    num_groups = (
+        len(config.get('label_subsets', [])) or
+        getattr(model, 'num_groups', 0)
+    )
+    if num_groups <= 0:
+        raise ValueError("Cannot determine num_groups for Stage G")
+    label_to_group = torch.empty(len(classes), dtype=torch.long)
+    label_subsets = config.get('label_subsets', None)
+    if label_subsets is None:
+        label_subsets = getattr(model, 'label_subsets', None)
+    if label_subsets is None:
+        raise ValueError("label_subsets missing for Stage G")
+    for gi, subset in enumerate(label_subsets):
+        for lbl in subset:
+            label_to_group[int(lbl)] = gi
 
     logger.info("=" * 60)
-    logger.info("STAGE G: Train GroupHead (predict label group)")
-    logger.info(f"  Max epochs: {max_epochs}, Patience: {patience}")
+    logger.info("STAGE G: Train GroupHead (supervised group accuracy)")
+    logger.info(
+        f"  Max epochs: {max_epochs}, Patience: {patience}, "
+        f"Target acc: {target_acc:.4f}"
+    )
     logger.info("=" * 60)
 
     epochs_ran = 0
     for epoch in range(max_epochs):
         logger.info(f"\nStage G - Epoch {epoch + 1}/{max_epochs}")
 
-        train_loss, train_acc = train_one_epoch(
-            model, train_loader, optimizer, scaler, device,
-            grad_accum_steps=config['grad_accum_steps'],
-            # Group routing should learn cleanly; keep aug off here by default.
-            use_mixup=False,
-            use_cutmix=False,
-            mixup_alpha=config.get('mixup_alpha', 0.4),
-            cutmix_alpha=config.get('cutmix_alpha', 1.0),
-            label_smoothing=0.0,
-            use_focal_loss=False,
-            focal_alpha=config.get('focal_alpha', 0.25),
-            focal_gamma=config.get('focal_gamma', 2.0),
-            ema_model=None,
-            use_synthetic_data=False,
-            synthetic_method=config.get('synthetic_method', 'frame_mixup'),
-            synthetic_ratio=config.get('synthetic_ratio', 0.3),
-            teacher=None,
-            use_distillation=False,
-        )
+        model.train()
+        optimizer.zero_grad()
+        total = 0
+        correct = 0
+        total_loss = 0.0
+        criterion = torch.nn.CrossEntropyLoss()
 
-        val_loss, val_acc = evaluate(
-            model, val_loader, device,
-            label_smoothing=0.0,
-            use_focal_loss=False,
-            focal_alpha=config.get('focal_alpha', 0.25),
-            focal_gamma=config.get('focal_gamma', 2.0),
-        )
+        label_to_group_dev = label_to_group.to(device)
+        progress = tqdm(train_loader, desc="Stage G Train", leave=False)
+        for batch_idx, (videos, labels) in enumerate(progress):
+            videos = videos.to(device, non_blocking=True)
+            labels = labels.to(device, dtype=torch.long, non_blocking=True)
+            group_labels = label_to_group_dev[labels]
+
+            with torch.amp.autocast(
+                device_type='cuda',
+                enabled=(device.type == 'cuda')
+            ):
+                pooled = model._forward_backbone(videos)
+                group_logits = model.group_head(pooled)
+                loss = criterion(group_logits, group_labels)
+
+            preds = group_logits.argmax(dim=1)
+            correct += (preds == group_labels).sum().item()
+            total += labels.size(0)
+            loss_value = loss.item()
+            total_loss += loss_value * labels.size(0)
+            progress.set_postfix(
+                loss=f"{loss_value:.4f}",
+                acc=f"{correct / max(total, 1):.4f}",
+            )
+
+            loss = loss / grad_accum_steps
+            scaler.scale(loss).backward()
+
+            should_step = (
+                ((batch_idx + 1) % grad_accum_steps == 0) or
+                (batch_idx + 1 == len(train_loader))
+            )
+            if should_step:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(
+                    model.group_head.parameters(),
+                    max_norm=1.0,
+                )
+                scaler.step(optimizer)
+                scaler.update()
+                optimizer.zero_grad()
+
+        train_loss = total_loss / max(total, 1)
+        train_acc = correct / max(total, 1)
+
+        model.eval()
+        with torch.no_grad():
+            total = 0
+            correct = 0
+            total_loss = 0.0
+            progress = tqdm(val_loader, desc="Stage G Val", leave=False)
+            for videos, labels in progress:
+                videos = videos.to(device, non_blocking=True)
+                labels = labels.to(device, dtype=torch.long, non_blocking=True)
+                group_labels = label_to_group_dev[labels]
+                with torch.amp.autocast(
+                    device_type='cuda',
+                    enabled=(device.type == 'cuda')
+                ):
+                    pooled = model._forward_backbone(videos)
+                    group_logits = model.group_head(pooled)
+                    loss = criterion(group_logits, group_labels)
+                preds = group_logits.argmax(dim=1)
+                correct += (preds == group_labels).sum().item()
+                total += labels.size(0)
+                loss_value = loss.item()
+                total_loss += loss_value * labels.size(0)
+                progress.set_postfix(
+                    loss=f"{loss_value:.4f}",
+                    acc=f"{correct / max(total, 1):.4f}",
+                )
+            val_loss = total_loss / max(total, 1)
+            val_acc = correct / max(total, 1)
 
         scheduler.step(metrics=val_acc)
 
-        logger.info(f"  Train: Loss={train_loss:.4f}, Acc={train_acc:.4f}")
-        logger.info(f"  Val:   Loss={val_loss:.4f}, Acc={val_acc:.4f}")
+        logger.info(
+            f"  Train (group): Loss={train_loss:.4f}, Acc={train_acc:.4f}"
+        )
+        logger.info(
+            f"  Val   (group): Loss={val_loss:.4f}, Acc={val_acc:.4f}"
+        )
 
         combined_history['train_loss'].append(train_loss)
         combined_history['train_acc'].append(train_acc)
@@ -613,6 +692,13 @@ def _train_group_head_stage(
                 ema_model=None,
             )
             logger.info(f"  ✓ Best model saved (val_acc: {best_overall:.4f})")
+
+        if val_acc >= target_acc:
+            logger.info(
+                "  ✓ Target group acc reached: "
+                f"{val_acc:.4f} >= {target_acc:.4f}"
+            )
+            break
 
         if not improved and patience_counter >= patience:
             logger.info(
@@ -789,8 +875,8 @@ def train_group_gated_experts(
 
     Stages:
       - Stage B: train experts sequentially on subsets
-      - Stage G: train group head
-      - Stage C: joint calibration (group head + experts)
+      - Stage G: train group head (supervised group accuracy)
+      - Stage C: optional joint calibration (group head + experts)
     """
     if label_subsets is None:
         label_subsets = build_contiguous_label_subsets(
@@ -798,7 +884,11 @@ def train_group_gated_experts(
             num_experts=config.get('num_experts', 8),
         )
 
-    train_loader, val_loader = _make_full_loaders(train_dataset, val_dataset, config)
+    train_loader, val_loader = _make_full_loaders(
+        train_dataset,
+        val_dataset,
+        config
+    )
 
     combined_history: Dict[str, list] = {
         'train_loss': [],
@@ -818,7 +908,12 @@ def train_group_gated_experts(
             'val_acc': list(hist.get('val_acc', [])),
         }
         best_overall = float(resume_checkpoint.get('val_acc', 0.0) or 0.0)
-        epoch_idx = int(resume_checkpoint.get('epoch', len(combined_history['train_loss'])))
+        epoch_idx = int(
+            resume_checkpoint.get(
+                'epoch',
+                len(combined_history['train_loss'])
+            )
+        )
         logger.info(
             "Resumed training state: "
             f"epoch={epoch_idx}, best_val_acc={best_overall:.4f}, "
@@ -874,26 +969,35 @@ def train_group_gated_experts(
         best_overall=best_overall,
     )
 
-    # Stage C
-    best_c, best_overall, epoch_idx = _train_joint_group_experts_stage(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        device=device,
-        config=config,
-        combined_history=combined_history,
-        checkpoint_path=checkpoint_path,
-        history_plot_path=history_plot_path,
-        classes=classes,
-        start_epoch_idx=epoch_idx,
-        best_overall=best_overall,
-    )
+    use_stage_c = bool(config.get('use_stage_c', False))
+    best_c = 0.0
+    if use_stage_c:
+        best_c, best_overall, epoch_idx = _train_joint_group_experts_stage(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            device=device,
+            config=config,
+            combined_history=combined_history,
+            checkpoint_path=checkpoint_path,
+            history_plot_path=history_plot_path,
+            classes=classes,
+            start_epoch_idx=epoch_idx,
+            best_overall=best_overall,
+        )
+    else:
+        logger.info("=" * 60)
+        logger.info(
+            "STAGE C: Skipped (experts are isolated; routing is fixed)"
+        )
+        logger.info("=" * 60)
 
     logger.info("=" * 60)
     logger.info("Training completed.")
     logger.info(f"Stage B best subset val acc: {best_b:.4f}")
-    logger.info(f"Stage G best val acc: {best_g:.4f}")
-    logger.info(f"Stage C best val acc: {best_c:.4f}")
+    logger.info(f"Stage G best group val acc: {best_g:.4f}")
+    if use_stage_c:
+        logger.info(f"Stage C best val acc: {best_c:.4f}")
     logger.info(f"Overall best val acc: {best_overall:.4f}")
     logger.info(f"Saved checkpoint: {checkpoint_path}")
     logger.info(f"Saved plot: {history_plot_path}")

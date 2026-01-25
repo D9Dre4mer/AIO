@@ -1492,14 +1492,16 @@ class VideoMAEGroupGatedExpertsForAction(nn.Module):
     ) -> torch.Tensor:
         device = pooled.device
         B = pooled.shape[0]
-        combined = torch.zeros(
-            (B, self.num_classes),
-            device=device,
-            dtype=pooled.dtype,
-        )
         subset_idx = self._get_subset_idx(expert_idx, device)
         expert_logits = self.expert_heads[expert_idx](pooled)
-        combined[:, subset_idx] = expert_logits
+        combined = torch.full(
+            (B, self.num_classes),
+            self.hard_mask_value,
+            device=device,
+            # Use float32 to avoid FP16 overflow (e.g., -1e9).
+            dtype=torch.float32,
+        )
+        combined[:, subset_idx] = expert_logits.to(dtype=combined.dtype)
         return combined
 
     def _forward_soft_route(
@@ -1509,17 +1511,20 @@ class VideoMAEGroupGatedExpertsForAction(nn.Module):
     ) -> torch.Tensor:
         device = pooled.device
         B = pooled.shape[0]
-        combined = torch.zeros(
-            (B, self.num_classes),
-            device=device,
-            dtype=group_logits.dtype,
-        )
         weights = torch.softmax(group_logits, dim=1)  # [B, G]
+        combined = None
         for i, expert in enumerate(self.expert_heads):
             subset_idx = self._get_subset_idx(i, device)
             expert_logits = expert(pooled)  # [B, |subset|]
-            w = weights[:, i].unsqueeze(1)
-            combined[:, subset_idx] = w * expert_logits
+            if combined is None:
+                out_dtype = torch.promote_types(weights.dtype, expert_logits.dtype)
+                combined = torch.zeros(
+                    (B, self.num_classes),
+                    device=device,
+                    dtype=out_dtype,
+                )
+            w = weights[:, i].unsqueeze(1).to(dtype=combined.dtype)
+            combined[:, subset_idx] = w * expert_logits.to(dtype=combined.dtype)
         return combined
 
     def _forward_hard_route(
@@ -1529,12 +1534,11 @@ class VideoMAEGroupGatedExpertsForAction(nn.Module):
     ) -> torch.Tensor:
         device = pooled.device
         B = pooled.shape[0]
-        dtype = group_logits.dtype
         combined = torch.full(
             (B, self.num_classes),
             self.hard_mask_value,
             device=device,
-            dtype=dtype,
+            dtype=torch.float32,
         )
         groups = group_logits.argmax(dim=1)  # [B]
         for i, expert in enumerate(self.expert_heads):
@@ -1543,7 +1547,7 @@ class VideoMAEGroupGatedExpertsForAction(nn.Module):
                 continue
             rows = mask.nonzero(as_tuple=True)[0]
             subset_idx = self._get_subset_idx(i, device)
-            expert_logits = expert(pooled[rows])
+            expert_logits = expert(pooled[rows]).to(dtype=combined.dtype)
             combined[rows[:, None], subset_idx[None, :]] = expert_logits
         return combined
 

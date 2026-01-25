@@ -80,14 +80,16 @@ def get_videomae_model12_group_gated_config() -> dict:
     config['expert_lr'] = 2e-4
 
     # Group head (Stage G)
-    config['group_head_epochs'] = 10
+    config['group_head_epochs'] = 40
     config['group_head_patience'] = 10
     config['group_head_lr'] = 1e-3
+    config['group_target_acc'] = 0.99
 
     # Joint calibration (Stage C)
     config['final_head_epochs'] = 50
     config['early_stop_patience'] = 20
     config['final_head_lr'] = 1e-4
+    config['use_stage_c'] = False
 
     # Regularization / aug
     config['weight_decay'] = 0.08
