@@ -7,6 +7,9 @@ Chức năng:
 3. Retrain riêng các expert heads cho các group có performance thấp
 4. Retrain group head với focus vào các group yếu
 5. Save checkpoint mới
+
+Recommended entry point: train_model12_unified.py --improve
+  Chỉ dùng improve khi sau 1 run thấy 1–2 group/class tụt rõ rệt.
 """
 
 import os
@@ -547,40 +550,52 @@ def _load_state_dict_robust(model: torch.nn.Module, state_dict: dict, logger_ins
     return False
 
 
-def main():
-    """Main function."""
+def parse_args_improve():
+    """Parser cho chế độ improve; dùng bởi main() và train_model12_unified.py."""
     parser = argparse.ArgumentParser(
-        description='Cải thiện các head có group và classes chưa tốt',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        description='Improve weak heads (chỉ dùng khi sau 1 run thấy 1–2 group/class tụt rõ rệt)',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    
-    parser.add_argument('--checkpoint', type=str, default='./checkpoints/videomae_model_12_best.pt', help='Checkpoint path (mặc định: checkpoint model 12)')
-    parser.add_argument('--data-dir', type=str, default='./kaggle_data/data', help='Data directory')
-    parser.add_argument('--output-dir', type=str, default='./checkpoints', help='Thư mục lưu checkpoint cải tiến (riêng, không ghi đè checkpoint 12)')
-    parser.add_argument('--output-name', type=str, default=None, help='Tên file checkpoint cải tiến (mặc định: videomae_model_12_improved_heads.pt khi nguồn là model 12)')
-    parser.add_argument('--group-threshold', type=float, default=0.85, help='Group accuracy threshold để xác định group yếu')
-    parser.add_argument('--improve-bottom-k-groups', type=int, default=0, help='Luôn retrain expert của k group có acc thấp nhất (vd. 2) bất kể threshold')
-    parser.add_argument('--class-threshold', type=float, default=0.70, help='Class accuracy threshold để xác định class yếu')
-    parser.add_argument('--retrain-experts', action='store_true', help='Retrain expert heads cho các group yếu')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help='Checkpoint Model 12 (mặc định: output-dir/videomae_model_12_best.pt khi gọi từ unified)')
+    parser.add_argument('--data-dir', type=str, default='./kaggle_data/data')
+    parser.add_argument('--output-dir', type=str, default='./checkpoints')
+    parser.add_argument('--output-name', type=str, default=None,
+                        help='Tên file checkpoint improved (mặc định: videomae_model_12_improved_heads.pt)')
+    parser.add_argument('--group-threshold', type=float, default=0.85,
+                        help='Group có acc < threshold được coi là yếu')
+    parser.add_argument('--improve-bottom-k-groups', type=int, default=0,
+                        help='Luôn retrain k group có acc thấp nhất (k=1,2 khi thấy 1–2 group tụt)')
+    parser.add_argument('--class-threshold', type=float, default=0.70)
+    parser.add_argument('--retrain-experts', action='store_true', help='Retrain expert heads của weak groups')
     parser.add_argument('--retrain-group-head', action='store_true', help='Retrain group head')
-    parser.add_argument('--expert-epochs', type=int, default=30, help='Max epochs cho expert training')
-    parser.add_argument('--group-head-epochs', type=int, default=50, help='Max epochs cho group head training')
-    parser.add_argument('--expert-lr', type=float, default=2e-4, help='Learning rate cho expert training')
-    parser.add_argument('--group-head-lr', type=float, default=1e-3, help='Learning rate cho group head training')
-    parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
-    parser.add_argument('--num-workers', type=int, default=0, help='Number of data loader workers')
-    
-    args = parser.parse_args()
-    
-    # Setup logging (model_id=12 vì script dùng cho cải thiện heads từ checkpoint model 12)
-    logging_dir = Path(args.output_dir).parent / 'logging'
+    parser.add_argument('--expert-epochs', type=int, default=30)
+    parser.add_argument('--group-head-epochs', type=int, default=80)
+    parser.add_argument('--expert-lr', type=float, default=2e-4)
+    parser.add_argument('--group-head-lr', type=float, default=1e-3)
+    parser.add_argument('--batch-size', type=int, default=24)
+    parser.add_argument('--num-workers', type=int, default=0)
+    return parser.parse_args()
+
+
+def main_improve(args, *, logging_dir=None):
+    """
+    Chạy luồng improve: load checkpoint, evaluate, chọn weak, retrain experts/group head, save improved.
+    Gọi từ script thống nhất (train_model12_unified.py) hoặc từ main() bên dưới.
+    args phải có: checkpoint, data_dir, output_dir, output_name, group_threshold, improve_bottom_k_groups,
+    class_threshold, retrain_experts, retrain_group_head, expert_epochs, group_head_epochs,
+    expert_lr, group_head_lr, batch_size, num_workers.
+    Nếu logging_dir None thì dùng output_dir.parent / 'logging'.
+    """
+    if logging_dir is None:
+        logging_dir = Path(args.output_dir).parent / 'logging'
+    logging_dir = Path(logging_dir)
     logging_dir.mkdir(parents=True, exist_ok=True)
     setup_logging(model_id=12, logging_dir=logging_dir)
     logger.info("=" * 60)
-    logger.info("IMPROVE WEAK HEADS SCRIPT")
+    logger.info("IMPROVE WEAK HEADS (chỉ dùng khi sau 1 run thấy 1–2 group/class tụt rõ rệt)")
     logger.info("=" * 60)
-    
-    # Paths
+
     checkpoint_path = Path(args.checkpoint)
     data_dir = Path(args.data_dir)
     output_dir = Path(args.output_dir)
@@ -841,7 +856,8 @@ def main():
     logger.info(f"Overall Accuracy:")
     logger.info(f"  Before: {results['overall_acc']:.4f} ({results['overall_acc']*100:.2f}%)")
     logger.info(f"  After:  {final_results['overall_acc']:.4f} ({final_results['overall_acc']*100:.2f}%)")
-    logger.info(f"  Improvement: {final_results['overall_acc'] - results['overall_acc']:.4f} ({(final_results['overall_acc'] - results['overall_acc'])*100:.2f}%)")
+    delta = final_results['overall_acc'] - results['overall_acc']
+    logger.info(f"  Improvement: {delta:.4f} ({delta*100:.2f}%)")
     
     # Save improved checkpoint riêng từ checkpoint 12 (không ghi đè file gốc)
     logger.info("")
@@ -870,6 +886,14 @@ def main():
     logger.info("IMPROVEMENT COMPLETED!")
     logger.info(f"Checkpoint cải tiến (riêng từ checkpoint 12) đã lưu: {improved_checkpoint_path}")
     logger.info("=" * 60)
+
+
+def main():
+    """Entry point khi chạy improve_weak_heads.py trực tiếp."""
+    args = parse_args_improve()
+    if not getattr(args, 'checkpoint', None):
+        args.checkpoint = str(Path(args.output_dir) / 'videomae_model_12_best.pt')
+    main_improve(args, logging_dir=Path(args.output_dir).parent / 'logging')
 
 
 if __name__ == '__main__':

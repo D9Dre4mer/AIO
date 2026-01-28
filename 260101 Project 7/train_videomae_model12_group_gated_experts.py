@@ -6,6 +6,10 @@ Design:
 - Group head predicts which label-group the sample belongs to
 - Experts predict within each label-group
 - Inference uses hard top-1 routing (optional; training uses soft routing)
+
+Recommended entry point for full pipeline: train_model12_unified.py
+  - Default: train một lần (B → G → C).
+  - Chỉ dùng --improve khi sau 1 run thấy 1–2 group/class tụt rõ rệt.
 """
 
 import os
@@ -175,9 +179,10 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-
+def run_train(args):
+    """
+    Chạy train B→G→C. args từ parse_args() (của script này) hoặc từ parser thống nhất.
+    """
     config = get_videomae_model12_group_gated_config()
     config['model_id'] = args.model_id
     config['seed'] = args.seed
@@ -358,6 +363,10 @@ def main():
         label_subsets=label_subsets,
         resume_checkpoint=resume_checkpoint,
     )
+
+
+def main():
+    run_train(parse_args())
 
 
 if __name__ == '__main__':
