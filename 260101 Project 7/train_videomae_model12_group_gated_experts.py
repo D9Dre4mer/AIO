@@ -80,16 +80,17 @@ def get_videomae_model12_group_gated_config() -> dict:
     config['expert_lr'] = 2e-4
 
     # Group head (Stage G)
-    config['group_head_epochs'] = 40
-    config['group_head_patience'] = 10
+    config['group_head_epochs'] = 80  # Increased from 40 to allow more training
+    config['group_head_patience'] = 20  # Increased from 10 to avoid early stopping
     config['group_head_lr'] = 1e-3
     config['group_target_acc'] = 0.99
+    config['group_label_smoothing'] = 0.1  # Reduce overfitting
+    config['group_weight_decay'] = 0.1  # Stronger regularization
 
-    # Joint calibration (Stage C)
-    config['final_head_epochs'] = 50
-    config['early_stop_patience'] = 20
-    config['final_head_lr'] = 1e-4
-    config['use_stage_c'] = False
+    # Stage C: joint finetune group_head + experts (class-level CE)
+    config['stage_c_epochs'] = 30
+    config['stage_c_lr'] = 5e-4
+    config['stage_c_patience'] = 15
 
     # Regularization / aug
     config['weight_decay'] = 0.08
@@ -158,12 +159,11 @@ def parse_args():
     parser.add_argument(
         '--on-existing',
         type=str,
-        choices=['prompt', 'resume', 'skip', 'train'],
+        choices=['prompt', 'resume', 'skip', 'train', 's', 'r', 't'],
         default='prompt',
         help=(
-            'What to do if the best checkpoint already exists. '
-            'prompt=ask, resume=load it, skip=exit, '
-            'train=retrain (requires --overwrite).'
+            'Khi checkpoint best đã tồn tại: '
+            'prompt=hỏi (s/r/t), s=skip, r=resume, t=train (cần --overwrite).'
         ),
     )
     parser.add_argument(
@@ -278,9 +278,13 @@ def main():
         f'videomae_model_{config["model_id"]}_training.png'
     )
 
-    # Handle existing checkpoint (skip/resume/retrain)
+    # Handle existing checkpoint (s=skip, r=resume, t=train)
     existing_best = checkpoint_path.exists()
     on_existing = args.on_existing
+    # Chuẩn hóa s/r/t thành skip/resume/train
+    _srt = {'s': 'skip', 'r': 'resume', 't': 'train'}
+    if on_existing in _srt:
+        on_existing = _srt[on_existing]
     resume_ckpt_path = Path(args.resume_from) if args.resume_from else None
 
     if existing_best and on_existing == 'prompt':
@@ -300,10 +304,7 @@ def main():
                 "Skipping training (existing checkpoint kept)."
             )
             return
-        if response == 'r':
-            on_existing = 'resume'
-        if response == 't':
-            on_existing = 'train'
+        on_existing = _srt[response]
 
     if existing_best and on_existing == 'skip':
         logger_instance.info("Skipping training (existing checkpoint kept).")

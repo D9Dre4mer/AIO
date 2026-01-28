@@ -395,43 +395,47 @@ def run_inference(
     use_tta: bool = True,
     num_crops: int = 10,
     num_flips: int = 2,
-    expected_num_frames: int = None  # Expected number of frames (from training config)
-) -> List[Tuple[int, str]]:
+    expected_num_frames: int = None,  # Expected number of frames (from training config)
+    return_label_as_index: bool = False,  # True → (video_id, pred_int); False → (video_id, class_name)
+) -> List[Tuple[int, object]]:
     """
     Run inference on test dataset.
-    
+
+    Model 12 (Group-Gated): forward = group_head → argmax(group) → expert[group] cho subset;
+    output logits [B, num_classes] với chỉ indices thuộc subset được fill, còn lại -1e9 → argmax = class index.
+
     Args:
         model: Model to use for inference
         test_loader: Test data loader
         device: Device to run on
-        classes: List of class names
+        classes: List of class names (index i = class name for logit index i)
         use_tta: Whether to use Test-Time Augmentation
         num_crops: Number of crops for TTA
         num_flips: Number of flips for TTA
-    
+        return_label_as_index: If True, return (video_id, pred_int); else (video_id, classes[pred])
+
     Returns:
-        List of (video_id, predicted_class) tuples
+        List of (video_id, label) where label is int if return_label_as_index else str
     """
     model.eval()
     predictions = []
-    
+
     logger.info("Running inference on test set...")
     if use_tta:
         logger.info(f"Using Enhanced TTA: {num_crops} crops, {num_flips} flips")
-    
+
     # Multi-clip aggregation: collect predictions per video
     video_logits = {}  # {video_id: [logits from all clips]}
-    
+
     with torch.no_grad():
         progress = tqdm(test_loader, desc="Inference")
         for videos, video_ids in progress:
             videos = videos.to(device, non_blocking=True)
-            
+
             if use_tta:
-                # Apply TTA to each video in batch
                 batch_logits = []
                 for i in range(videos.shape[0]):
-                    video = videos[i:i+1]  # [1, T, C, H, W]
+                    video = videos[i:i+1]
                     logits = enhanced_tta(
                         video, model, device, num_crops, num_flips,
                         expected_num_frames=expected_num_frames
@@ -440,50 +444,64 @@ def run_inference(
                 logits = torch.cat(batch_logits, dim=0)
             else:
                 logits = model(videos)
-            
-            # Aggregate logits per video (for multi-clip)
+
             for video_id, logit in zip(video_ids, logits):
                 video_id = int(video_id)
                 if video_id not in video_logits:
                     video_logits[video_id] = []
                 video_logits[video_id].append(logit.cpu())
-    
-    # Average logits across clips for each video
+
     for video_id, clip_logits in video_logits.items():
         avg_logits = torch.stack(clip_logits).mean(dim=0)
         pred = avg_logits.argmax().item()
-        predicted_class = classes[pred]
-        predictions.append((video_id, predicted_class))
-    
+        label = pred if return_label_as_index else classes[pred]
+        predictions.append((video_id, label))
+
     logger.info(f"Inference completed. Total predictions: {len(predictions)}")
     return predictions
 
 
 def generate_submission(
-    predictions: List[Tuple[int, str]],
+    predictions: List[Tuple[int, object]],
     output_path: Path,
-    logger: logging.Logger = None
+    logger: logging.Logger = None,
+    template_format: bool = False,
 ):
     """
     Generate submission CSV file.
-    
-    Args:
-        predictions: List of (video_id, predicted_class) tuples
-        output_path: Path to save submission file
-        logger: Logger instance (optional)
+
+    template_format=False (mặc định):
+        - Cột id, label; id = video_id (tên thư mục test/); label = tên class hoặc index.
+
+    template_format=True (khớp kaggle_data/submission_template.csv):
+        - Mẫu submission_template: id 0,1,2,... tương ứng số thứ tự của các folder trong kaggle_data/data/test.
+        - Cột id, class; id = 0, 1, 2, ... theo thứ tự thư mục trong test (sort theo int(tên thư mục), giống TestDataset).
+        - id=0 = thư mục đầu tiên, id=1 = thư mục thứ hai, ...
+        - class = tên class hoặc index (giống cột label nhưng tên cột là "class").
     """
     if logger is None:
         logger = logging.getLogger(__name__)
-    
-    # Create DataFrame
-    df = pd.DataFrame(predictions, columns=['id', 'label'])
-    df = df.sort_values('id')
-    
-    # Save to CSV
-    df.to_csv(output_path, index=False)
+
+    # predictions: (video_id, label) — label có thể str hoặc int
+    df = pd.DataFrame(predictions, columns=['video_id', 'label'])
+    df = df.drop_duplicates(subset='video_id', keep='first')
+    df = df.sort_values('video_id').reset_index(drop=True)
+
+    if template_format:
+        # id = 0, 1, 2, ... theo thứ tự thư mục trong test (đã sort theo video_id = int(tên thư mục))
+        df_out = pd.DataFrame({
+            'id': range(len(df)),
+            'class': df['label'].values,
+        })
+    else:
+        df_out = df.rename(columns={'video_id': 'id', 'label': 'label'})
+        df_out = df_out[['id', 'label']]
+
+    df_out.to_csv(output_path, index=False, encoding='utf-8')
     logger.info(f"Submission saved to: {output_path}")
-    logger.info(f"Total predictions: {len(df)}")
-    logger.info(f"Sample predictions:\n{df.head(10)}")
+    logger.info(f"Total predictions: {len(df_out)}")
+    logger.info(f"Format: {'template (id, class)' if template_format else 'id, label'}")
+    logger.info(f"Sample:\n{df_out.head(10)}")
 
 
 def run_ensemble_inference(

@@ -17,6 +17,8 @@ from tqdm import tqdm
 from .training import train_one_epoch, evaluate
 from .adaptive_lr_scheduler import get_adaptive_lr_scheduler
 from .utils import save_checkpoint, plot_training_history
+from collections import defaultdict
+import numpy as np
 from .sequential_layer_training import (
     build_contiguous_label_subsets,
     freeze_all_backbone_layers,
@@ -30,6 +32,153 @@ from .sequential_layer_training import (
 )
 
 logger = logging.getLogger('sota_training')
+
+
+def _evaluate_and_print_results(
+    model: torch.nn.Module,
+    val_loader: DataLoader,
+    device: torch.device,
+    classes: List[str],
+    label_subsets: Optional[List[List[int]]] = None,
+) -> None:
+    """
+    Evaluate model on validation set and print detailed results.
+    
+    Args:
+        model: Trained model
+        val_loader: Validation data loader
+        device: Device to evaluate on
+        classes: List of class names
+        label_subsets: Optional label subsets for group analysis
+    """
+    model.eval()
+    all_preds = []
+    all_labels = []
+    all_probs = []
+    
+    logger.info("=" * 60)
+    logger.info("Final Evaluation on Validation Set")
+    logger.info("=" * 60)
+    
+    with torch.no_grad():
+        progress = tqdm(val_loader, desc="Final Eval", leave=False)
+        for videos, labels in progress:
+            videos = videos.to(device, non_blocking=True)
+            labels = labels.to(device, dtype=torch.long, non_blocking=True)
+            
+            with torch.amp.autocast(
+                device_type='cuda',
+                enabled=(device.type == 'cuda')
+            ):
+                logits = model(videos)
+            
+            probs = torch.softmax(logits, dim=1)
+            preds = logits.argmax(dim=1)
+            
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
+    
+    all_preds = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    all_probs = np.array(all_probs)
+    
+    # Overall accuracy
+    overall_acc = (all_preds == all_labels).mean()
+    
+    # Per-class accuracy
+    num_classes = len(classes)
+    class_correct = defaultdict(int)
+    class_total = defaultdict(int)
+    class_acc = {}
+    
+    for true_label, pred_label in zip(all_labels, all_preds):
+        class_total[true_label] += 1
+        if true_label == pred_label:
+            class_correct[true_label] += 1
+    
+    for class_idx in range(num_classes):
+        if class_total[class_idx] > 0:
+            class_acc[class_idx] = class_correct[class_idx] / class_total[class_idx]
+        else:
+            class_acc[class_idx] = 0.0
+    
+    # Group accuracy (if label_subsets provided)
+    group_acc = {}
+    if label_subsets is not None:
+        # Build label to group mapping
+        label_to_group = {}
+        for group_idx, subset in enumerate(label_subsets):
+            for label in subset:
+                label_to_group[label] = group_idx
+        
+        group_correct = defaultdict(int)
+        group_total = defaultdict(int)
+        
+        for true_label, pred_label in zip(all_labels, all_preds):
+            true_group = label_to_group.get(true_label, -1)
+            pred_group = label_to_group.get(pred_label, -1)
+            if true_group >= 0:
+                group_total[true_group] += 1
+                if true_group == pred_group:
+                    group_correct[true_group] += 1
+        
+        for group_idx in range(len(label_subsets)):
+            if group_total[group_idx] > 0:
+                group_acc[group_idx] = (
+                    group_correct[group_idx] / group_total[group_idx]
+                )
+            else:
+                group_acc[group_idx] = 0.0
+    
+    # Print results
+    logger.info("")
+    logger.info("📊 FINAL RESULTS SUMMARY")
+    logger.info("=" * 60)
+    logger.info(f"Overall Validation Accuracy: {overall_acc:.4f} ({overall_acc*100:.2f}%)")
+    logger.info(f"Total Samples: {len(all_labels)}")
+    logger.info(f"Correct Predictions: {(all_preds == all_labels).sum()}")
+    logger.info("")
+    
+    # Per-class accuracy (top 10 worst and best)
+    sorted_classes = sorted(
+        class_acc.items(),
+        key=lambda x: x[1]
+    )
+    
+    logger.info("🔴 Top 10 Worst Performing Classes:")
+    for class_idx, acc in sorted_classes[:10]:
+        class_name = classes[class_idx]
+        total = class_total[class_idx]
+        correct = class_correct[class_idx]
+        logger.info(
+            f"  {class_name:30s} | Acc: {acc:.4f} ({acc*100:.2f}%) | "
+            f"Correct: {correct}/{total}"
+        )
+    
+    logger.info("")
+    logger.info("🟢 Top 10 Best Performing Classes:")
+    for class_idx, acc in sorted_classes[-10:][::-1]:
+        class_name = classes[class_idx]
+        total = class_total[class_idx]
+        correct = class_correct[class_idx]
+        logger.info(
+            f"  {class_name:30s} | Acc: {acc:.4f} ({acc*100:.2f}%) | "
+            f"Correct: {correct}/{total}"
+        )
+    
+    # Group accuracy (if available)
+    if label_subsets is not None and group_acc:
+        logger.info("")
+        logger.info("📦 Group-Level Accuracy:")
+        for group_idx, acc in sorted(group_acc.items(), key=lambda x: x[1]):
+            subset = label_subsets[group_idx]
+            logger.info(
+                f"  Group {group_idx + 1} (Labels {subset[0]}-{subset[-1]}): "
+                f"{acc:.4f} ({acc*100:.2f}%)"
+            )
+    
+    logger.info("=" * 60)
 
 
 def _make_full_loaders(
@@ -491,12 +640,17 @@ def _train_group_head_stage(
     classes: list,
     start_epoch_idx: int,
     best_overall: float,
+    use_overall_class_acc_for_best: bool = False,
 ) -> Tuple[float, float, int]:
     """
     Stage G: train only group head to predict the correct group (supervised).
 
     Target is group index (0..num_groups-1) derived from class label using
     label_subsets.
+
+    If use_overall_class_acc_for_best is True (e.g. when called from improve
+    script), best checkpoint and early-stop use overall class accuracy
+    (end-to-end) instead of group accuracy, while still training with group CE.
     """
     freeze_all_backbone_layers(model)
     freeze_all_heads(model)
@@ -512,7 +666,7 @@ def _train_group_head_stage(
 
     optimizer = torch.optim.AdamW(
         [{"params": list(model.group_head.parameters()), "lr": lr}],
-        weight_decay=config.get('weight_decay', 0.05),
+        weight_decay=config.get('group_weight_decay', config.get('weight_decay', 0.05)),
     )
     scheduler = get_adaptive_lr_scheduler(
         optimizer,
@@ -553,6 +707,8 @@ def _train_group_head_stage(
 
     logger.info("=" * 60)
     logger.info("STAGE G: Train GroupHead (supervised group accuracy)")
+    if use_overall_class_acc_for_best:
+        logger.info("  Best/early-stop metric: overall class accuracy (end-to-end)")
     logger.info(
         f"  Max epochs: {max_epochs}, Patience: {patience}, "
         f"Target acc: {target_acc:.4f}"
@@ -568,7 +724,15 @@ def _train_group_head_stage(
         total = 0
         correct = 0
         total_loss = 0.0
-        criterion = torch.nn.CrossEntropyLoss()
+        # Use label smoothing to reduce overfitting
+        group_label_smoothing = config.get('group_label_smoothing', 0.1)
+        if group_label_smoothing > 0:
+            from .losses import LabelSmoothingCrossEntropy
+            criterion = LabelSmoothingCrossEntropy(
+                smoothing=group_label_smoothing
+            )
+        else:
+            criterion = torch.nn.CrossEntropyLoss()
 
         label_to_group_dev = label_to_group.to(device)
         progress = tqdm(train_loader, desc="Stage G Train", leave=False)
@@ -644,7 +808,18 @@ def _train_group_head_stage(
             val_loss = total_loss / max(total, 1)
             val_acc = correct / max(total, 1)
 
-        scheduler.step(metrics=val_acc)
+        metric_for_best = val_acc
+        if use_overall_class_acc_for_best:
+            _, overall_class_acc = evaluate(
+                model, val_loader, device,
+                label_smoothing=0.0,
+                use_focal_loss=config.get('use_focal_loss', False),
+                focal_alpha=config.get('focal_alpha', 0.25),
+                focal_gamma=config.get('focal_gamma', 2.0),
+            )
+            metric_for_best = overall_class_acc
+
+        scheduler.step(metrics=metric_for_best)
 
         logger.info(
             f"  Train (group): Loss={train_loss:.4f}, Acc={train_acc:.4f}"
@@ -652,6 +827,8 @@ def _train_group_head_stage(
         logger.info(
             f"  Val   (group): Loss={val_loss:.4f}, Acc={val_acc:.4f}"
         )
+        if use_overall_class_acc_for_best:
+            logger.info(f"  Val   (overall class): Acc={metric_for_best:.4f} (metric for best/early-stop)")
 
         combined_history['train_loss'].append(train_loss)
         combined_history['train_acc'].append(train_acc)
@@ -667,8 +844,8 @@ def _train_group_head_stage(
         epochs_ran = epoch + 1
 
         improved = False
-        if val_acc > best_stage:
-            best_stage = val_acc
+        if metric_for_best > best_stage:
+            best_stage = metric_for_best
             improved = True
             patience_counter = 0
             logger.info(f"  ✓ New best Stage G val acc: {best_stage:.4f}")
@@ -676,8 +853,8 @@ def _train_group_head_stage(
             patience_counter += 1
             logger.info(f"  No improvement ({patience_counter}/{patience})")
 
-        if val_acc > best_overall:
-            best_overall = val_acc
+        if metric_for_best > best_overall:
+            best_overall = metric_for_best
             save_checkpoint(
                 model=model,
                 optimizer=optimizer,
@@ -693,7 +870,7 @@ def _train_group_head_stage(
             )
             logger.info(f"  ✓ Best model saved (val_acc: {best_overall:.4f})")
 
-        if val_acc >= target_acc:
+        if not use_overall_class_acc_for_best and val_acc >= target_acc:
             logger.info(
                 "  ✓ Target group acc reached: "
                 f"{val_acc:.4f} >= {target_acc:.4f}"
@@ -711,7 +888,7 @@ def _train_group_head_stage(
     return best_stage, best_overall, start_epoch_idx + epochs_ran
 
 
-def _train_joint_group_experts_stage(
+def _train_group_gated_joint_finetune_stage(
     model: torch.nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
@@ -724,12 +901,13 @@ def _train_joint_group_experts_stage(
     start_epoch_idx: int,
     best_overall: float,
 ) -> Tuple[float, float, int]:
-    """Stage C: joint finetune group head + all experts (full dataset)."""
+    """
+    Stage C for Model 12: joint finetune group_head + all expert_heads on full
+    dataset with class-level CrossEntropy. Optimizes overall accuracy and
+    balances group head and experts.
+    """
     freeze_all_backbone_layers(model)
-    freeze_all_heads(model)
-    freeze_group_head(model)
     unfreeze_group_head_and_all_experts(model)
-
     if hasattr(model, "hard_routing_enabled"):
         model.hard_routing_enabled = False
     if hasattr(model, "active_expert_idx"):
@@ -740,10 +918,7 @@ def _train_joint_group_experts_stage(
     for head in model.expert_heads:
         joint_params.extend(list(head.parameters()))
 
-    max_epochs = int(config.get('final_head_epochs', 50))
-    lr = float(config.get('final_head_lr', 1e-4))
-    patience = int(config.get('early_stop_patience', 20))
-
+    lr = float(config.get('stage_c_lr', config.get('final_head_lr', 5e-4)))
     optimizer = torch.optim.AdamW(
         [{"params": joint_params, "lr": lr}],
         weight_decay=config.get(
@@ -751,6 +926,7 @@ def _train_joint_group_experts_stage(
             config.get('weight_decay', 0.05),
         ),
     )
+    max_epochs = int(config.get('stage_c_epochs', config.get('final_head_epochs', 30)))
     scheduler = get_adaptive_lr_scheduler(
         optimizer,
         num_epochs=max_epochs,
@@ -765,16 +941,18 @@ def _train_joint_group_experts_stage(
         use_val_loss=config.get('use_val_loss_for_lr', False),
     )
     scaler = torch.amp.GradScaler()
-
+    patience = int(config.get('stage_c_patience', config.get('early_stop_patience', 15)))
     best_stage = 0.0
     patience_counter = 0
+    epochs_ran = 0
 
     logger.info("=" * 60)
-    logger.info("STAGE C: Joint finetune GroupHead + Experts (full 51 labels)")
-    logger.info(f"  Max epochs: {max_epochs}, Patience: {patience}")
+    logger.info("STAGE C: Joint finetune Group + Experts (full class labels)")
+    logger.info(f"  Max epochs: {max_epochs}, Patience: {patience}, LR: {lr}")
     logger.info("=" * 60)
 
     for epoch in range(max_epochs):
+        epochs_ran = epoch + 1
         logger.info(f"\nStage C - Epoch {epoch + 1}/{max_epochs}")
 
         train_loss, train_acc = train_one_epoch(
@@ -820,12 +998,11 @@ def _train_joint_group_experts_stage(
         )
 
         epoch_idx = start_epoch_idx + epoch + 1
-
         improved = False
         if val_acc > best_stage:
             best_stage = val_acc
-            improved = True
             patience_counter = 0
+            improved = True
             logger.info(f"  ✓ New best Stage C val acc: {best_stage:.4f}")
         else:
             patience_counter += 1
@@ -855,7 +1032,9 @@ def _train_joint_group_experts_stage(
             )
             break
 
-    return best_stage, best_overall, start_epoch_idx + max_epochs
+    if hasattr(model, "hard_routing_enabled"):
+        model.hard_routing_enabled = True
+    return best_stage, best_overall, start_epoch_idx + epochs_ran
 
 
 def train_group_gated_experts(
@@ -876,7 +1055,7 @@ def train_group_gated_experts(
     Stages:
       - Stage B: train experts sequentially on subsets
       - Stage G: train group head (supervised group accuracy)
-      - Stage C: optional joint calibration (group head + experts)
+      - Stage C: joint finetune group_head + experts (class-level CE)
     """
     if label_subsets is None:
         label_subsets = build_contiguous_label_subsets(
@@ -969,10 +1148,10 @@ def train_group_gated_experts(
         best_overall=best_overall,
     )
 
-    use_stage_c = bool(config.get('use_stage_c', False))
-    best_c = 0.0
-    if use_stage_c:
-        best_c, best_overall, epoch_idx = _train_joint_group_experts_stage(
+    # Stage C: joint finetune group_head + experts (class-level CE)
+    stage_c_epochs = int(config.get('stage_c_epochs', config.get('final_head_epochs', 30)))
+    if stage_c_epochs > 0:
+        best_c, best_overall, epoch_idx = _train_group_gated_joint_finetune_stage(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
@@ -985,22 +1164,29 @@ def train_group_gated_experts(
             start_epoch_idx=epoch_idx,
             best_overall=best_overall,
         )
+        logger.info("=" * 60)
+        logger.info("Training completed.")
+        logger.info(f"Stage B best subset val acc: {best_b:.4f}")
+        logger.info(f"Stage G best group val acc: {best_g:.4f}")
+        logger.info(f"Stage C best val acc: {best_c:.4f}")
+        logger.info(f"Overall best val acc: {best_overall:.4f}")
     else:
         logger.info("=" * 60)
-        logger.info(
-            "STAGE C: Skipped (experts are isolated; routing is fixed)"
-        )
-        logger.info("=" * 60)
-
-    logger.info("=" * 60)
-    logger.info("Training completed.")
-    logger.info(f"Stage B best subset val acc: {best_b:.4f}")
-    logger.info(f"Stage G best group val acc: {best_g:.4f}")
-    if use_stage_c:
-        logger.info(f"Stage C best val acc: {best_c:.4f}")
-    logger.info(f"Overall best val acc: {best_overall:.4f}")
+        logger.info("Training completed.")
+        logger.info(f"Stage B best subset val acc: {best_b:.4f}")
+        logger.info(f"Stage G best group val acc: {best_g:.4f}")
+        logger.info(f"Overall best val acc: {best_overall:.4f}")
     logger.info(f"Saved checkpoint: {checkpoint_path}")
     logger.info(f"Saved plot: {history_plot_path}")
     logger.info("=" * 60)
+    
+    # Final evaluation and detailed results
+    _evaluate_and_print_results(
+        model=model,
+        val_loader=val_loader,
+        device=device,
+        classes=classes,
+        label_subsets=label_subsets,
+    )
 
     return combined_history
