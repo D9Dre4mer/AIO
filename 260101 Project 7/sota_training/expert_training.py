@@ -1190,3 +1190,134 @@ def train_group_gated_experts(
     )
 
     return combined_history
+
+
+def train_alpha_experts(
+    model: torch.nn.Module,
+    train_dataset,
+    val_dataset,
+    device: torch.device,
+    config: Dict[str, Any],
+    checkpoint_path: Path,
+    history_plot_path: Path,
+    classes: list,
+    label_subsets: Optional[List[List[int]]] = None,
+    resume_checkpoint: Optional[Dict[str, Any]] = None,
+) -> Dict[str, list]:
+    """
+    Full pipeline for Alpha (experts only, no group head).
+
+    Only Stage B: train each expert on its label subset; no Stage G, no Stage C.
+    Saves checkpoint after each expert if overall val acc improves (evaluate full model).
+    """
+    if label_subsets is None:
+        label_subsets = build_contiguous_label_subsets(
+            len(classes),
+            num_experts=config.get('num_experts', 8),
+        )
+
+    train_loader, val_loader = _make_full_loaders(
+        train_dataset,
+        val_dataset,
+        config,
+    )
+
+    combined_history: Dict[str, list] = {
+        'train_loss': [],
+        'train_acc': [],
+        'val_loss': [],
+        'val_acc': [],
+    }
+    best_overall = 0.0
+    epoch_idx = 0
+
+    if resume_checkpoint is not None:
+        hist = resume_checkpoint.get('history', {}) or {}
+        combined_history = {
+            'train_loss': list(hist.get('train_loss', [])),
+            'train_acc': list(hist.get('train_acc', [])),
+            'val_loss': list(hist.get('val_loss', [])),
+            'val_acc': list(hist.get('val_acc', [])),
+        }
+        best_overall = float(resume_checkpoint.get('val_acc', 0.0) or 0.0)
+        epoch_idx = int(
+            resume_checkpoint.get('epoch', len(combined_history['train_loss']))
+        )
+        logger.info(
+            "Resumed training state: "
+            f"epoch={epoch_idx}, best_val_acc={best_overall:.4f}, "
+            f"history_len={len(combined_history['train_loss'])}"
+        )
+
+    logger.info("=" * 60)
+    logger.info("Alpha: Train Experts Only (Stage B only, no group head)")
+    logger.info("=" * 60)
+
+    freeze_all_backbone_layers(model)
+    freeze_all_heads(model)
+    if hasattr(model, "group_head"):
+        freeze_group_head(model)
+    if hasattr(model, "active_expert_idx"):
+        model.active_expert_idx = None
+    if hasattr(model, "inference_single_best_expert"):
+        model.inference_single_best_expert = config.get(
+            "inference_single_best_expert", True
+        )
+
+    best_b = 0.0
+    for i, subset in enumerate(label_subsets):
+        phase_name = f"Alpha Stage B - Expert {i + 1}/{len(label_subsets)}"
+        best_i, hist_i = train_expert_head_phase(
+            model=model,
+            train_dataset=train_dataset,
+            val_dataset=val_dataset,
+            device=device,
+            config=config,
+            expert_idx=i,
+            label_subset=subset,
+            phase_name=phase_name,
+        )
+        best_b = max(best_b, best_i)
+        for k in combined_history:
+            combined_history[k].extend(hist_i[k])
+        plot_training_history(
+            combined_history,
+            history_plot_path,
+            config['model_id'],
+        )
+
+        # After each expert: evaluate full model (all experts) and save if best
+        if hasattr(model, "active_expert_idx"):
+            model.active_expert_idx = None
+        val_loss, val_acc = evaluate(model, val_loader, device)
+        if val_acc > best_overall:
+            best_overall = val_acc
+            epoch_idx = len(combined_history['train_loss'])
+            checkpoint = {
+                'model': model.state_dict(),
+                'epoch': epoch_idx,
+                'history': combined_history,
+                'val_acc': best_overall,
+                'classes': classes,
+                'config': {**config, 'label_subsets': label_subsets},
+            }
+            torch.save(checkpoint, checkpoint_path)
+            logger.info(f"  ✓ Best overall val acc: {best_overall:.4f} -> saved")
+
+    logger.info("=" * 60)
+    logger.info("Alpha training completed.")
+    logger.info(f"Stage B best subset val acc: {best_b:.4f}")
+    logger.info(f"Overall best val acc: {best_overall:.4f}")
+    logger.info(f"Saved checkpoint: {checkpoint_path}")
+    logger.info(f"Saved plot: {history_plot_path}")
+    logger.info("=" * 60)
+
+    _evaluate_and_print_results(
+        model=model,
+        val_loader=val_loader,
+        device=device,
+        classes=classes,
+        label_subsets=label_subsets,
+    )
+
+    return combined_history

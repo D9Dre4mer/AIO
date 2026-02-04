@@ -17,6 +17,35 @@ from .augmentation import VideoTransform
 logger = logging.getLogger(__name__)
 
 
+def _safe_is_dir(p: Path) -> bool:
+    """Trả về True nếu p là thư mục; bắt OSError (path quá dài, permission, v.v.)."""
+    try:
+        return p.is_dir()
+    except (OSError, PermissionError):
+        return False
+
+
+def _pad_frames_to_same_size(frames: List[torch.Tensor]) -> torch.Tensor:
+    """
+    Pad list of (C, H, W) tensors to same H, W with black (0); return (T, C, H, W).
+    Dùng khi ảnh trong clip khác size (vd person_focus crop) để stack được.
+    """
+    if not frames:
+        return torch.zeros(0)
+    max_h = max(f.shape[1] for f in frames)
+    max_w = max(f.shape[2] for f in frames)
+    out = []
+    for f in frames:
+        c, h, w = f.shape
+        if h == max_h and w == max_w:
+            out.append(f)
+            continue
+        padded = torch.zeros(c, max_h, max_w, dtype=f.dtype, device=f.device)
+        padded[:, :h, :w] = f
+        out.append(padded)
+    return torch.stack(out)
+
+
 class VideoDataset(Dataset):
     """Video dataset with grouped train/val split to avoid data leakage."""
     
@@ -59,7 +88,7 @@ class VideoDataset(Dataset):
         
         # Get classes - CRITICAL: Use sorted() to ensure consistent ordering
         # This ensures the same class-to-index mapping across different runs
-        class_dirs = [d.name for d in self.root.iterdir() if d.is_dir()]
+        class_dirs = [d.name for d in self.root.iterdir() if _safe_is_dir(d)]
         self.classes = sorted(class_dirs)  # Sort alphabetically for consistency
         self.class_to_idx = {name: idx for idx, name in enumerate(self.classes)}
         
@@ -73,7 +102,7 @@ class VideoDataset(Dataset):
             
             for cls in self.classes:
                 cls_dir = self.root / cls
-                for video_dir in sorted([d for d in cls_dir.iterdir() if d.is_dir()]):
+                for video_dir in sorted([d for d in cls_dir.iterdir() if _safe_is_dir(d)]):
                     frame_paths = sorted([
                         p for p in video_dir.iterdir()
                         if p.suffix.lower() in {'.jpg', '.jpeg', '.png'}
@@ -179,7 +208,7 @@ class VideoDataset(Dataset):
                 logger.warning(f"Unexpected error loading image {path}: {e}. Using black frame as fallback.")
                 black_frame = torch.zeros(3, self.image_size, self.image_size)
                 frames.append(black_frame)
-        video = torch.stack(frames)
+        video = _pad_frames_to_same_size(frames)
         video = self.transform(video)
         return video, label
 
@@ -316,7 +345,7 @@ class TestDataset(Dataset):
                 logger.warning(f"Unexpected error loading image {path}: {e}. Using black frame as fallback.")
                 black_frame = torch.zeros(3, self.image_size, self.image_size)
                 frames.append(black_frame)
-        video = torch.stack(frames)
+        video = _pad_frames_to_same_size(frames)
         video = self.transform(video)
         return video, video_id
 
@@ -381,6 +410,6 @@ class FilteredVideoDataset(Dataset):
                 logger.warning(f"Unexpected error loading image {path}: {e}. Using black frame as fallback.")
                 black_frame = torch.zeros(3, self.image_size, self.image_size)
                 frames.append(black_frame)
-        video = torch.stack(frames)
+        video = _pad_frames_to_same_size(frames)
         video = self.transform(video)
         return video, label

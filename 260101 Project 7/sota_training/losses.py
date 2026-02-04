@@ -31,13 +31,14 @@ class FocalLoss(nn.Module):
         Args:
             inputs: [B, num_classes] logits
             targets: [B] class indices
-        
+
         Returns:
             Loss value
         """
         ce_loss = F.cross_entropy(inputs, targets, reduction='none')
         pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        pt = pt.clamp(min=1e-7)
+        focal_loss = self.alpha * (1 - pt) ** self.gamma * (-torch.log(pt))
         
         if self.reduction == 'mean':
             return focal_loss.mean()
@@ -72,14 +73,14 @@ class LabelSmoothingCrossEntropy(nn.Module):
             Loss value
         """
         log_probs = F.log_softmax(inputs, dim=1)
+        log_probs = log_probs.clamp(min=-50.0)
         num_classes = inputs.size(1)
-        
-        # Create smoothed labels
+
         with torch.no_grad():
             true_dist = torch.zeros_like(log_probs)
             true_dist.fill_(self.smoothing / (num_classes - 1))
             true_dist.scatter_(1, targets.unsqueeze(1), 1.0 - self.smoothing)
-        
+
         loss = torch.sum(-true_dist * log_probs, dim=1)
         
         if self.reduction == 'mean':

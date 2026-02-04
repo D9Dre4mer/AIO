@@ -20,7 +20,7 @@ def parse_args():
     )
     # --- Train (mặc định) ---
     parser.add_argument('--model-id', type=int, default=12, help='Model ID')
-    parser.add_argument('--seed', type=int, default=2024, help='Random seed')
+    parser.add_argument('--seed', type=int, default=42, help='Random seed')
     parser.add_argument('--data-dir', type=str, default='./kaggle_data/data')
     parser.add_argument('--output-dir', type=str, default='./checkpoints')
     parser.add_argument('--logging-dir', type=str, default='./logging')

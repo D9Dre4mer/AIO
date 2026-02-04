@@ -1,27 +1,31 @@
 # SOTA Training Pipeline - Video Action Recognition
 
-Pipeline training SOTA ViT model cho video action recognition với các kỹ thuật nâng cao: EMA, CutMix, Focal Loss, Progressive Resize, Enhanced TTA.
+Pipeline training SOTA ViT model cho video action recognition với các kỹ thuật nâng cao: EMA, CutMix, Focal Loss, Progressive Resize, Enhanced TTA. Hỗ trợ **Model Alpha 1** (VideoMAE Alpha Experts – two-phase, reserved heads cho weak classes) và **Model Alpha 2** (CatBoost meta-decision cho routing).
 
 ## Cài đặt
 
 ```bash
 # Cài đặt dependencies
 pip install torch torchvision timm tqdm pillow matplotlib numpy pandas
+
+# Cho Alpha 2 (CatBoost meta-head): thêm catboost, scikit-learn, pyarrow (parquet)
+pip install catboost scikit-learn pyarrow
 ```
 
 ## Cấu trúc
 
 ```
-sota_training/          # Main package
-├── config.py          # Configuration
-├── models.py          # Model architectures
-├── dataset.py         # Dataset classes
-├── augmentation.py    # Augmentation functions
-├── losses.py          # Loss functions
-├── training.py        # Training functions
-├── inference.py       # Inference với TTA
-├── utils.py           # Utilities
-└── main.py            # Main entry point
+sota_training/             # Main package
+├── config.py              # Configuration
+├── models.py              # Model architectures (incl. VideoMAE Alpha Experts)
+├── dataset.py             # Dataset classes
+├── augmentation.py        # Augmentation functions
+├── losses.py              # Loss functions
+├── training.py            # Training functions
+├── inference.py           # Inference với TTA + run_inference_with_meta (Alpha 2)
+├── meta_head_features.py  # Feature builder cho CatBoost meta-decision (Alpha 2)
+├── utils.py               # Utilities
+└── main.py                # Main entry point
 ```
 
 ## Sử dụng
@@ -71,8 +75,12 @@ python train.py --model-id 1 --resume checkpoints/sota_vit_model_1_best.pt
 ### Inference
 
 ```bash
-# Inference với checkpoint
+# Inference với checkpoint (train.py)
 python train.py --model-id 1 --inference-only --checkpoint checkpoints/sota_vit_model_1_best.pt
+
+# Inference từ checkpoint bất kỳ (VideoMAE, Alpha 1/2): run_inference_from_checkpoint.py
+python run_inference_from_checkpoint.py --checkpoint checkpoints/videomae_model_alpha1_best.pt --data-dir ./kaggle_data/data
+# Alpha 2 với CatBoost routing: thêm --meta-head catboost --meta-model checkpoints/meta/meta_catboost.cbm
 ```
 
 ## Các tùy chọn chính
@@ -91,7 +99,8 @@ python train.py --model-id 1 --inference-only --checkpoint checkpoints/sota_vit_
 
 ## Output
 
-- **Checkpoints**: `checkpoints/sota_vit_model_{id}_best.pt` (cho models 1-6), `checkpoints/videomae_model_7_best.pt` (cho Model 7)
+- **Checkpoints**: `checkpoints/sota_vit_model_{id}_best.pt` (cho models 1-6), `checkpoints/videomae_model_7_best.pt` (cho Model 7), `checkpoints/videomae_model_alpha1_best.pt` (Alpha 1 Phase 2)
+- **Meta (Alpha 2):** `checkpoints/meta/meta_catboost.cbm`, `meta_config.json`, `meta_train.parquet`, `meta_val.parquet`
 - **Training plots**: `checkpoints/sota_vit_model_{id}_training.png` (cho models 1-6), `checkpoints/videomae_model_7_training.png` (cho Model 7)
 - **Submissions**: 
   - `submissions/submission_model_{id}.csv` (individual models)
@@ -105,6 +114,42 @@ kaggle_data/data/
 ├── data_train/        # Training data (class folders)
 └── test/              # Test data (video ID folders)
 ```
+
+## Preprocessing: Object Focus (Object Detection)
+
+Luồng riêng dùng **object detection** để cắt frame focus vào **vật thể/chủ thể** (ưu tiên người), giúp model tập trung vào vùng có đối tượng.
+
+**Backend mặc định: YOLO** (Ultralytics) — model mặc định **YOLO26** (`yolo26m.pt`). Cần: `pip install ultralytics`.
+
+**Cách hoạt động:**
+- Đọc dữ liệu từ `kaggle_data/data` (cấu trúc `data_train` + `test`).
+- Mỗi frame: chạy **YOLO** (mặc định YOLO26; hoặc `--backend torchvision` cho Faster R-CNN) → phát hiện vật thể, **ưu tiên người** → gộp box + padding → cắt ảnh về vùng đó.
+- Ghi ra thư mục mới với **cùng cấu trúc** (vd: `kaggle_data/data_person_focus`).
+- Nếu không phát hiện vật thể: bỏ frame đó ra khỏi dữ liệu (không ghi).
+- **`--backend yolo11`** (mặc định), **`--backend torchvision`** (Faster R-CNN). **`--yolo-model yolo26m.pt`** (mặc định, YOLO26; có thể đổi yolo26n.pt, yolo11m.pt). **`--person-only`**: chỉ phát hiện người.
+
+**Bước 1 – Chạy preprocess:**
+
+```bash
+conda run -n pytorch_gpu --no-capture-output python preprocess_person_focus.py --input-dir ./kaggle_data/data --output-dir ./kaggle_data/data_person_focus
+```
+
+**Tùy chọn:** `--backend yolo11` (mặc định) hoặc `torchvision`, `--yolo-model yolo26m.pt` (YOLO26, mặc định), `--score-threshold 0.15`, `--person-only`, `--padding-ratio 0.15`, `--no-skip-existing`.
+
+**Bước 2 – Train / inference trên dữ liệu đã xử lý:**
+
+Chỉ cần trỏ `--data-dir` vào thư mục output:
+
+```bash
+python train.py --data-dir ./kaggle_data/data_person_focus
+python run_inference_from_checkpoint.py --checkpoint ... --data-dir ./kaggle_data/data_person_focus
+```
+
+**File liên quan:**
+- `preprocess_person_focus.py` – CLI: đọc `kaggle_data/data` → ghi dữ liệu đã crop (cùng cấu trúc).
+- `sota_training/person_detection.py` – Module: backend YOLO (YOLO26/YOLO11, mặc định) hoặc torchvision, detect vật thể (ưu tiên người), merge box, crop.
+
+**Lưu ý:** Backend YOLO11 cần `pip install ultralytics`. Chi tiết SOTA 2025: `docs/RESEARCH_OBJECT_DETECTION_2025.md`.
 
 ## Examples
 
@@ -224,6 +269,65 @@ python train_swin.py --resume checkpoints/swin_model_4_best.pt
 - Checkpoint: `checkpoints/swin_model_{id}_best.pt`
 - Training plot: `checkpoints/swin_model_{id}_training.png`
 - Submission: `submissions/submission_swin_model_{id}.csv`
+
+## Model Alpha 1 – VideoMAE Alpha Experts (two-phase) ⭐
+
+Model nhiều expert heads với **hai giai đoạn**: Phase 1 train K heads, đánh giá weak classes, Phase 2 train R heads dành riêng cho weak classes. Inference dùng **single-best-expert** (chọn expert có confidence cao nhất, không merge logits).
+
+```bash
+# Train Alpha 1 (Phase 1 + Phase 2)
+conda run -n pytorch_gpu python train_videomae_alpha1.py --data-dir ./kaggle_data/data
+
+# Tùy chọn: checkpoint Phase 1, số heads Phase 1 / reserved, v.v.
+conda run -n pytorch_gpu python train_videomae_alpha1.py --data-dir ./kaggle_data/data --num-phase1-heads 8 --num-reserved-heads 2
+```
+
+**Luồng:**
+1. **Phase 1:** Train K heads (K+R tổng, R head “reserved” khởi tạo dummy).
+2. **Đánh giá:** Trên val, xác định weak classes (accuracy dưới ngưỡng hoặc bottom-k).
+3. **Phase 2:** Phân bổ weak classes vào R heads, train chỉ R heads đó.
+
+**Output:** Checkpoint Phase 2: `checkpoints/videomae_model_alpha1_best.pt` (và config tương ứng). Cấu trúc dữ liệu: `data_train` trong `--data-dir`.
+
+**File liên quan:** `train_videomae_alpha1.py`, `improve_weak_heads_alpha.py`, `improve_weak_heads.py`.
+
+## Model Alpha 2 – CatBoost Meta-Decision (routing) ⭐
+
+Tầng meta dùng **CatBoost** để chọn expert đáng tin (routing) thay cho max softmax. Vẫn **single-best-expert**: không merge logits, chỉ “trọng tài” chọn expert. Có **confidence guard** (gap_best_second < tau → fallback max p1) và fallback khi không load được CatBoost.
+
+### Train meta CatBoost
+
+```bash
+# Sau khi có checkpoint Alpha 1 Phase 2
+conda run -n pytorch_gpu python train_meta_catboost.py --checkpoint checkpoints/videomae_model_alpha1_best.pt --data-dir ./kaggle_data/data
+```
+
+**Output (mặc định trong `checkpoints/meta/` hoặc cạnh checkpoint):**
+- `meta_catboost.cbm` – model CatBoost
+- `meta_config.json` – tau, schema_version, feature_names, num_active_experts
+- `meta_train.parquet`, `meta_val.parquet` – meta-features + `y_route`
+
+### Đánh giá routing (baseline vs heuristic vs CatBoost)
+
+```bash
+conda run -n pytorch_gpu python evaluate_alpha2_routing.py --checkpoint checkpoints/videomae_model_alpha1_best.pt --meta-model checkpoints/meta/meta_catboost.cbm --data-dir ./kaggle_data/data
+```
+
+**Metrics:** Overall accuracy (baseline max p1, heuristic max margin, CatBoost routing), weak-class accuracy, **routing accuracy** (CatBoost vs oracle y_route), **confusion matrix expert_true vs expert_pred**.
+
+### Inference với meta-head (Alpha 2)
+
+```bash
+# Inference Alpha 1 (single-best-expert theo max softmax)
+python run_inference_from_checkpoint.py --checkpoint checkpoints/videomae_model_alpha1_best.pt --data-dir ./kaggle_data/data
+
+# Inference Alpha 2 (CatBoost routing + confidence guard)
+python run_inference_from_checkpoint.py --checkpoint checkpoints/videomae_model_alpha1_best.pt --meta-head catboost --meta-model checkpoints/meta/meta_catboost.cbm --data-dir ./kaggle_data/data
+```
+
+Nếu bỏ `--meta-model`, script tìm `checkpoints/meta/meta_catboost.cbm` (và `meta_config.json`). Nếu không load được CatBoost → fallback về single-best-expert như Alpha 1.
+
+**File liên quan:** `train_meta_catboost.py`, `evaluate_alpha2_routing.py`, `sota_training/meta_head_features.py`, `sota_training/inference.py` (`run_inference_with_meta`).
 
 ## Notes
 

@@ -199,11 +199,12 @@ def evaluate_model_detailed(
     group_acc = {}
     group_details = {}
     if label_subsets is not None:
-        # Build label to group mapping
+        # Build label to group mapping (first group wins khi subsets overlap, vd Phase2 fallback)
         label_to_group = {}
         for group_idx, subset in enumerate(label_subsets):
             for label in subset:
-                label_to_group[label] = group_idx
+                if label not in label_to_group:
+                    label_to_group[label] = group_idx
         
         group_correct = defaultdict(int)
         group_total = defaultdict(int)

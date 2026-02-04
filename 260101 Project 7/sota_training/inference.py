@@ -7,10 +7,11 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Any, Dict, Optional
 import pandas as pd
 import logging
 import time
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -458,6 +459,83 @@ def run_inference(
         predictions.append((video_id, label))
 
     logger.info(f"Inference completed. Total predictions: {len(predictions)}")
+    return predictions
+
+
+def run_inference_with_meta(
+    model: torch.nn.Module,
+    test_loader: DataLoader,
+    device: torch.device,
+    classes: List[str],
+    catboost_model: Any,
+    meta_config: Dict[str, Any],
+    return_label_as_index: bool = False,
+) -> List[Tuple[int, object]]:
+    """
+    Alpha-2: inference with CatBoost routing + confidence guard.
+    Uses forward_expert_signals, build_meta_features, CatBoost predict;
+    if expert_id_hat != best_expert_id_by_p1 and gap_best_second < tau -> fallback to max_p1.
+    """
+    try:
+        from sota_training.meta_head_features import build_meta_features
+    except ImportError:
+        logger.error("meta_head_features required for --meta-head catboost")
+        raise
+
+    model.eval()
+    feature_cols = meta_config.get("feature_names")
+    if not feature_cols:
+        feature_cols = __import__(
+            "sota_training.meta_head_features", fromlist=["get_feature_column_order"]
+        ).get_feature_column_order(top_m=meta_config.get("top_m", 4))
+    tau = float(meta_config.get("tau", 0.05))
+    top_m = int(meta_config.get("top_m", 4))
+    phase_id = int(meta_config.get("phase_id", 2))
+    num_active = int(meta_config.get("num_active_experts", 10))
+    num_phase1 = int(meta_config.get("num_phase1_heads", 8))
+    reserved = set(range(num_phase1, num_active)) if num_active > num_phase1 else set()
+
+    predictions = []
+    with torch.no_grad():
+        progress = tqdm(test_loader, desc="Inference (meta)")
+        for videos, video_ids in progress:
+            videos = videos.to(device, non_blocking=True)
+            signals = model.forward_expert_signals(videos)
+            rows = build_meta_features(
+                signals,
+                phase_id=phase_id,
+                num_active_experts=num_active,
+                reserved_expert_indices=reserved,
+                top_m=top_m,
+            )
+            df = pd.DataFrame(rows)
+            X = df[feature_cols]
+            expert_pred = catboost_model.predict(X)
+            if hasattr(expert_pred, "ravel"):
+                expert_pred = expert_pred.ravel()
+            all_logits = signals["all_logits"]
+            label_subsets = signals["label_subsets"]
+            B = len(rows)
+            for b in range(B):
+                expert_id_hat = int(expert_pred[b])
+                best_by_p1 = int(rows[b]["best_expert_id_by_p1"])
+                gap = float(rows[b]["gap_best_second"])
+                if expert_id_hat != best_by_p1 and gap < tau:
+                    expert_id_final = best_by_p1
+                else:
+                    expert_id_final = expert_id_hat
+                logits_b = all_logits[expert_id_final][b]
+                if hasattr(logits_b, "cpu"):
+                    logits_b = logits_b.detach().cpu().numpy()
+                else:
+                    logits_b = np.asarray(logits_b)
+                pred_local = int(np.argmax(logits_b))
+                subset = label_subsets[expert_id_final]
+                global_class = subset[pred_local]
+                video_id = int(video_ids[b])
+                label = global_class if return_label_as_index else classes[global_class]
+                predictions.append((video_id, label))
+    logger.info(f"Inference (meta) completed. Total predictions: {len(predictions)}")
     return predictions
 
 

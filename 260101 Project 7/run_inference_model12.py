@@ -1,6 +1,6 @@
 """
-Script chỉ chạy inference cho Model 12 và Improved Heads.
-Chỉ liệt kê checkpoint có tên: model_12, model12 hoặc improved_heads.
+Script chỉ chạy inference cho Model 12, Improved Heads và Model Alpha.
+Liệt kê checkpoint có tên: model_12, model12, improved_heads, model_13, model13, alpha.
 Mặc định: 1 clip/video, không TTA (giống val).
 """
 
@@ -29,17 +29,21 @@ from run_inference_from_checkpoint import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 MODEL12_ARCH = 'videomae_group_gated_experts'
+ALPHA_ARCH = 'videomae_alpha_experts'
 
 
-def _is_model12_filename(name: str) -> bool:
+def _is_model12_or_alpha_filename(name: str) -> bool:
     n = name.lower()
-    return 'model_12' in n or 'model12' in n or 'improved_heads' in n
+    return (
+        'model_12' in n or 'model12' in n or 'improved_heads' in n
+        or 'model_13' in n or 'model13' in n or 'alpha' in n
+    )
 
 
 def list_model12_checkpoints(checkpoints_dir: Path) -> list:
-    """Chỉ lấy các checkpoint Model 12 / Improved Heads (theo tên file)."""
+    """Chỉ lấy các checkpoint Model 12 / Improved / Alpha (theo tên file)."""
     all_ckpts = list_checkpoints(checkpoints_dir)
-    return [p for p in all_ckpts if _is_model12_filename(p.name)]
+    return [p for p in all_ckpts if _is_model12_or_alpha_filename(p.name)]
 
 
 def main():
@@ -76,30 +80,31 @@ def main():
     checkpoints = list_model12_checkpoints(checkpoints_dir)
     if len(checkpoints) == 0:
         logger.error(
-            "Không tìm thấy checkpoint Model 12 / Improved trong %s. "
-            "Tên file cần chứa: model_12, model12 hoặc improved_heads.",
+            "Không tìm thấy checkpoint Model 12 / Improved / Alpha trong %s. "
+            "Tên file cần chứa: model_12, model12, improved_heads, model_13, model13 hoặc alpha.",
             checkpoints_dir,
         )
         sys.exit(1)
 
     checkpoint_path = Path(args.checkpoint) if args.checkpoint else None
     if checkpoint_path is not None and checkpoint_path.exists() and checkpoint_path not in checkpoints:
-        if not _is_model12_filename(checkpoint_path.name):
+        if not _is_model12_or_alpha_filename(checkpoint_path.name):
             logger.warning(
-                "File %s không match model_12/improved_heads theo tên; vẫn thử dùng nếu là Model 12.",
+                "File %s không match model_12/improved/alpha theo tên; vẫn thử dùng nếu architecture khớp.",
                 checkpoint_path.name,
             )
         checkpoints = [checkpoint_path] + [p for p in checkpoints if p != checkpoint_path]
 
     selected_checkpoint = select_checkpoint(checkpoints, checkpoint_path)
     model_config = get_model_config_from_checkpoint(selected_checkpoint)
-    if model_config.get('architecture') != MODEL12_ARCH:
+    arch = model_config.get('architecture')
+    if arch not in (MODEL12_ARCH, ALPHA_ARCH):
         logger.error(
-            "Checkpoint không phải Model 12 (architecture=%s). Chỉ hỗ trợ videomae_group_gated_experts.",
-            model_config.get('architecture'),
+            "Checkpoint không phải Model 12 hoặc Alpha (architecture=%s). Chỉ hỗ trợ videomae_group_gated_experts, videomae_alpha_experts.",
+            arch,
         )
         sys.exit(1)
-    logger.info("Đã xác nhận Model 12 (Group-Gated Experts). Chạy inference...")
+    logger.info("Đã xác nhận %s. Chạy inference...", "Model 12 (Group-Gated Experts)" if arch == MODEL12_ARCH else "Model Alpha (Experts only)")
     run_inference_core(selected_checkpoint, args, data_dir, submissions_dir)
 
 

@@ -25,7 +25,7 @@ from sota_training.config import get_default_config
 from sota_training.utils import setup_logging, log_system_info, load_checkpoint
 from sota_training.dataset import VideoDataset, TestDataset
 from sota_training.models import create_model
-from sota_training.inference import run_inference, generate_submission
+from sota_training.inference import run_inference, run_inference_with_meta, generate_submission
 from sota_training.sequential_layer_training import build_contiguous_label_subsets
 
 logger = logging.getLogger(__name__)
@@ -118,6 +118,14 @@ def get_model_config_from_checkpoint(checkpoint_path: Path) -> dict:
         if 'group_head.0.weight' in state_keys and 'expert_heads.0.0.weight' in state_keys:
             config['architecture'] = 'videomae_group_gated_experts'
             logger.info("Detected Model 12 (Group-Gated Experts) from state_dict")
+        # Kiểm tra Alpha: có expert_heads, không có group_head, không có global_head
+        elif (
+            'expert_heads.0.0.weight' in state_keys
+            and 'group_head.0.weight' not in state_keys
+            and not any(k.startswith('global_head') for k in state_keys)
+        ):
+            config['architecture'] = 'videomae_alpha_experts'
+            logger.info("Detected Model Alpha (Experts only) from state_dict")
         # Kiểm tra model 11: có global_head và expert_heads (không có group_head)
         elif 'global_head' in str(state_keys) and 'expert_heads.0.0.weight' in state_keys:
             config['architecture'] = 'videomae_global_residual_experts'
@@ -130,12 +138,15 @@ def get_model_config_from_checkpoint(checkpoint_path: Path) -> dict:
     # Suy luận architecture từ tên file (fallback nếu không có trong config/state_dict)
     if 'architecture' not in config or config['architecture'] not in [
         'videomae', 'videomae_group_gated_experts', 'videomae_global_residual_experts',
-        'timesformer', 'vit', 'swin'
+        'videomae_alpha_experts', 'timesformer', 'vit', 'swin'
     ]:
         filename = checkpoint_path.name.lower()
         if 'model_12' in filename or 'model12' in filename or 'improved_heads' in filename:
             config['architecture'] = 'videomae_group_gated_experts'
             logger.info("Detected Model 12 (or improved) from filename")
+        elif 'model_13' in filename or 'model13' in filename or 'alpha' in filename:
+            config['architecture'] = 'videomae_alpha_experts'
+            logger.info("Detected Model Alpha from filename")
         elif 'model_11' in filename or 'model11' in filename:
             config['architecture'] = 'videomae_global_residual_experts'
             logger.info("Detected Model 11 from filename")
@@ -150,7 +161,7 @@ def get_model_config_from_checkpoint(checkpoint_path: Path) -> dict:
             config['architecture'] = 'swin'
     
     # Default VideoMAE parameters
-    if config['architecture'] in ['videomae', 'videomae_group_gated_experts', 'videomae_global_residual_experts']:
+    if config['architecture'] in ['videomae', 'videomae_group_gated_experts', 'videomae_global_residual_experts', 'videomae_alpha_experts']:
         if 'model_name' not in config:
             config['model_name'] = 'MCG-NJU/videomae-large-finetuned-kinetics'
         config.setdefault('tubelet_size', 2)
@@ -206,7 +217,7 @@ def run_inference_core(
         classes = [f"class_{i}" for i in range(num_classes)]
 
     label_subsets = None
-    if model_config['architecture'] in ['videomae_group_gated_experts', 'videomae_global_residual_experts']:
+    if model_config['architecture'] in ['videomae_group_gated_experts', 'videomae_global_residual_experts', 'videomae_alpha_experts']:
         if 'label_subsets' in model_config and model_config['label_subsets']:
             label_subsets = model_config['label_subsets']
             logger.info(f"Loaded label_subsets from checkpoint config: {len(label_subsets)} groups")
@@ -228,7 +239,7 @@ def run_inference_core(
         logger.info("Checkpoint không có adapters → tạo model với use_adapters=False")
     pretrained_ckpt = model_config.get("pretrained_ckpt")
     if pretrained_ckpt is None and model_config["architecture"] in [
-        "videomae_group_gated_experts", "videomae_global_residual_experts"
+        "videomae_group_gated_experts", "videomae_global_residual_experts", "videomae_alpha_experts"
     ]:
         pretrained_ckpt = str(selected_checkpoint) if selected_checkpoint.exists() else None
         if pretrained_ckpt:
@@ -247,12 +258,12 @@ def run_inference_core(
         'image_size': model_config.get('img_size', 224),
         'patch_size': model_config.get('patch_size', 16),
     }
-    if model_config['architecture'] in ['videomae_group_gated_experts', 'videomae_global_residual_experts']:
+    if model_config['architecture'] in ['videomae_group_gated_experts', 'videomae_global_residual_experts', 'videomae_alpha_experts']:
         create_kwargs['label_subsets'] = label_subsets
         create_kwargs['init_output_gain'] = model_config.get('init_output_gain', 2.0)
         create_kwargs['init_hidden_gain'] = model_config.get('init_hidden_gain', 1.0)
         create_kwargs['use_normal_init'] = model_config.get('use_normal_init', True)
-        if model_config['architecture'] == 'videomae_group_gated_experts':
+        if model_config['architecture'] in ('videomae_group_gated_experts', 'videomae_alpha_experts'):
             create_kwargs['hard_mask_value'] = model_config.get('hard_mask_value', -1e9)
     model = create_model(**create_kwargs).to(device)
 
@@ -276,6 +287,21 @@ def run_inference_core(
         if hasattr(model, 'hard_routing_enabled'):
             model.hard_routing_enabled = True
         logger.info("Model 12: inference mode (active_expert_idx=None, hard_routing_enabled=True)")
+    elif model_config.get('architecture') == 'videomae_alpha_experts':
+        if hasattr(model, 'active_expert_idx'):
+            model.active_expert_idx = None
+        if hasattr(model, 'inference_single_best_expert'):
+            merge_experts = getattr(args, 'merge_experts', False)
+            model.inference_single_best_expert = (
+                not merge_experts
+                and model_config.get('inference_single_best_expert', True)
+            )
+        if hasattr(model, 'num_active_experts') and 'num_active_experts' in model_config:
+            model.num_active_experts = model_config['num_active_experts']
+        logger.info(
+            "Model Alpha: inference mode (single best expert per sample=%s)",
+            getattr(model, 'inference_single_best_expert', False),
+        )
 
     test_data_dir = data_dir / 'test'
     if not test_data_dir.exists():
@@ -311,17 +337,59 @@ def run_inference_core(
     model.eval()
     return_label_as_index = (getattr(args, 'label_format', 'name') == 'index')
     logger.info(f"Label format: {'index (0-50)' if return_label_as_index else 'name (class string)'}")
-    predictions = run_inference(
-        model=model,
-        test_loader=test_loader,
-        device=device,
-        classes=classes,
-        use_tta=use_tta,
-        num_crops=args.num_crops,
-        num_flips=args.num_flips,
-        expected_num_frames=model_config.get('num_frames', 16),
-        return_label_as_index=return_label_as_index,
+
+    use_meta = (
+        getattr(args, 'meta_head', None) == 'catboost'
+        and model_config.get('architecture') == 'videomae_alpha_experts'
     )
+    meta_model_path = getattr(args, 'meta_model', None)
+    if use_meta and meta_model_path is None:
+        meta_model_path = selected_checkpoint.parent / 'meta' / 'meta_catboost.cbm'
+    if use_meta and meta_model_path is not None:
+        meta_model_path = Path(meta_model_path)
+    if use_meta and meta_model_path is not None and meta_model_path.exists():
+        try:
+            import json
+            from catboost import CatBoostClassifier
+            catboost_model = CatBoostClassifier()
+            catboost_model.load_model(str(meta_model_path))
+            meta_config_path = meta_model_path.parent / 'meta_config.json'
+            if meta_config_path.exists():
+                with open(meta_config_path, encoding='utf-8') as f:
+                    meta_config = json.load(f)
+            else:
+                feature_names_path = meta_model_path.parent / 'feature_names.json'
+                with open(feature_names_path, encoding='utf-8') as f:
+                    meta_config = json.load(f)
+                meta_config.setdefault('tau', 0.05)
+                meta_config.setdefault('num_phase1_heads', 8)
+                meta_config.setdefault('num_active_experts', 10)
+                meta_config.setdefault('phase_id', 2)
+            logger.info("Alpha-2 meta-head: CatBoost routing (tau=%.4f)", meta_config.get('tau', 0.05))
+            predictions = run_inference_with_meta(
+                model=model,
+                test_loader=test_loader,
+                device=device,
+                classes=classes,
+                catboost_model=catboost_model,
+                meta_config=meta_config,
+                return_label_as_index=return_label_as_index,
+            )
+        except Exception as e:
+            logger.warning("Failed to load CatBoost meta-head: %s; fallback to standard inference.", e)
+            use_meta = False
+    if not use_meta:
+        predictions = run_inference(
+            model=model,
+            test_loader=test_loader,
+            device=device,
+            classes=classes,
+            use_tta=use_tta,
+            num_crops=args.num_crops,
+            num_flips=args.num_flips,
+            expected_num_frames=model_config.get('num_frames', 16),
+            return_label_as_index=return_label_as_index,
+        )
     checkpoint_name = selected_checkpoint.stem
     submission_path = submissions_dir / f'submission_{checkpoint_name}.csv'
     logger.info("="*60)
@@ -356,7 +424,11 @@ def main():
                         help='Label trong CSV: name = tên class (str), index = 0-50 (int)')
     parser.add_argument('--submission-template', action='store_true',
                         help='Xuất khớp kaggle_data/submission_template.csv: cột id,class; id=0,1,2,... theo thứ tự folder trong test')
-    
+    parser.add_argument('--meta-head', type=str, default=None,
+                        help='Alpha-2: use CatBoost routing; set to catboost (only for videomae_alpha_experts)')
+    parser.add_argument('--meta-model', type=str, default=None,
+                        help='Path to meta_catboost.cbm (default: checkpoints/meta/meta_catboost.cbm)')
+
     args = parser.parse_args()
     
     # Setup logging

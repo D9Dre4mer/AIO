@@ -1595,6 +1595,324 @@ class VideoMAEGroupGatedExpertsForAction(nn.Module):
         return hidden_states
 
 
+class VideoMAEAlphaExpertsForAction(nn.Module):
+    """
+    VideoMAE + only Expert heads (no group head). Alpha model.
+
+    - Training: active_expert_idx set -> single expert scatter (Stage B).
+    - Inference (default merge): run all experts, each expert fills its subset -> argmax.
+    - Inference (single_best_expert=True): per sample, pick the expert with highest
+      confidence (max softmax) and use only that expert's prediction (no merge).
+    """
+
+    def __init__(
+        self,
+        num_classes: int = 51,
+        use_adapters: bool = False,
+        adapter_dim: int = None,
+        dropout: float = 0.1,
+        pretrained_ckpt: str = None,
+        model_name: str = 'MCG-NJU/videomae-large-finetuned-kinetics',
+        num_frames: int = 16,
+        tubelet_size: int = 2,
+        image_size: int = 224,
+        patch_size: int = 16,
+        init_output_gain: float = 2.0,
+        init_hidden_gain: float = 1.0,
+        use_normal_init: bool = True,
+        label_subsets: list = None,
+        hard_mask_value: float = -1e9,
+    ):
+        super().__init__()
+
+        logger = logging.getLogger(__name__)
+
+        if label_subsets is None:
+            num_experts = 8
+            labels_per = num_classes // num_experts
+            rem = num_classes % num_experts
+            label_subsets = []
+            start = 0
+            for i in range(num_experts):
+                size = labels_per + (1 if i < rem else 0)
+                end = start + size
+                label_subsets.append(list(range(start, end)))
+                start = end
+
+        for subset in label_subsets:
+            for idx in subset:
+                if idx < 0 or idx >= num_classes:
+                    raise ValueError(
+                        "label_subsets contains out-of-range class idx: "
+                        f"{idx}"
+                    )
+
+        self.num_classes = int(num_classes)
+        self.label_subsets = [list(map(int, s)) for s in label_subsets]
+        self.num_groups = len(self.label_subsets)
+        self.use_adapters = use_adapters
+        self.num_frames = num_frames
+        self.tubelet_size = tubelet_size
+        self.patch_size = patch_size
+        self.image_size = image_size
+        self.use_mean_pooling = True
+
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError(
+                "transformers library is required for VideoMAE Alpha experts."
+            )
+
+        logger.info(f"Loading VideoMAE model from HuggingFace: {model_name}")
+        config = VideoMAEConfig.from_pretrained(
+            model_name,
+            num_frames=num_frames,
+            tubelet_size=tubelet_size,
+            image_size=image_size,
+            patch_size=patch_size,
+            num_labels=num_classes,
+        )
+
+        if pretrained_ckpt and Path(pretrained_ckpt).exists():
+            logger.info(f"Loading VideoMAE from local checkpoint: {pretrained_ckpt}")
+            checkpoint = torch.load(
+                pretrained_ckpt,
+                map_location='cpu',
+                weights_only=False
+            )
+            if 'model' in checkpoint:
+                state_dict = checkpoint['model']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint
+
+            self.videomae = VideoMAEModel(config)
+            cleaned_state_dict = {}
+            for k, v in state_dict.items():
+                if k.startswith('videomae.'):
+                    cleaned_state_dict[k[9:]] = v
+                else:
+                    cleaned_state_dict[k] = v
+            self.videomae.load_state_dict(cleaned_state_dict, strict=False)
+            logger.info("VideoMAE weights loaded from local checkpoint")
+        else:
+            self.videomae = VideoMAEModel.from_pretrained(
+                model_name,
+                config=config
+            )
+            logger.info("VideoMAE model loaded from HuggingFace")
+
+        self.embed_dim = config.hidden_size
+
+        if use_adapters:
+            freeze_backbone_params(self.videomae)
+            num_blocks = len(self.videomae.encoder.layer)
+            self.adapters, self.block_norm = create_adapters_for_videomae(
+                self.videomae, self.embed_dim, adapter_dim, dropout, num_blocks
+            )
+        else:
+            self.adapters = None
+            self.block_norm = None
+
+        # No group_head; only expert_heads
+        self.expert_heads = nn.ModuleList([
+            create_classification_head(
+                self.embed_dim,
+                len(subset),
+                dropout,
+                init_output_gain=init_output_gain,
+                init_hidden_gain=init_hidden_gain,
+                use_normal_init=use_normal_init,
+            )
+            for subset in self.label_subsets
+        ])
+
+        self._subset_tensors = [None for _ in self.label_subsets]
+        self.active_expert_idx = None
+        self.hard_mask_value = float(hard_mask_value)
+        # If True: per sample use only the expert with highest confidence (no merge).
+        self.inference_single_best_expert = False
+        # If set: only these experts participate in merge/single-best (e.g. Alpha1 phase1 uses first K).
+        self.num_active_experts = None
+        # Optional: for Alpha1 Phase2, main experts have shrunk label_subsets but heads still output
+        # len(original_subset). Each element is the list of global class indices the head was trained on (order = logit dim).
+        self.expert_training_subsets = None
+
+    def _forward_backbone(self, video: torch.Tensor) -> torch.Tensor:
+        if self.use_adapters:
+            outputs = self._forward_videomae_with_adapters(video)
+        else:
+            outputs = self.videomae(
+                pixel_values=video,
+                output_hidden_states=False
+            ).last_hidden_state
+        pooled = outputs.mean(dim=1)
+        return pooled
+
+    def _get_subset_idx(self, i: int, device: torch.device) -> torch.Tensor:
+        idx = self._subset_tensors[i]
+        if idx is None or idx.device != device:
+            idx = torch.tensor(
+                self.label_subsets[i],
+                dtype=torch.long,
+                device=device
+            )
+            self._subset_tensors[i] = idx
+        return idx
+
+    def _scatter_expert_logits(
+        self,
+        combined: torch.Tensor,
+        expert_idx: int,
+        logits: torch.Tensor,
+        device: torch.device,
+    ) -> None:
+        """Write expert logits into combined. Handles Phase2 shrunk subsets via expert_training_subsets."""
+        subset_idx = self._get_subset_idx(expert_idx, device)
+        current_subset = self.label_subsets[expert_idx]
+        head_dim = logits.shape[1]
+        training_subsets = getattr(self, "expert_training_subsets", None)
+        if training_subsets is not None and expert_idx < len(training_subsets):
+            training_subset = training_subsets[expert_idx]
+            if head_dim != len(current_subset) and head_dim == len(training_subset):
+                for slot, global_c in enumerate(current_subset):
+                    local_j = training_subset.index(global_c)
+                    combined[:, global_c] = logits[:, local_j].to(dtype=combined.dtype)
+                return
+        if head_dim == len(current_subset):
+            combined[:, subset_idx] = logits.to(dtype=combined.dtype)
+            return
+        raise RuntimeError(
+            f"Expert {expert_idx}: head output size {head_dim} != subset size {len(current_subset)} "
+            "and expert_training_subsets not set or length mismatch."
+        )
+
+    def _forward_single_expert(
+        self,
+        pooled: torch.Tensor,
+        expert_idx: int,
+    ) -> torch.Tensor:
+        device = pooled.device
+        B = pooled.shape[0]
+        expert_logits = self.expert_heads[expert_idx](pooled)
+        combined = torch.full(
+            (B, self.num_classes),
+            self.hard_mask_value,
+            device=device,
+            dtype=torch.float32,
+        )
+        self._scatter_expert_logits(combined, expert_idx, expert_logits, device)
+        return combined
+
+    def _forward_all_experts_merge(self, pooled: torch.Tensor) -> torch.Tensor:
+        """Run all experts and merge logits per class; each class belongs to one expert."""
+        device = pooled.device
+        B = pooled.shape[0]
+        n = getattr(self, "num_active_experts", None)
+        num_used = (min(n, len(self.expert_heads)) if n is not None else len(self.expert_heads))
+        combined = torch.full(
+            (B, self.num_classes),
+            self.hard_mask_value,
+            device=device,
+            dtype=torch.float32,
+        )
+        for i in range(num_used):
+            expert_logits = self.expert_heads[i](pooled)
+            self._scatter_expert_logits(combined, i, expert_logits, device)
+        return combined
+
+    def _forward_single_best_expert(self, pooled: torch.Tensor) -> torch.Tensor:
+        """Per sample: pick the expert with highest confidence (max softmax), use only its prediction."""
+        device = pooled.device
+        B = pooled.shape[0]
+        n = getattr(self, "num_active_experts", None)
+        num_experts = (min(n, len(self.expert_heads)) if n is not None else len(self.expert_heads))
+        max_conf = torch.empty(B, num_experts, device=device, dtype=torch.float32)
+        all_logits = []
+        for i in range(num_experts):
+            expert = self.expert_heads[i]
+            logits_i = expert(pooled)
+            all_logits.append(logits_i)
+            probs_i = torch.softmax(logits_i, dim=1)
+            max_conf[:, i] = probs_i.max(dim=1).values
+        best_expert = max_conf.argmax(dim=1)
+        combined = torch.full(
+            (B, self.num_classes),
+            self.hard_mask_value,
+            device=device,
+            dtype=torch.float32,
+        )
+        for b in range(B):
+            e = int(best_expert[b].item())
+            self._scatter_expert_logits(
+                combined[b : b + 1], e, all_logits[e][b : b + 1], device
+            )
+        return combined
+
+    def forward_expert_signals(self, video: torch.Tensor) -> dict:
+        """Collect per-expert logits and probs (no merge). For Alpha-2 meta-head features."""
+        pooled = self._forward_backbone(video)
+        n = getattr(self, "num_active_experts", None)
+        num_used = (
+            min(n, len(self.expert_heads))
+            if n is not None
+            else len(self.expert_heads)
+        )
+        all_logits = []
+        all_probs = []
+        for i in range(num_used):
+            logits_i = self.expert_heads[i](pooled)
+            probs_i = torch.softmax(logits_i, dim=1)
+            all_logits.append(logits_i)
+            all_probs.append(probs_i)
+        return {
+            "all_logits": all_logits,
+            "all_probs": all_probs,
+            "label_subsets": self.label_subsets[:num_used],
+            "num_active_experts": num_used,
+        }
+
+    def forward(self, video: torch.Tensor) -> torch.Tensor:
+        pooled = self._forward_backbone(video)
+        active = getattr(self, "active_expert_idx", None)
+        if active is not None:
+            return self._forward_single_expert(pooled, int(active))
+        if getattr(self, "inference_single_best_expert", False):
+            return self._forward_single_best_expert(pooled)
+        return self._forward_all_experts_merge(pooled)
+
+    def _forward_videomae_with_adapters(self, video: torch.Tensor) -> torch.Tensor:
+        B, T, C, H, W = video.shape
+        num_temporal_patches = T // self.tubelet_size
+        num_spatial_patches = (self.image_size // self.patch_size) ** 2
+        seq_len = num_temporal_patches * num_spatial_patches
+
+        bool_masked_pos = torch.zeros(
+            (B, seq_len),
+            dtype=torch.bool,
+            device=video.device,
+            requires_grad=False
+        )
+        embeddings = self.videomae.embeddings(
+            pixel_values=video,
+            bool_masked_pos=bool_masked_pos
+        )
+
+        hidden_states = embeddings
+        for i, layer in enumerate(self.videomae.encoder.layer):
+            layer_outputs = layer(hidden_states)
+            if isinstance(layer_outputs, tuple):
+                hidden_states = layer_outputs[0]
+            else:
+                hidden_states = layer_outputs
+            if self.use_adapters and i < len(self.adapters):
+                adapter_out = self.adapters[i](hidden_states)
+                hidden_states = hidden_states + adapter_out
+                if self.block_norm is not None:
+                    hidden_states = self.block_norm(hidden_states)
+        return hidden_states
+
+
 class MultiScaleViTForAction(nn.Module):
     """Multi-scale feature fusion ViT model."""
     
@@ -1865,6 +2183,35 @@ def create_model(
         label_subsets = kwargs.get('label_subsets', None)
         hard_mask_value = kwargs.get('hard_mask_value', -1e9)
         return VideoMAEGroupGatedExpertsForAction(
+            num_classes=num_classes,
+            use_adapters=use_adapters,
+            adapter_dim=adapter_dim,
+            dropout=dropout,
+            pretrained_ckpt=pretrained_ckpt,
+            model_name=model_name,
+            num_frames=num_frames,
+            tubelet_size=tubelet_size,
+            image_size=image_size,
+            patch_size=patch_size,
+            init_output_gain=init_output_gain,
+            init_hidden_gain=init_hidden_gain,
+            use_normal_init=use_normal_init,
+            label_subsets=label_subsets,
+            hard_mask_value=hard_mask_value,
+        )
+    elif architecture == 'videomae_alpha_experts':
+        pretrained_ckpt = kwargs.get('pretrained_ckpt', None)
+        model_name = kwargs.get('model_name', 'MCG-NJU/videomae-large-finetuned-kinetics')
+        num_frames = kwargs.get('num_frames', 16)
+        tubelet_size = kwargs.get('tubelet_size', 2)
+        image_size = kwargs.get('image_size', 224)
+        patch_size = kwargs.get('patch_size', 16)
+        init_output_gain = kwargs.get('init_output_gain', 2.0)
+        init_hidden_gain = kwargs.get('init_hidden_gain', 1.0)
+        use_normal_init = kwargs.get('use_normal_init', True)
+        label_subsets = kwargs.get('label_subsets', None)
+        hard_mask_value = kwargs.get('hard_mask_value', -1e9)
+        return VideoMAEAlphaExpertsForAction(
             num_classes=num_classes,
             use_adapters=use_adapters,
             adapter_dim=adapter_dim,
